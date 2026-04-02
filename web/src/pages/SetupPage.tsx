@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Terminal, AlertCircle } from 'lucide-react'
-import { bootstrap } from '../api/client'
+import { Terminal, AlertCircle, CheckCircle, XCircle, Loader } from 'lucide-react'
+import { bootstrap, checkHealth, type HealthStatus } from '../api/client'
 
 interface SetupPageProps {
   onBootstrapped?: () => void
@@ -13,6 +13,15 @@ export default function SetupPage({ onBootstrapped }: SetupPageProps) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [health, setHealth] = useState<HealthStatus | null>(null)
+  const [healthLoading, setHealthLoading] = useState(true)
+
+  useEffect(() => {
+    checkHealth()
+      .then(setHealth)
+      .catch(() => setHealth({ database: 'error', oidc: 'disabled', oidc_enabled: false }))
+      .finally(() => setHealthLoading(false))
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -30,6 +39,9 @@ export default function SetupPage({ onBootstrapped }: SetupPageProps) {
     }
   }
 
+  const dbOK = health?.database === 'ok'
+  const canSubmit = !loading && dbOK
+
   return (
     <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg)' }}>
       <div className="w-full max-w-sm" style={{ border: '1px solid var(--border)', padding: '2rem' }}>
@@ -38,6 +50,29 @@ export default function SetupPage({ onBootstrapped }: SetupPageProps) {
           <span style={{ color: 'var(--accent)', fontSize: '11px', letterSpacing: '0.1em' }}>
             BLACKBOX / INITIAL SETUP
           </span>
+        </div>
+
+        <div style={{ marginBottom: '1.5rem', border: '1px solid var(--border)', padding: '0.75rem' }}>
+          <div style={{ color: 'var(--muted)', fontSize: '10px', letterSpacing: '0.1em', marginBottom: '0.5rem' }}>
+            SYSTEM HEALTH
+          </div>
+          {healthLoading ? (
+            <div className="flex items-center gap-2" style={{ color: 'var(--muted)', fontSize: '12px' }}>
+              <Loader size={12} />
+              <span>Checking…</span>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <HealthRow label="DATABASE" status={health?.database === 'ok' ? 'ok' : 'error'} />
+              {health?.oidc_enabled && (
+                <HealthRow
+                  label="OIDC"
+                  status={health.oidc === 'ok' ? 'ok' : 'warn'}
+                  message={health.oidc === 'unavailable' ? 'provider unreachable' : undefined}
+                />
+              )}
+            </div>
+          )}
         </div>
 
         <p style={{ color: 'var(--muted)', fontSize: '12px', marginBottom: '1.5rem', lineHeight: '1.6' }}>
@@ -90,6 +125,13 @@ export default function SetupPage({ onBootstrapped }: SetupPageProps) {
             />
           </div>
 
+          {!dbOK && !healthLoading && (
+            <div className="flex items-center gap-2" style={{ color: '#FF4444', fontSize: '12px', marginBottom: '1rem' }}>
+              <AlertCircle size={12} />
+              <span>Database unavailable - cannot create account</span>
+            </div>
+          )}
+
           {error && (
             <div className="flex items-center gap-2" style={{ color: '#FF4444', fontSize: '12px', marginBottom: '1rem' }}>
               <AlertCircle size={12} />
@@ -99,10 +141,10 @@ export default function SetupPage({ onBootstrapped }: SetupPageProps) {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={!canSubmit}
             style={{
               width: '100%',
-              background: loading ? 'var(--border)' : 'var(--accent)',
+              background: canSubmit ? 'var(--accent)' : 'var(--border)',
               color: '#000',
               border: 'none',
               padding: '10px',
@@ -110,13 +152,29 @@ export default function SetupPage({ onBootstrapped }: SetupPageProps) {
               fontSize: '12px',
               fontWeight: 'bold',
               letterSpacing: '0.1em',
-              cursor: loading ? 'not-allowed' : 'pointer',
+              cursor: canSubmit ? 'pointer' : 'not-allowed',
             }}
           >
             {loading ? 'CREATING...' : 'CREATE ADMIN'}
           </button>
         </form>
       </div>
+    </div>
+  )
+}
+
+function HealthRow({ label, status, message }: { label: string; status: 'ok' | 'error' | 'warn'; message?: string }) {
+  const color = status === 'ok' ? '#00FF41' : status === 'warn' ? '#FFA500' : '#FF4444'
+  const Icon = status === 'ok' ? CheckCircle : XCircle
+
+  return (
+    <div className="flex items-center gap-2" style={{ fontSize: '11px' }}>
+      <Icon size={12} style={{ color }} />
+      <span style={{ color: 'var(--muted)' }}>{label}</span>
+      <span style={{ color }}>
+        {status.toUpperCase()}
+        {message ? ` - ${message}` : ''}
+      </span>
     </div>
   )
 }
