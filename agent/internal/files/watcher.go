@@ -185,7 +185,7 @@ func runWatcher(ctx context.Context, nodeName string, rootPaths []string, ignore
 					if !isExcluded(event.Name, ignorePatterns) {
 						count := addRecursive(w, event.Name, ignorePatterns)
 						if count == 0 {
-							log.Printf("files watcher: failed to add new dir %s or its subdirectories", event.Name)
+							log.Printf("files watcher: no subdirectories added for new dir %s (may be empty or all excluded)", event.Name)
 						}
 					}
 					continue
