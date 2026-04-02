@@ -2,11 +2,13 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"blackbox/shared/types"
 )
@@ -31,11 +33,11 @@ func New(serverURL, token string) *Client {
 	return &Client{
 		serverURL: serverURL,
 		token:     token,
-		http:      &http.Client{},
+		http:      &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
-func (c *Client) Send(entry types.Entry) error {
+func (c *Client) Send(ctx context.Context, entry types.Entry) error {
 	body, err := json.Marshal(entry)
 	if err != nil {
 		return fmt.Errorf("marshal entry: %w", err)
@@ -47,6 +49,7 @@ func (c *Client) Send(entry types.Entry) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Lablog-Agent-Key", c.token)
+	req = req.WithContext(ctx)
 
 	resp, err := c.http.Do(req)
 	if err != nil {

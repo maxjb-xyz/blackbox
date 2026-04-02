@@ -64,11 +64,11 @@ func (s *Sender) sendLoop(ctx context.Context) {
 			for {
 				select {
 				case entry := <-s.events:
-					if err := s.client.Send(entry); err != nil {
+					if err := s.client.Send(ctx, entry); err != nil {
 						log.Printf("sender: drop on shutdown: %v", err)
 					}
 				case entry := <-s.retries:
-					if err := s.client.Send(entry); err != nil {
+					if err := s.client.Send(ctx, entry); err != nil {
 						log.Printf("sender: drop on shutdown: %v", err)
 					}
 				default:
@@ -76,7 +76,7 @@ func (s *Sender) sendLoop(ctx context.Context) {
 				}
 			}
 		case entry := <-s.events:
-			if err := s.client.Send(entry); err != nil {
+			if err := s.client.Send(ctx, entry); err != nil {
 				log.Printf("sender: delivery failed, queuing retry: %v", err)
 				select {
 				case s.retries <- entry:
@@ -99,14 +99,14 @@ func (s *Sender) retryWorker(ctx context.Context) {
 			for {
 				select {
 				case <-ctx.Done():
-					if err := s.client.Send(entry); err != nil {
+					if err := s.client.Send(ctx, entry); err != nil {
 						log.Printf("sender: drop on shutdown: %v", err)
 					}
 					return
 				case <-time.After(backoff):
 				}
 				attempts++
-				if err := s.client.Send(entry); err != nil {
+				if err := s.client.Send(ctx, entry); err != nil {
 					var permErr *client.PermanentError
 					if errors.As(err, &permErr) {
 						log.Printf("sender: permanent error, dropping entry id=%s: %v", entry.ID, err)
