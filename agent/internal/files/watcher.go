@@ -99,8 +99,10 @@ func isExcluded(path string, ignorePatterns []string) bool {
 }
 
 func rootFor(path string, roots []string) string {
+	p := filepath.Clean(path)
 	for _, r := range roots {
-		if strings.HasPrefix(path, r) {
+		r = filepath.Clean(r)
+		if p == r || strings.HasPrefix(p, r+string(os.PathSeparator)) {
 			return r
 		}
 	}
@@ -129,6 +131,10 @@ func runWatcher(ctx context.Context, nodeName string, rootPaths []string, ignore
 			mu.Lock()
 			delete(timers, path)
 			mu.Unlock()
+
+			if ctx.Err() != nil {
+				return
+			}
 
 			var event string
 			switch {
@@ -162,6 +168,12 @@ func runWatcher(ctx context.Context, nodeName string, rootPaths []string, ignore
 	for {
 		select {
 		case <-ctx.Done():
+			mu.Lock()
+			for _, t := range timers {
+				t.Stop()
+			}
+			timers = make(map[string]*time.Timer)
+			mu.Unlock()
 			return
 		case event, ok := <-w.Events:
 			if !ok {
