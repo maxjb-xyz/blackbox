@@ -40,6 +40,11 @@ func main() {
 		log.Fatal("AGENT_TOKEN environment variable is required")
 	}
 
+	webhookSecret := os.Getenv("WEBHOOK_SECRET")
+	if webhookSecret == "" {
+		log.Fatal("WEBHOOK_SECRET environment variable is required")
+	}
+
 	dbPath := getEnv("DB_PATH", "/data/lablog.db")
 	database, err := db.Init(dbPath)
 	if err != nil {
@@ -111,6 +116,12 @@ func main() {
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.AgentAuth(agentToken))
 		r.Post("/api/agent/push", handlers.AgentPush(database))
+	})
+
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.WebhookAuth(webhookSecret))
+		r.Post("/api/webhooks/uptime", handlers.WebhookUptime(database))
+		r.Post("/api/webhooks/watchtower", handlers.WebhookWatchtower(database))
 	})
 
 	spaHandler := static.Handler(staticFiles)
