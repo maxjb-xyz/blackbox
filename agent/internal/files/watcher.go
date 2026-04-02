@@ -132,10 +132,6 @@ func runWatcher(ctx context.Context, nodeName string, rootPaths []string, ignore
 			delete(timers, path)
 			mu.Unlock()
 
-			if ctx.Err() != nil {
-				return
-			}
-
 			var event string
 			switch {
 			case op&fsnotify.Write != 0:
@@ -151,7 +147,7 @@ func runWatcher(ctx context.Context, nodeName string, rootPaths []string, ignore
 			}
 
 			meta, _ := json.Marshal(map[string]string{"path": path, "op": event})
-			out <- types.Entry{
+			entry := types.Entry{
 				ID:        ulid.Make().String(),
 				Timestamp: time.Now().UTC(),
 				NodeName:  nodeName,
@@ -160,6 +156,11 @@ func runWatcher(ctx context.Context, nodeName string, rootPaths []string, ignore
 				Event:     event,
 				Content:   fmt.Sprintf("file %s: %s", event, path),
 				Metadata:  string(meta),
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case out <- entry:
 			}
 		})
 		mu.Unlock()
