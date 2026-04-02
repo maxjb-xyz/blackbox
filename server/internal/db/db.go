@@ -1,6 +1,9 @@
 package db
 
 import (
+	"log"
+	"time"
+
 	"blackbox/server/internal/models"
 	"blackbox/shared/types"
 	"github.com/glebarez/sqlite"
@@ -15,8 +18,26 @@ func Init(path string) (*gorm.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := database.AutoMigrate(&models.User{}, &types.Entry{}); err != nil {
+	if err := database.AutoMigrate(
+		&models.User{},
+		&models.InviteCode{},
+		&models.OIDCState{},
+		&types.Entry{},
+	); err != nil {
 		return nil, err
 	}
+	go sweepExpiredOIDCStates(database)
 	return database, nil
+}
+
+func sweepExpiredOIDCStates(database *gorm.DB) {
+	ticker := time.NewTicker(15 * time.Minute)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		result := database.Delete(&models.OIDCState{}, "expires_at < ?", time.Now())
+		if result.Error != nil {
+			log.Printf("oidc state sweep error: %v", result.Error)
+		}
+	}
 }
