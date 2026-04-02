@@ -41,3 +41,21 @@ docker-compose.override.yml
 
 # --- Git Worktrees ---
 .worktrees/
+
+# Go workspace
+*.exe
+*.test
+/server/blackbox-server
+/agent/blackbox-agent
+
+# Web build output (root Vite output)
+web/dist/
+
+# SQLite
+*.db
+*.db-wal
+*.db-shm
+
+# Env
+.env
+.env.local
