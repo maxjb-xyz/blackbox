@@ -1,0 +1,40 @@
+# --- General / OS ---
+.DS_Store
+.env
+.env.local
+*.log
+dist/
+bin/
+
+# --- Go (Backend) ---
+api/vendor/
+api/*.exe
+api/*.test
+api/lablog-binary
+api/debug
+
+# --- Node / React (Frontend) ---
+web/node_modules/
+web/build/
+web/.eslintcache
+web/.stylelintcache
+web/npm-debug.log*
+web/yarn-error.log*
+web/.pnpm-debug.log*
+
+# --- Database (SQLite) ---
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+data/
+
+# --- Docker ---
+.docker/
+docker-compose.override.yml
+
+# --- IDEs ---
+.vscode/
+.idea/
+*.swp
+*.swo
