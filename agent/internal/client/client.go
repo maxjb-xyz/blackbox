@@ -2,9 +2,13 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
+	"time"
 
 	"blackbox/shared/types"
 )
@@ -15,15 +19,25 @@ type Client struct {
 	http      *http.Client
 }
 
+// PermanentError signals that retrying the request will not help.
+type PermanentError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *PermanentError) Error() string {
+	return fmt.Sprintf("server returned %d: %s", e.StatusCode, e.Message)
+}
+
 func New(serverURL, token string) *Client {
 	return &Client{
 		serverURL: serverURL,
 		token:     token,
-		http:      &http.Client{},
+		http:      &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
-func (c *Client) Send(entry types.Entry) error {
+func (c *Client) Send(ctx context.Context, entry types.Entry) error {
 	body, err := json.Marshal(entry)
 	if err != nil {
 		return fmt.Errorf("marshal entry: %w", err)
@@ -34,7 +48,8 @@ func (c *Client) Send(entry types.Entry) error {
 		return fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("X-Lablog-Agent-Key", c.token)
+	req = req.WithContext(ctx)
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -43,7 +58,16 @@ func (c *Client) Send(entry types.Entry) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("server returned %d", resp.StatusCode)
+		bodyBytes, readErr := io.ReadAll(io.LimitReader(resp.Body, 256))
+		msg := strings.TrimSpace(string(bodyBytes))
+		if readErr != nil {
+			msg = fmt.Sprintf("(could not read body: %v)", readErr)
+		}
+		switch resp.StatusCode {
+		case 400, 401, 403, 404, 409:
+			return &PermanentError{StatusCode: resp.StatusCode, Message: msg}
+		}
+		return fmt.Errorf("server returned %d: %s", resp.StatusCode, msg)
 	}
 	return nil
 }
