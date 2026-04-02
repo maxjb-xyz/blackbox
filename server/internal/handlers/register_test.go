@@ -1,0 +1,96 @@
+package handlers_test
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"blackbox/server/internal/handlers"
+	"blackbox/server/internal/models"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestRegister_ValidInvite(t *testing.T) {
+	database := newTestDB(t)
+	database.Create(&models.InviteCode{
+		ID:        "01INVITEID000001",
+		Code:      "validinvitecode01234567890123456789012345678901234567890123456789",
+		CreatedBy: "01ADMINUSER000000",
+		ExpiresAt: time.Now().Add(72 * time.Hour),
+		CreatedAt: time.Now(),
+	})
+
+	body := `{"username":"alice","password":"Hunter2!secure","invite_code":"validinvitecode01234567890123456789012345678901234567890123456789"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handlers.Register(database, "jwt-test-secret")(w, req)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+	var resp map[string]string
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	assert.NotEmpty(t, resp["token"])
+
+	var invite models.InviteCode
+	require.NoError(t, database.First(&invite, "code = ?", "validinvitecode01234567890123456789012345678901234567890123456789").Error)
+	assert.NotEmpty(t, invite.UsedBy)
+}
+
+func TestRegister_InvalidInviteCode(t *testing.T) {
+	database := newTestDB(t)
+
+	body := `{"username":"bob","password":"Hunter2!secure","invite_code":"doesnotexist"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handlers.Register(database, "jwt-test-secret")(w, req)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestRegister_ExpiredInvite(t *testing.T) {
+	database := newTestDB(t)
+	database.Create(&models.InviteCode{
+		ID:        "01INVITEID000002",
+		Code:      "expiredinvitecode0123456789012345678901234567890123456789012345",
+		CreatedBy: "01ADMINUSER000000",
+		ExpiresAt: time.Now().Add(-1 * time.Hour),
+		CreatedAt: time.Now().Add(-73 * time.Hour),
+	})
+
+	body := `{"username":"carol","password":"Hunter2!secure","invite_code":"expiredinvitecode0123456789012345678901234567890123456789012345"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handlers.Register(database, "jwt-test-secret")(w, req)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestRegister_AlreadyUsedInvite(t *testing.T) {
+	database := newTestDB(t)
+	database.Create(&models.InviteCode{
+		ID:        "01INVITEID000003",
+		Code:      "usedinvitecode012345678901234567890123456789012345678901234567890",
+		CreatedBy: "01ADMINUSER000000",
+		UsedBy:    "01OTHERUSERID000",
+		ExpiresAt: time.Now().Add(72 * time.Hour),
+		CreatedAt: time.Now(),
+	})
+
+	body := `{"username":"dave","password":"Hunter2!secure","invite_code":"usedinvitecode012345678901234567890123456789012345678901234567890"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handlers.Register(database, "jwt-test-secret")(w, req)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
