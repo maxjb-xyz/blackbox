@@ -26,8 +26,15 @@ type uptimePayload struct {
 
 func WebhookUptime(database *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		maxBytes := int64(1 << 20) // 1MB limit
+		r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+
 		var payload uptimePayload
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			if err.Error() == "http: request body too large" {
+				writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
+				return
+			}
 			writeError(w, http.StatusBadRequest, "invalid request body")
 			return
 		}
@@ -54,15 +61,19 @@ func WebhookUptime(database *gorm.DB) http.HandlerFunc {
 			content = fmt.Sprintf("Monitor '%s' is down: %s", payload.Monitor.Name, payload.Heartbeat.Msg)
 			meta["status"] = "down"
 
-			cause, err := correlation.FindCause(database, payload.Monitor.Name, ts)
-			if err != nil {
-				log.Printf("correlation lookup failed for %s: %v", payload.Monitor.Name, err)
-			} else if cause != nil {
-				correlatedID = cause.ID
-				meta["possible_cause"] = cause.Content
-				meta["cause_node"] = cause.NodeName
-				meta["cause_event"] = cause.Event
-				meta["cause_entry_id"] = cause.ID
+			if !timeFallback {
+				cause, err := correlation.FindCause(database, payload.Monitor.Name, ts)
+				if err != nil {
+					log.Printf("correlation lookup failed for %s: %v", payload.Monitor.Name, err)
+				} else if cause != nil {
+					correlatedID = cause.ID
+					meta["possible_cause"] = cause.Content
+					meta["cause_node"] = cause.NodeName
+					meta["cause_event"] = cause.Event
+					meta["cause_entry_id"] = cause.ID
+				}
+			} else {
+				log.Printf("skipping correlation for %s due to time fallback", payload.Monitor.Name)
 			}
 		} else {
 			meta["status"] = "up"
