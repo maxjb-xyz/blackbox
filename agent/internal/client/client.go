@@ -63,7 +63,8 @@ func (c *Client) Send(ctx context.Context, entry types.Entry) error {
 		if readErr != nil {
 			msg = fmt.Sprintf("(could not read body: %v)", readErr)
 		}
-		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+		switch resp.StatusCode {
+		case 400, 401, 403, 404, 409:
 			return &PermanentError{StatusCode: resp.StatusCode, Message: msg}
 		}
 		return fmt.Errorf("server returned %d: %s", resp.StatusCode, msg)
