@@ -71,7 +71,12 @@ func watch(ctx context.Context, nodeName string, out chan<- types.Entry) error {
 			if !watchedActions[action] {
 				continue
 			}
-			out <- buildEntry(nodeName, msg)
+			entry := buildEntry(nodeName, msg)
+			select {
+			case out <- entry:
+			default:
+				log.Printf("docker watcher: dropped event node=%s action=%s id=%s type=%s", nodeName, action, msg.Actor.ID, string(msg.Type))
+			}
 		}
 	}
 }
