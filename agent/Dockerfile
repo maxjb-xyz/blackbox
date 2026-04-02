@@ -8,7 +8,7 @@ ARG VERSION=dev
 ARG COMMIT=unknown
 
 COPY go.work go.work.sum ./
-COPY shared/go.mod shared/go.sum ./shared/
+COPY shared/go.mod* ./shared/
 COPY agent/go.mod agent/go.sum ./agent/
 RUN go mod download
 

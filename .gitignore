@@ -54,11 +54,3 @@ web/dist/
 !server/web/dist/
 !server/web/dist/index.html
 
-# SQLite
-*.db
-*.db-wal
-*.db-shm
-
-# Env
-.env
-.env.local
