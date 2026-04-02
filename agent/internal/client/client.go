@@ -34,7 +34,7 @@ func (c *Client) Send(entry types.Entry) error {
 		return fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("X-Lablog-Agent-Key", c.token)
 
 	resp, err := c.http.Do(req)
 	if err != nil {

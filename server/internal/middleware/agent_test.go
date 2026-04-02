@@ -15,7 +15,7 @@ func TestAgentAuth_ValidToken(t *testing.T) {
 		reached = true
 	}))
 	req := httptest.NewRequest(http.MethodPost, "/api/agent/push", nil)
-	req.Header.Set("Authorization", "Bearer secret-token")
+	req.Header.Set("X-Lablog-Agent-Key", "secret-token")
 	handler.ServeHTTP(httptest.NewRecorder(), req)
 	assert.True(t, reached)
 }
@@ -25,7 +25,7 @@ func TestAgentAuth_WrongToken(t *testing.T) {
 		t.Fatal("should not reach handler")
 	}))
 	req := httptest.NewRequest(http.MethodPost, "/api/agent/push", nil)
-	req.Header.Set("Authorization", "Bearer wrong-token")
+	req.Header.Set("X-Lablog-Agent-Key", "wrong-token")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
