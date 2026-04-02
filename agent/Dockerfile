@@ -10,12 +10,15 @@ ARG COMMIT=unknown
 COPY go.work go.work.sum ./
 COPY shared/go.mod shared/go.sum ./shared/
 COPY agent/go.mod agent/go.sum ./agent/
-RUN cd agent && go mod download
+RUN go mod download
 
 COPY shared/ ./shared/
 COPY agent/ ./agent/
 
-RUN CGO_ENABLED=0 cd agent && go build     -ldflags="-s -w -X main.Version=${VERSION} -X main.Commit=${COMMIT}"     -o /blackbox-agent .
+RUN cd agent && \
+    CGO_ENABLED=0 go build \
+    -ldflags="-s -w -X main.Version=${VERSION} -X main.Commit=${COMMIT}" \
+    -o /blackbox-agent .
 
 # ─── Stage 2: Minimal runtime image ──────────────────────────────────────────
 FROM gcr.io/distroless/static:nonroot

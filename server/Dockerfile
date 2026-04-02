@@ -18,13 +18,16 @@ ARG COMMIT=unknown
 COPY go.work go.work.sum ./
 COPY shared/go.mod shared/go.sum ./shared/
 COPY server/go.mod server/go.sum ./server/
-RUN cd server && go mod download
+RUN go mod download
 
 COPY shared/ ./shared/
 COPY server/ ./server/
 COPY --from=web-builder /web/dist ./server/web/dist
 
-RUN CGO_ENABLED=0 cd server && go build     -ldflags="-s -w -X main.Version=${VERSION} -X main.Commit=${COMMIT}"     -o /blackbox-server .
+RUN cd server && \
+    CGO_ENABLED=0 go build \
+    -ldflags="-s -w -X main.Version=${VERSION} -X main.Commit=${COMMIT}" \
+    -o /blackbox-server .
 
 # ─── Stage 3: Minimal runtime image ──────────────────────────────────────────
 FROM gcr.io/distroless/static:nonroot
