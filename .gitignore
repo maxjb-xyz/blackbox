@@ -38,3 +38,6 @@ docker-compose.override.yml
 .idea/
 *.swp
 *.swo
+
+# --- Git Worktrees ---
+.worktrees/
