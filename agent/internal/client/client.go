@@ -9,6 +9,15 @@ import (
 	"blackbox/shared/types"
 )
 
+type PermanentError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *PermanentError) Error() string {
+	return fmt.Sprintf("permanent error (status %d): %s", e.StatusCode, e.Message)
+}
+
 type Client struct {
 	serverURL string
 	token     string
@@ -43,6 +52,12 @@ func (c *Client) Send(entry types.Entry) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+			return &PermanentError{
+				StatusCode: resp.StatusCode,
+				Message:    fmt.Sprintf("server returned %d", resp.StatusCode),
+			}
+		}
 		return fmt.Errorf("server returned %d", resp.StatusCode)
 	}
 	return nil

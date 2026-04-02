@@ -96,6 +96,10 @@ func main() {
 	<-quit
 	log.Println("shutting down...")
 	cancel()
+
+	log.Println("waiting for sender to drain queued events...")
+	<-s.Done()
+	log.Println("shutdown complete")
 }
 
 func mustEnv(key string) string {

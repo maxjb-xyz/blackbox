@@ -2,6 +2,7 @@ package sender
 
 import (
 	"context"
+	"errors"
 	"log"
 	"time"
 
@@ -19,6 +20,7 @@ type Sender struct {
 	client  *client.Client
 	events  chan types.Entry
 	retries chan types.Entry
+	done    chan struct{}
 }
 
 func New(c *client.Client) *Sender {
@@ -26,11 +28,16 @@ func New(c *client.Client) *Sender {
 		client:  c,
 		events:  make(chan types.Entry, mainBufSize),
 		retries: make(chan types.Entry, retryBufSize),
+		done:    make(chan struct{}),
 	}
 }
 
 func (s *Sender) Chan() chan<- types.Entry {
 	return s.events
+}
+
+func (s *Sender) Done() <-chan struct{} {
+	return s.done
 }
 
 func (s *Sender) Start(ctx context.Context) {
@@ -39,6 +46,7 @@ func (s *Sender) Start(ctx context.Context) {
 }
 
 func (s *Sender) sendLoop(ctx context.Context) {
+	defer close(s.done)
 	for {
 		select {
 		case <-ctx.Done():
@@ -54,11 +62,16 @@ func (s *Sender) sendLoop(ctx context.Context) {
 			}
 		case entry := <-s.events:
 			if err := s.client.Send(entry); err != nil {
-				log.Printf("sender: delivery failed, queuing retry: %v", err)
-				select {
-				case s.retries <- entry:
-				default:
-					log.Printf("sender: retry buffer full, dropping entry id=%s", entry.ID)
+				var permErr *client.PermanentError
+				if errors.As(err, &permErr) {
+					log.Printf("sender: permanent error, dropping entry id=%s: %v", entry.ID, err)
+				} else {
+					log.Printf("sender: delivery failed, queuing retry: %v", err)
+					select {
+					case s.retries <- entry:
+					default:
+						log.Printf("sender: retry buffer full, dropping entry id=%s", entry.ID)
+					}
 				}
 			}
 		}
@@ -79,6 +92,12 @@ func (s *Sender) retryWorker(ctx context.Context) {
 				case <-time.After(backoff):
 				}
 				if err := s.client.Send(entry); err != nil {
+					var permErr *client.PermanentError
+					if errors.As(err, &permErr) {
+						log.Printf("sender: permanent error on retry, dropping entry id=%s: %v", entry.ID, err)
+						backoff = time.Second
+						break
+					}
 					log.Printf("sender: retry failed (backoff %s): %v", backoff, err)
 					if backoff < maxBackoff {
 						backoff *= 2

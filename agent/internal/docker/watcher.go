@@ -58,9 +58,15 @@ func watch(ctx context.Context, nodeName string, out chan<- types.Entry) error {
 		select {
 		case <-ctx.Done():
 			return nil
-		case err := <-errCh:
+		case err, ok := <-errCh:
+			if !ok {
+				return fmt.Errorf("docker event error channel closed")
+			}
 			return err
-		case msg := <-msgCh:
+		case msg, ok := <-msgCh:
+			if !ok {
+				return fmt.Errorf("docker event message channel closed")
+			}
 			action := string(msg.Action)
 			if !watchedActions[action] {
 				continue

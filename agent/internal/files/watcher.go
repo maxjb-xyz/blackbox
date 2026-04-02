@@ -47,7 +47,7 @@ func addRecursive(w *fsnotify.Watcher, root string, ignorePatterns []string) int
 	count := 0
 	if err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return nil
+			return err
 		}
 		if info.IsDir() {
 			if isExcluded(path, ignorePatterns) {
@@ -170,8 +170,9 @@ func runWatcher(ctx context.Context, nodeName string, rootPaths []string, ignore
 			if event.Op&fsnotify.Create != 0 {
 				if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
 					if !isExcluded(event.Name, ignorePatterns) {
-						if err := w.Add(event.Name); err != nil {
-							log.Printf("files watcher: failed to add new dir %s: %v", event.Name, err)
+						count := addRecursive(w, event.Name, ignorePatterns)
+						if count == 0 {
+							log.Printf("files watcher: failed to add new dir %s or its subdirectories", event.Name)
 						}
 					}
 					continue
