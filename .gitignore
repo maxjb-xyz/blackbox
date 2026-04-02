@@ -48,8 +48,11 @@ docker-compose.override.yml
 /server/blackbox-server
 /agent/blackbox-agent
 
-# Web build output (root Vite output)
+# Web build output (root Vite output — git-ignored)
 web/dist/
+# Committed placeholder so go:embed works locally without running Vite
+!server/web/dist/
+!server/web/dist/index.html
 
 # SQLite
 *.db
