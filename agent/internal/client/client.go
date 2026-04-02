@@ -17,6 +17,16 @@ type Client struct {
 	http      *http.Client
 }
 
+// PermanentError signals that retrying the request will not help.
+type PermanentError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *PermanentError) Error() string {
+	return fmt.Sprintf("server returned %d: %s", e.StatusCode, e.Message)
+}
+
 func New(serverURL, token string) *Client {
 	return &Client{
 		serverURL: serverURL,
@@ -46,10 +56,14 @@ func (c *Client) Send(entry types.Entry) error {
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		bodyBytes, readErr := io.ReadAll(io.LimitReader(resp.Body, 256))
+		msg := strings.TrimSpace(string(bodyBytes))
 		if readErr != nil {
-			return fmt.Errorf("server returned %d", resp.StatusCode)
+			msg = fmt.Sprintf("(could not read body: %v)", readErr)
 		}
-		return fmt.Errorf("server returned %d: %s", resp.StatusCode, strings.TrimSpace(string(bodyBytes)))
+		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+			return &PermanentError{StatusCode: resp.StatusCode, Message: msg}
+		}
+		return fmt.Errorf("server returned %d: %s", resp.StatusCode, msg)
 	}
 	return nil
 }
