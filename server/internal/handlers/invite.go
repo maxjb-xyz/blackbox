@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"blackbox/server/internal/auth"
+	"blackbox/server/internal/events"
 	"blackbox/server/internal/models"
 	"github.com/oklog/ulid/v2"
 	"gorm.io/gorm"
@@ -50,6 +51,13 @@ func CreateInvite(database *gorm.DB) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "failed to create invite")
 			return
 		}
+
+		var admin models.User
+		adminName := claims.UserID
+		if err := database.First(&admin, "id = ?", claims.UserID).Error; err == nil {
+			adminName = admin.Username
+		}
+		events.LogSystem(database, "auth", "invite.created", "invite created by "+adminName)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
