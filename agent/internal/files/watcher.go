@@ -45,7 +45,7 @@ func Watch(ctx context.Context, nodeName string, rootPaths []string, ignorePatte
 
 func addRecursive(w *fsnotify.Watcher, root string, ignorePatterns []string) int {
 	count := 0
-	filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+	if err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -71,7 +71,9 @@ func addRecursive(w *fsnotify.Watcher, root string, ignorePatterns []string) int
 			}
 		}
 		return nil
-	})
+	}); err != nil {
+		log.Printf("files watcher: walk error on %s: %v", root, err)
+	}
 	return count
 }
 
