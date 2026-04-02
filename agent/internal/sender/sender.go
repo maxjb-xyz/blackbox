@@ -2,6 +2,7 @@ package sender
 
 import (
 	"context"
+	"errors"
 	"log"
 	"sync"
 	"time"
@@ -13,6 +14,7 @@ import (
 const (
 	mainBufSize  = 2048
 	retryBufSize = 64
+	maxRetries   = 10
 	maxBackoff   = 30 * time.Second
 )
 
@@ -93,14 +95,30 @@ func (s *Sender) retryWorker(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case entry := <-s.retries:
+			attempts := 0
 			for {
 				select {
 				case <-ctx.Done():
+					if err := s.client.Send(entry); err != nil {
+						log.Printf("sender: drop on shutdown: %v", err)
+					}
 					return
 				case <-time.After(backoff):
 				}
+				attempts++
 				if err := s.client.Send(entry); err != nil {
-					log.Printf("sender: retry failed (backoff %s): %v", backoff, err)
+					var permErr *client.PermanentError
+					if errors.As(err, &permErr) {
+						log.Printf("sender: permanent error, dropping entry id=%s: %v", entry.ID, err)
+						backoff = time.Second
+						break
+					}
+					if attempts >= maxRetries {
+						log.Printf("sender: max retries (%d) exceeded, dropping entry id=%s: %v", maxRetries, entry.ID, err)
+						backoff = time.Second
+						break
+					}
+					log.Printf("sender: retry %d/%d failed (backoff %s): %v", attempts, maxRetries, backoff, err)
 					if backoff < maxBackoff {
 						backoff *= 2
 						if backoff > maxBackoff {
@@ -108,7 +126,7 @@ func (s *Sender) retryWorker(ctx context.Context) {
 						}
 					}
 				} else {
-					log.Printf("sender: retry succeeded, resetting backoff")
+					log.Printf("sender: retry succeeded after %d attempt(s), resetting backoff", attempts)
 					backoff = time.Second
 					break
 				}
