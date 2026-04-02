@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"os"
 	"time"
@@ -257,7 +258,8 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 func decodeWebhookBody(w http.ResponseWriter, r *http.Request, maxBytes int64, v interface{}) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
 
-	err := json.NewDecoder(r.Body).Decode(v)
+	decoder := json.NewDecoder(r.Body)
+	err := decoder.Decode(v)
 	if err != nil {
 		var maxErr *http.MaxBytesError
 		if errors.As(err, &maxErr) {
@@ -265,6 +267,12 @@ func decodeWebhookBody(w http.ResponseWriter, r *http.Request, maxBytes int64, v
 			return false
 		}
 		writeError(w, http.StatusBadRequest, "invalid request body")
+		return false
+	}
+
+	var extra interface{}
+	if decoder.Decode(&extra) != io.EOF {
+		writeError(w, http.StatusBadRequest, "request body must only contain a single JSON value")
 		return false
 	}
 

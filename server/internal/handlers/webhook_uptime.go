@@ -108,5 +108,6 @@ func parseWebhookTime(value string) (time.Time, bool) {
 		return time.Now().UTC(), true
 	}
 
+	ts = ts.UTC()
 	return ts, false
 }
