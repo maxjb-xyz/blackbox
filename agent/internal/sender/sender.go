@@ -11,24 +11,27 @@ import (
 )
 
 const (
-	mainBufSize  = 2048
-	retryBufSize = 64
-	maxBackoff   = 30 * time.Second
+	mainBufSize      = 2048
+	retryBufSize     = 64
+	maxBackoff       = 30 * time.Second
+	maxRetryAttempts = 8
 )
 
 type Sender struct {
-	client  *client.Client
-	events  chan types.Entry
-	retries chan types.Entry
-	done    chan struct{}
+	client    *client.Client
+	events    chan types.Entry
+	retries   chan types.Entry
+	done      chan struct{}
+	retryDone chan struct{}
 }
 
 func New(c *client.Client) *Sender {
 	return &Sender{
-		client:  c,
-		events:  make(chan types.Entry, mainBufSize),
-		retries: make(chan types.Entry, retryBufSize),
-		done:    make(chan struct{}),
+		client:    c,
+		events:    make(chan types.Entry, mainBufSize),
+		retries:   make(chan types.Entry, retryBufSize),
+		done:      make(chan struct{}),
+		retryDone: make(chan struct{}),
 	}
 }
 
@@ -50,16 +53,9 @@ func (s *Sender) sendLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			for {
-				select {
-				case entry := <-s.events:
-					if err := s.client.Send(entry); err != nil {
-						log.Printf("sender: drop on shutdown: %v", err)
-					}
-				default:
-					return
-				}
-			}
+			s.drainEvents()
+			<-s.retryDone
+			return
 		case entry := <-s.events:
 			if err := s.client.Send(entry); err != nil {
 				var permErr *client.PermanentError
@@ -78,39 +74,85 @@ func (s *Sender) sendLoop(ctx context.Context) {
 	}
 }
 
+func (s *Sender) drainEvents() {
+	for {
+		select {
+		case entry := <-s.events:
+			if err := s.client.Send(entry); err != nil {
+				log.Printf("sender: drop on shutdown: %v", err)
+			}
+		default:
+			return
+		}
+	}
+}
+
 func (s *Sender) retryWorker(ctx context.Context) {
+	defer close(s.retryDone)
 	backoff := time.Second
 	for {
 		select {
 		case <-ctx.Done():
+			s.drainRetriesOnShutdown()
 			return
 		case entry := <-s.retries:
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-time.After(backoff):
-				}
-				if err := s.client.Send(entry); err != nil {
-					var permErr *client.PermanentError
-					if errors.As(err, &permErr) {
-						log.Printf("sender: permanent error on retry, dropping entry id=%s: %v", entry.ID, err)
-						backoff = time.Second
-						break
-					}
-					log.Printf("sender: retry failed (backoff %s): %v", backoff, err)
-					if backoff < maxBackoff {
-						backoff *= 2
-						if backoff > maxBackoff {
-							backoff = maxBackoff
-						}
-					}
-				} else {
-					log.Printf("sender: retry succeeded, resetting backoff")
-					backoff = time.Second
-					break
+			backoff = s.retryWithBackoff(ctx, entry, backoff)
+		}
+	}
+}
+
+func (s *Sender) retryWithBackoff(ctx context.Context, entry types.Entry, backoff time.Duration) time.Duration {
+	attempts := 0
+	for {
+		if attempts >= maxRetryAttempts {
+			log.Printf("sender: max retry attempts reached, dropping entry id=%s", entry.ID)
+			return time.Second
+		}
+
+		select {
+		case <-ctx.Done():
+			s.drainSingleRetry(entry)
+			s.drainRetriesOnShutdown()
+			return time.Second
+		case <-time.After(backoff):
+		}
+
+		attempts++
+		if err := s.client.Send(entry); err != nil {
+			var permErr *client.PermanentError
+			if errors.As(err, &permErr) {
+				log.Printf("sender: permanent error on retry, dropping entry id=%s: %v", entry.ID, err)
+				return time.Second
+			}
+
+			log.Printf("sender: retry failed (attempt %d/%d, backoff %s): %v", attempts, maxRetryAttempts, backoff, err)
+			if backoff < maxBackoff {
+				backoff *= 2
+				if backoff > maxBackoff {
+					backoff = maxBackoff
 				}
 			}
+			continue
 		}
+
+		log.Printf("sender: retry succeeded, resetting backoff")
+		return time.Second
+	}
+}
+
+func (s *Sender) drainRetriesOnShutdown() {
+	for {
+		select {
+		case entry := <-s.retries:
+			s.drainSingleRetry(entry)
+		default:
+			return
+		}
+	}
+}
+
+func (s *Sender) drainSingleRetry(entry types.Entry) {
+	if err := s.client.Send(entry); err != nil {
+		log.Printf("sender: drop retry on shutdown id=%s: %v", entry.ID, err)
 	}
 }
