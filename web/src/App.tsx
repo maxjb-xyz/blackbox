@@ -22,7 +22,7 @@ function AppRoutes() {
 
   return (
     <Routes>
-      <Route path="/setup" element={<SetupPage />} />
+      <Route path="/setup" element={<SetupPage onBootstrapped={() => setBootstrapped(true)} />} />
       <Route
         path="/*"
         element={

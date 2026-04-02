@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"blackbox/server/internal/db"
 	"blackbox/server/internal/handlers"
@@ -62,7 +63,15 @@ func main() {
 		r.Post("/api/ingest", handlers.Ingest(database))
 	})
 
-	r.Handle("/*", static.Handler(staticFiles))
+	spaHandler := static.Handler(staticFiles)
+	r.NotFound(func(w http.ResponseWriter, req *http.Request) {
+		if strings.HasPrefix(req.URL.Path, "/api/") {
+			http.NotFound(w, req)
+			return
+		}
+		spaHandler.ServeHTTP(w, req)
+	})
+	r.Handle("/*", spaHandler)
 
 	addr := getEnv("LISTEN_ADDR", ":8080")
 	log.Printf("listening on %s", addr)

@@ -3,7 +3,11 @@ import { useNavigate } from 'react-router-dom'
 import { Terminal, AlertCircle } from 'lucide-react'
 import { bootstrap } from '../api/client'
 
-export default function SetupPage() {
+interface SetupPageProps {
+  onBootstrapped?: () => void
+}
+
+export default function SetupPage({ onBootstrapped }: SetupPageProps) {
   const navigate = useNavigate()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -17,6 +21,7 @@ export default function SetupPage() {
     try {
       const token = await bootstrap(username, password)
       localStorage.setItem('token', token)
+      onBootstrapped?.()
       navigate('/')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')

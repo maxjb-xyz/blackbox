@@ -15,7 +15,7 @@ WORKDIR /app
 ARG VERSION=dev
 ARG COMMIT=unknown
 
-COPY go.work go.work.sum ./
+COPY go.work ./
 COPY shared/go.mod* ./shared/
 COPY server/go.mod server/go.sum ./server/
 RUN go mod download
