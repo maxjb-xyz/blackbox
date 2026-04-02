@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"time"
 
@@ -18,16 +19,13 @@ type watchtowerPayload struct {
 
 func WebhookWatchtower(database *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		maxBytes := int64(1 << 20) // 1MB limit
-		r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
-
 		var payload watchtowerPayload
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			if err.Error() == "http: request body too large" {
-				writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
-				return
-			}
-			writeError(w, http.StatusBadRequest, "invalid request body")
+		if !decodeWebhookBody(w, r, 1<<20, &payload) {
+			return
+		}
+
+		if payload.Message == "" {
+			writeError(w, http.StatusBadRequest, "Message is required")
 			return
 		}
 
@@ -39,7 +37,11 @@ func WebhookWatchtower(database *gorm.DB) http.HandlerFunc {
 			meta["watchtower.level"] = payload.Level
 		}
 
-		metaBytes, _ := json.Marshal(meta)
+		metaBytes, err := json.Marshal(meta)
+		if err != nil {
+			log.Printf("failed to marshal metadata for watchtower: %v, meta: %+v", err, meta)
+			metaBytes = []byte("{}")
+		}
 
 		entry := types.Entry{
 			ID:        ulid.Make().String(),

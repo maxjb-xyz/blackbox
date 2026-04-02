@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"time"
@@ -249,4 +250,23 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
+// decodeWebhookBody decodes a webhook request body with size limits and proper error handling.
+// Returns true on success, false on failure (after writing error response).
+func decodeWebhookBody(w http.ResponseWriter, r *http.Request, maxBytes int64, v interface{}) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+
+	err := json.NewDecoder(r.Body).Decode(v)
+	if err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
+			return false
+		}
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return false
+	}
+
+	return true
 }

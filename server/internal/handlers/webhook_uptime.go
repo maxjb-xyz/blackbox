@@ -26,16 +26,8 @@ type uptimePayload struct {
 
 func WebhookUptime(database *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		maxBytes := int64(1 << 20) // 1MB limit
-		r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
-
 		var payload uptimePayload
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			if err.Error() == "http: request body too large" {
-				writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
-				return
-			}
-			writeError(w, http.StatusBadRequest, "invalid request body")
+		if !decodeWebhookBody(w, r, 1<<20, &payload) {
 			return
 		}
 		if payload.Monitor.Name == "" {
@@ -80,7 +72,11 @@ func WebhookUptime(database *gorm.DB) http.HandlerFunc {
 			meta["recovery_msg"] = payload.Heartbeat.Msg
 		}
 
-		metaBytes, _ := json.Marshal(meta)
+		metaBytes, err := json.Marshal(meta)
+		if err != nil {
+			log.Printf("failed to marshal metadata for monitor %s: %v, meta: %+v", payload.Monitor.Name, err, meta)
+			metaBytes = []byte("{}")
+		}
 
 		entry := types.Entry{
 			ID:           ulid.Make().String(),
