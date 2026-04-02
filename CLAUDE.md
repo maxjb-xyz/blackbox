@@ -1,4 +1,4 @@
-# Project: Lablog (Carnet)
+# Project: Blackbox
 **Role:** Senior Full-Stack Engineer & Homelab Systems Expert
 **Tech Stack:** Go (Backend), React (Vite/Tailwind/Lucide), SQLite (GORM), Docker
 
