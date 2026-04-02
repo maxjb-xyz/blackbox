@@ -1,12 +1,17 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"log"
 	"net/http"
 	"os"
 	"strings"
+	"sync/atomic"
+	"time"
+	"unsafe"
 
+	"blackbox/server/internal/auth"
 	"blackbox/server/internal/db"
 	"blackbox/server/internal/handlers"
 	"blackbox/server/internal/middleware"
@@ -42,25 +47,70 @@ func main() {
 	}
 	log.Printf("database initialized at %s", dbPath)
 
+	oidcEnabled := os.Getenv("OIDC_ENABLED") == "true"
+	var oidcProviderPtr unsafe.Pointer
+
+	if oidcEnabled {
+		log.Printf("OIDC enabled, performing discovery against %s", os.Getenv("OIDC_ISSUER"))
+		go func() {
+			const maxAttempts = 5
+			const retryInterval = 10 * time.Second
+			for i := 1; i <= maxAttempts; i++ {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				provider, err := auth.NewOIDCProvider(
+					ctx,
+					os.Getenv("OIDC_ISSUER"),
+					os.Getenv("OIDC_CLIENT_ID"),
+					os.Getenv("OIDC_CLIENT_SECRET"),
+					os.Getenv("OIDC_REDIRECT_URL"),
+				)
+				cancel()
+				if err == nil {
+					atomic.StorePointer(&oidcProviderPtr, unsafe.Pointer(provider))
+					log.Printf("OIDC provider ready")
+					return
+				}
+				log.Printf("OIDC discovery attempt %d/%d failed: %v", i, maxAttempts, err)
+				if i < maxAttempts {
+					time.Sleep(retryInterval)
+				}
+			}
+			log.Printf("OIDC provider unavailable after %d attempts, routes will return 503", maxAttempts)
+		}()
+	}
+
+	oidcProvider := func() *auth.OIDCProvider {
+		return (*auth.OIDCProvider)(atomic.LoadPointer(&oidcProviderPtr))
+	}
+
 	r := chi.NewRouter()
 
 	r.Get("/api/setup/status", handlers.SetupStatus(database))
+	r.Get("/api/setup/health", func(w http.ResponseWriter, req *http.Request) {
+		handlers.HealthCheck(database, oidcEnabled, oidcProvider() != nil)(w, req)
+	})
 	r.Post("/api/auth/bootstrap", handlers.Bootstrap(database, jwtSecret))
 	r.Post("/api/auth/login", handlers.Login(database, jwtSecret))
+	r.Post("/api/auth/register", handlers.Register(database, jwtSecret))
 
-	if os.Getenv("OIDC_ENABLED") == "true" {
-		log.Println("OIDC enabled (stub — full implementation pending)")
-		r.Get("/api/auth/oidc/login", handlers.OIDCStub())
-		r.Get("/api/auth/oidc/callback", handlers.OIDCStub())
+	if oidcEnabled {
+		r.Get("/api/auth/oidc/login", func(w http.ResponseWriter, req *http.Request) {
+			handlers.OIDCLogin(database, oidcProvider())(w, req)
+		})
+		r.Get("/api/auth/oidc/callback", func(w http.ResponseWriter, req *http.Request) {
+			handlers.OIDCCallback(database, oidcProvider(), jwtSecret)(w, req)
+		})
 	}
 
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.JWTAuth(jwtSecret))
+		r.Post("/api/auth/invite", handlers.CreateInvite(database))
+		r.Get("/api/auth/invite", handlers.ListInvites(database))
 	})
 
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.AgentAuth(agentToken))
-		r.Post("/api/ingest", handlers.Ingest(database))
+		r.Post("/api/agent/push", handlers.AgentPush(database))
 	})
 
 	spaHandler := static.Handler(staticFiles)

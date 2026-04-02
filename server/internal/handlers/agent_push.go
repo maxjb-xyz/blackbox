@@ -8,7 +8,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func Ingest(database *gorm.DB) http.HandlerFunc {
+func AgentPush(database *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var entry types.Entry
 		if err := json.NewDecoder(r.Body).Decode(&entry); err != nil {

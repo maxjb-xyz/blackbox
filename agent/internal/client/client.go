@@ -29,7 +29,7 @@ func (c *Client) Send(entry types.Entry) error {
 		return fmt.Errorf("marshal entry: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, c.serverURL+"/api/ingest", bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, c.serverURL+"/api/agent/push", bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
 	}

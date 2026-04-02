@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestIngest_SavesEntry(t *testing.T) {
+func TestAgentPush_SavesEntry(t *testing.T) {
 	database := newTestDB(t)
 
 	entry := types.Entry{
@@ -27,11 +27,11 @@ func TestIngest_SavesEntry(t *testing.T) {
 		Content:   "Container nginx started",
 	}
 	body, _ := json.Marshal(entry)
-	req := httptest.NewRequest(http.MethodPost, "/api/ingest", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/agent/push", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	handlers.Ingest(database)(w, req)
+	handlers.AgentPush(database)(w, req)
 
 	assert.Equal(t, http.StatusCreated, w.Code)
 
@@ -41,16 +41,16 @@ func TestIngest_SavesEntry(t *testing.T) {
 	assert.Equal(t, "docker", saved.Source)
 }
 
-func TestIngest_RejectsMissingID(t *testing.T) {
+func TestAgentPush_RejectsMissingID(t *testing.T) {
 	database := newTestDB(t)
 
 	entry := types.Entry{NodeName: "node1", Source: "docker"}
 	body, _ := json.Marshal(entry)
-	req := httptest.NewRequest(http.MethodPost, "/api/ingest", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/agent/push", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	handlers.Ingest(database)(w, req)
+	handlers.AgentPush(database)(w, req)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
