@@ -74,6 +74,49 @@ func TestRegister_ExpiredInvite(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
+func TestRegister_ConcurrentClaimOnlyOneSucceeds(t *testing.T) {
+	database := newTestDB(t)
+	database.Create(&models.InviteCode{
+		ID:        "01INVITEID000004",
+		Code:      "raceinvitecode0123456789012345678901234567890123456789012345678",
+		CreatedBy: "01ADMINUSER000000",
+		ExpiresAt: time.Now().Add(72 * time.Hour),
+		CreatedAt: time.Now(),
+	})
+
+	handler := handlers.Register(database, "jwt-test-secret")
+
+	results := make([]int, 2)
+	done := make(chan struct{}, 2)
+	for i, username := range []string{"eve", "frank"} {
+		i, username := i, username
+		go func() {
+			body := `{"username":"` + username + `","password":"Hunter2!secure","invite_code":"raceinvitecode0123456789012345678901234567890123456789012345678"}`
+			req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewBufferString(body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			handler(w, req)
+			results[i] = w.Code
+			done <- struct{}{}
+		}()
+	}
+	<-done
+	<-done
+
+	codes := []int{results[0], results[1]}
+	created := 0
+	for _, c := range codes {
+		if c == http.StatusCreated {
+			created++
+		}
+	}
+	assert.Equal(t, 1, created, "exactly one registration should succeed")
+
+	var invite models.InviteCode
+	require.NoError(t, database.First(&invite, "code = ?", "raceinvitecode0123456789012345678901234567890123456789012345678").Error)
+	assert.NotEmpty(t, invite.UsedBy, "invite must be claimed by exactly one user")
+}
+
 func TestRegister_AlreadyUsedInvite(t *testing.T) {
 	database := newTestDB(t)
 	database.Create(&models.InviteCode{

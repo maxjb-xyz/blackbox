@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
@@ -11,6 +12,8 @@ import (
 	"github.com/oklog/ulid/v2"
 	"gorm.io/gorm"
 )
+
+var errInvalidInvite = errors.New("invalid or expired invite")
 
 func Register(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -24,39 +27,51 @@ func Register(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 			return
 		}
 
-		var invite models.InviteCode
-		if err := database.First(&invite, "code = ?", req.InviteCode).Error; err != nil || invite.UsedBy != "" || invite.ExpiresAt.Before(time.Now()) {
-			events.LogSystem(database, "auth", "invite.rejected", "registration attempt with invalid invite code")
-			writeError(w, http.StatusUnauthorized, "invalid or expired invite code")
-			return
-		}
-
 		hash, err := auth.HashPassword(req.Password)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to hash password")
 			return
 		}
 
-		user := models.User{
-			ID:           ulid.Make().String(),
-			Username:     req.Username,
-			PasswordHash: hash,
-			IsAdmin:      false,
-			CreatedAt:    time.Now(),
-		}
-		if err := database.Create(&user).Error; err != nil {
-			writeError(w, http.StatusConflict, "username already exists")
+		userID := ulid.Make().String()
+		var token string
+
+		txErr := database.Transaction(func(tx *gorm.DB) error {
+			// Atomically claim the invite: conditional UPDATE checks used_by = '' and
+			// expiry in one step. RowsAffected == 0 means already used, not found, or expired.
+			result := tx.Model(&models.InviteCode{}).
+				Where("code = ? AND used_by = '' AND expires_at > ?", req.InviteCode, time.Now()).
+				Update("used_by", userID)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return errInvalidInvite
+			}
+
+			user := models.User{
+				ID:           userID,
+				Username:     req.Username,
+				PasswordHash: hash,
+				IsAdmin:      false,
+				CreatedAt:    time.Now(),
+			}
+			if err := tx.Create(&user).Error; err != nil {
+				return err
+			}
+
+			var issueErr error
+			token, issueErr = auth.IssueJWT(userID, false, jwtSecret, jwtTTL())
+			return issueErr
+		})
+
+		if txErr == errInvalidInvite {
+			events.LogSystem(database, "auth", "invite.rejected", "registration attempt with invalid invite code")
+			writeError(w, http.StatusUnauthorized, "invalid or expired invite code")
 			return
 		}
-
-		if err := database.Model(&invite).Update("used_by", user.ID).Error; err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to redeem invite")
-			return
-		}
-
-		token, err := auth.IssueJWT(user.ID, user.IsAdmin, jwtSecret, jwtTTL())
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to issue token")
+		if txErr != nil {
+			writeError(w, http.StatusConflict, "registration failed")
 			return
 		}
 
