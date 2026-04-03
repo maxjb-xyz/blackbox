@@ -146,7 +146,7 @@ func TestWebhookUptime_UpEvent_AddsOutageDurationAndNormalizesService(t *testing
 
 	body := `{
 		"heartbeat": {"status": 1, "time": "2026-04-02T02:05:30Z", "msg": "OK"},
-		"monitor":   {"name": "traefik-proxy"}
+		"monitor":   {"name": "  traefik-proxy  "}
 	}`
 	req := httptest.NewRequest(http.MethodPost, "/api/webhooks/uptime", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -247,6 +247,7 @@ func TestWebhookUptime_UpEvent_PrefersLatestPriorDownAtOrBeforeRecovery(t *testi
 	database := newTestDB(t)
 
 	validDownAt := time.Date(2026, 4, 2, 2, 0, 0, 0, time.UTC)
+	laterEligibleDownAt := time.Date(2026, 4, 2, 2, 4, 0, 0, time.UTC)
 	skewedFutureDownAt := time.Date(2026, 4, 2, 2, 10, 0, 0, time.UTC)
 	require.NoError(t, database.Create(&types.Entry{
 		ID:        "01DOWNENTRY0000004",
@@ -256,6 +257,16 @@ func TestWebhookUptime_UpEvent_PrefersLatestPriorDownAtOrBeforeRecovery(t *testi
 		Service:   "my-app",
 		Event:     "down",
 		Content:   "Monitor 'my-app' is down: timeout",
+		Metadata:  `{"monitor":"my-app","status":"down"}`,
+	}).Error)
+	require.NoError(t, database.Create(&types.Entry{
+		ID:        "01DOWNENTRY0000007",
+		Timestamp: laterEligibleDownAt,
+		NodeName:  "webhook",
+		Source:    "webhook",
+		Service:   "my-app",
+		Event:     "down",
+		Content:   "Monitor 'my-app' is down: retrying",
 		Metadata:  `{"monitor":"my-app","status":"down"}`,
 	}).Error)
 	require.NoError(t, database.Create(&types.Entry{
@@ -286,8 +297,8 @@ func TestWebhookUptime_UpEvent_PrefersLatestPriorDownAtOrBeforeRecovery(t *testi
 
 	var meta map[string]interface{}
 	require.NoError(t, json.Unmarshal([]byte(entry.Metadata), &meta))
-	assert.Equal(t, float64(330), meta["duration_seconds"])
-	assert.Equal(t, "2026-04-02T02:00:00Z", meta["down_since"])
+	assert.Equal(t, float64(90), meta["duration_seconds"])
+	assert.Equal(t, "2026-04-02T02:04:00Z", meta["down_since"])
 }
 
 func TestWebhookUptime_MissingMonitorName(t *testing.T) {
@@ -350,7 +361,7 @@ func TestWebhookUptime_BadTimestampFallsBackAndSetsFlag(t *testing.T) {
 	}).Error)
 
 	body := `{
-		"heartbeat": {"status": 0, "time": "not-a-timestamp", "msg": "down"},
+		"heartbeat": {"status": 1, "time": "not-a-timestamp", "msg": "down"},
 		"monitor":   {"name": "my-app"}
 	}`
 	req := httptest.NewRequest(http.MethodPost, "/api/webhooks/uptime", bytes.NewBufferString(body))
@@ -368,6 +379,7 @@ func TestWebhookUptime_BadTimestampFallsBackAndSetsFlag(t *testing.T) {
 	require.Len(t, entries, 2)
 
 	e := entries[0]
+	assert.Equal(t, "up", e.Event)
 	assert.True(t, e.Timestamp.After(before) || e.Timestamp.Equal(before))
 	assert.True(t, e.Timestamp.Before(after) || e.Timestamp.Equal(after))
 

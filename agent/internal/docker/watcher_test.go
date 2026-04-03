@@ -190,6 +190,51 @@ func TestRunWatchLoop_PreservesBufferedEventsAcrossReconnect(t *testing.T) {
 	}
 }
 
+func TestRunWatchLoop_EmitsExpiredStopBeforeLateStartWithoutTicker(t *testing.T) {
+	base := time.Date(2026, 4, 2, 12, 0, 0, 0, time.UTC)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	collapser := newEventCollapser("node-1")
+	out := make(chan types.Entry, 4)
+	tickCh := make(chan time.Time)
+	msgCh := make(chan dockerevents.Message, 2)
+	errCh := make(chan error)
+
+	msgCh <- testDockerMessage(base, "container", "stop", "abc123", "traefik", "")
+	msgCh <- testDockerMessage(base.Add(4*time.Second), "container", "start", "abc123", "traefik", "")
+	close(msgCh)
+
+	times := []time.Time{base, base.Add(4 * time.Second), base.Add(4 * time.Second)}
+	index := 0
+	now := func() time.Time {
+		current := times[index]
+		if index < len(times)-1 {
+			index++
+		}
+		return current
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- runWatchLoop(ctx, "node-1", out, msgCh, errCh, tickCh, collapser, now)
+	}()
+
+	first := <-out
+	second := <-out
+
+	if first.Event != "stop" {
+		t.Fatalf("expected expired stop entry first, got %q", first.Event)
+	}
+	if second.Event != "start" {
+		t.Fatalf("expected start entry second, got %q", second.Event)
+	}
+
+	if err := <-done; err == nil || err.Error() != "docker event message channel closed" {
+		t.Fatalf("expected closed message channel error, got %v", err)
+	}
+}
+
 func testDockerMessage(ts time.Time, typ, action, id, name, exitCode string) dockerevents.Message {
 	attrs := map[string]string{}
 	if name != "" {

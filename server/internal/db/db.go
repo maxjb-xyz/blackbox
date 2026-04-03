@@ -3,6 +3,7 @@ package db
 import (
 	"fmt"
 	"log"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -43,6 +44,7 @@ func Init(path string) (*gorm.DB, error) {
 		if err := database.Raw("SELECT TRIM(canonical) AS canonical, TRIM(alias) AS alias FROM service_aliases").Scan(&preservedAliases).Error; err != nil {
 			return nil, err
 		}
+		preservedAliases = normalizePreservedAliases(preservedAliases)
 	}
 	if err := database.AutoMigrate(
 		&models.User{},
@@ -59,12 +61,44 @@ func Init(path string) (*gorm.DB, error) {
 		return nil, err
 	}
 	if len(preservedAliases) > 0 {
-		if err := database.Clauses(clause.OnConflict{DoNothing: true}).Create(&preservedAliases).Error; err != nil {
+		if err := database.Exec("DELETE FROM service_aliases").Error; err != nil {
+			return nil, err
+		}
+		if err := database.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "alias"}},
+			DoUpdates: clause.AssignmentColumns([]string{"canonical"}),
+		}).Create(&preservedAliases).Error; err != nil {
 			return nil, err
 		}
 	}
 	go sweepExpiredOIDCStates(database)
 	return database, nil
+}
+
+func normalizePreservedAliases(aliases []models.ServiceAlias) []models.ServiceAlias {
+	normalized := make([]models.ServiceAlias, 0, len(aliases))
+	indexByAlias := make(map[string]int, len(aliases))
+
+	for _, alias := range aliases {
+		trimmedCanonical := strings.TrimSpace(alias.Canonical)
+		trimmedAlias := strings.TrimSpace(alias.Alias)
+		if trimmedCanonical == "" || trimmedAlias == "" {
+			continue
+		}
+
+		if index, ok := indexByAlias[trimmedAlias]; ok {
+			normalized[index].Canonical = trimmedCanonical
+			continue
+		}
+
+		indexByAlias[trimmedAlias] = len(normalized)
+		normalized = append(normalized, models.ServiceAlias{
+			Canonical: trimmedCanonical,
+			Alias:     trimmedAlias,
+		})
+	}
+
+	return normalized
 }
 
 func sweepExpiredOIDCStates(database *gorm.DB) {

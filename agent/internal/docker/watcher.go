@@ -80,23 +80,27 @@ func runWatchLoop(
 	for {
 		select {
 		case <-ctx.Done():
+			emitEntries(nodeName, out, collapser.FlushExpired(now()))
 			return nil
 		case <-tickCh:
 			emitEntries(nodeName, out, collapser.FlushExpired(now()))
 		case err, ok := <-errCh:
+			emitEntries(nodeName, out, collapser.FlushExpired(now()))
 			if !ok {
 				return fmt.Errorf("docker event error channel closed")
 			}
 			return err
 		case msg, ok := <-msgCh:
+			current := now()
 			if !ok {
+				emitEntries(nodeName, out, collapser.FlushExpired(current))
 				return fmt.Errorf("docker event message channel closed")
 			}
 			action := string(msg.Action)
 			if !watchedActions[action] {
 				continue
 			}
-			emitEntries(nodeName, out, collapser.Handle(now(), msg))
+			emitEntries(nodeName, out, collapser.Handle(current, msg))
 		}
 	}
 }
@@ -174,9 +178,11 @@ func newEventCollapser(nodeName string) *eventCollapser {
 }
 
 func (c *eventCollapser) Handle(now time.Time, msg dockerevents.Message) []types.Entry {
+	entries := c.FlushExpired(now)
+
 	action := string(msg.Action)
 	if msg.Type == "image" || action == "pull" || action == "delete" || action == "create" {
-		return []types.Entry{buildEntry(c.nodeName, msg)}
+		return append(entries, buildEntry(c.nodeName, msg))
 	}
 
 	containerID := msg.Actor.ID
@@ -189,17 +195,17 @@ func (c *eventCollapser) Handle(now time.Time, msg dockerevents.Message) []types
 		}
 		pending.rawEvents = append(pending.rawEvents, msg)
 		pending.deadline = now.Add(debounceWindow)
-		return nil
+		return entries
 	case "start":
 		pending := c.pending[containerID]
 		if pending == nil {
-			return []types.Entry{buildCollapsedContainerEntry(c.nodeName, "start", []dockerevents.Message{msg})}
+			return append(entries, buildCollapsedContainerEntry(c.nodeName, "start", []dockerevents.Message{msg}))
 		}
 		rawEvents := append(append([]dockerevents.Message{}, pending.rawEvents...), msg)
 		delete(c.pending, containerID)
-		return []types.Entry{buildCollapsedContainerEntry(c.nodeName, "restart", rawEvents)}
+		return append(entries, buildCollapsedContainerEntry(c.nodeName, "restart", rawEvents))
 	default:
-		return []types.Entry{buildEntry(c.nodeName, msg)}
+		return append(entries, buildEntry(c.nodeName, msg))
 	}
 }
 

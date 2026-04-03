@@ -83,6 +83,7 @@ func TestInit_MigratesServiceAliases(t *testing.T) {
 		)
 	`).Error)
 	require.NoError(t, legacyDB.Exec(`INSERT INTO service_aliases (canonical, alias) VALUES (?, ?)`, "traefik", "traefik-proxy").Error)
+	require.NoError(t, legacyDB.Exec(`INSERT INTO service_aliases (canonical, alias) VALUES (?, ?)`, "traefik ", " traefik-edge ").Error)
 	require.NoError(t, legacyDB.Exec(`INSERT INTO service_aliases (canonical, alias) VALUES (?, ?)`, "", "blank-canonical").Error)
 	require.NoError(t, legacyDB.Exec(`INSERT INTO service_aliases (canonical, alias) VALUES (?, ?)`, "   ", "whitespace-canonical").Error)
 	require.NoError(t, legacyDB.Exec(`INSERT INTO service_aliases (canonical, alias) VALUES (?, ?)`, "traefik", "").Error)
@@ -97,7 +98,7 @@ func TestInit_MigratesServiceAliases(t *testing.T) {
 	database, err := db.Init(tmp.Name())
 	require.NoError(t, err)
 
-	assert.NoError(t, database.Create(&models.ServiceAlias{Canonical: "traefik", Alias: "traefik-edge"}).Error)
+	assert.NoError(t, database.Create(&models.ServiceAlias{Canonical: "traefik", Alias: "traefik-dashboard"}).Error)
 
 	var proxy models.ServiceAlias
 	require.NoError(t, database.Where("alias = ?", "traefik-proxy").First(&proxy).Error)
@@ -106,6 +107,10 @@ func TestInit_MigratesServiceAliases(t *testing.T) {
 	var edge models.ServiceAlias
 	require.NoError(t, database.Where("alias = ?", "traefik-edge").First(&edge).Error)
 	assert.Equal(t, "traefik", edge.Canonical)
+
+	var paddedCount int64
+	require.NoError(t, database.Model(&models.ServiceAlias{}).Where("alias = ? OR canonical = ?", " traefik-edge ", "traefik ").Count(&paddedCount).Error)
+	assert.Zero(t, paddedCount)
 
 	var invalidCount int64
 	require.NoError(t, database.Model(&models.ServiceAlias{}).Where(
@@ -117,4 +122,5 @@ func TestInit_MigratesServiceAliases(t *testing.T) {
 	assert.Error(t, database.Create(&models.ServiceAlias{Canonical: "   ", Alias: "blank-canonical-whitespace"}).Error)
 	assert.Error(t, database.Create(&models.ServiceAlias{Canonical: "traefik", Alias: ""}).Error)
 	assert.Error(t, database.Create(&models.ServiceAlias{Canonical: "traefik", Alias: "   "}).Error)
+	assert.Error(t, database.Create(&models.ServiceAlias{Canonical: "traefik", Alias: "traefik-edge"}).Error)
 }

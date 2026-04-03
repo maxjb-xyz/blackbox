@@ -99,6 +99,19 @@ func TestServiceAliasHandlers(t *testing.T) {
 			},
 		},
 		{
+			name: "reject whitespace only alias values mirror",
+			run: func(t *testing.T) {
+				database := newTestDB(t)
+
+				req := httptest.NewRequest(http.MethodPost, "/api/services/aliases", bytes.NewBufferString(`{"canonical":"traefik","alias":"   "}`))
+				req.Header.Set("Content-Type", "application/json")
+				rr := httptest.NewRecorder()
+				handlers.CreateServiceAlias(database)(rr, req)
+
+				assert.Equal(t, http.StatusBadRequest, rr.Code)
+			},
+		},
+		{
 			name: "reject duplicate alias",
 			run: func(t *testing.T) {
 				database := newTestDB(t)

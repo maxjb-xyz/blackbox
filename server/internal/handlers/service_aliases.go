@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"blackbox/server/internal/models"
+	"blackbox/server/internal/services"
 	"github.com/go-chi/chi/v5"
 	"gorm.io/gorm"
 )
@@ -46,9 +47,14 @@ func CreateServiceAlias(database *gorm.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "canonical and alias are required")
 			return
 		}
+		normalizedCanonical, err := services.NormalizeService(database, canonical)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to normalize service alias")
+			return
+		}
 
 		record := models.ServiceAlias{
-			Canonical: canonical,
+			Canonical: normalizedCanonical,
 			Alias:     alias,
 		}
 		if err := database.Create(&record).Error; err != nil {
