@@ -1,6 +1,7 @@
 package db
 
 import (
+	"fmt"
 	"log"
 	"time"
 
@@ -12,17 +13,30 @@ import (
 )
 
 func Init(path string) (*gorm.DB, error) {
-	database, err := gorm.Open(sqlite.Open(path), &gorm.Config{
+	dsn := path
+	if path == ":memory:" {
+		dsn = fmt.Sprintf("file:blackbox-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	}
+	database, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
 	if err != nil {
 		return nil, err
+	}
+	if path == ":memory:" {
+		sqlDB, err := database.DB()
+		if err != nil {
+			return nil, err
+		}
+		sqlDB.SetMaxOpenConns(1)
 	}
 	if err := database.AutoMigrate(
 		&models.User{},
 		&models.InviteCode{},
 		&models.OIDCState{},
 		&types.Entry{},
+		&models.Node{},
+		&models.EntryNote{},
 	); err != nil {
 		return nil, err
 	}
