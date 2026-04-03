@@ -6,36 +6,54 @@ interface NodePulseContextValue {
   nodes: Node[]
   onlineCount: number
   totalCount: number
+  loading: boolean
+  error: Error | null
+  lastUpdated: Date | null
 }
 
 const NodePulseContext = createContext<NodePulseContextValue>({
   nodes: [],
   onlineCount: 0,
   totalCount: 0,
+  loading: true,
+  error: null,
+  lastUpdated: null,
 })
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useNodePulse() {
   return useContext(NodePulseContext)
 }
 
 export function NodePulseProvider({ children }: { children: React.ReactNode }) {
   const [nodes, setNodes] = useState<Node[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<Error | null>(null)
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
 
   useEffect(() => {
     let cancelled = false
 
-    function poll() {
-      fetchNodes()
-        .then(data => {
-          if (!cancelled) setNodes(data)
-        })
-        .catch(() => {
-          /* silent fail - sidebar degrades gracefully */
-        })
+    async function poll() {
+      if (!cancelled) setLoading(true)
+      try {
+        const data = await fetchNodes()
+        if (cancelled) return
+        setNodes(data)
+        setError(null)
+        setLastUpdated(new Date())
+      } catch (err) {
+        if (cancelled) return
+        setError(err instanceof Error ? err : new Error('Failed to fetch nodes'))
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
     }
 
-    poll()
-    const interval = setInterval(poll, 30_000)
+    void poll()
+    const interval = setInterval(() => {
+      void poll()
+    }, 30_000)
     return () => {
       cancelled = true
       clearInterval(interval)
@@ -46,7 +64,7 @@ export function NodePulseProvider({ children }: { children: React.ReactNode }) {
   const totalCount = nodes.length
 
   return (
-    <NodePulseContext.Provider value={{ nodes, onlineCount, totalCount }}>
+    <NodePulseContext.Provider value={{ nodes, onlineCount, totalCount, loading, error, lastUpdated }}>
       {children}
     </NodePulseContext.Provider>
   )

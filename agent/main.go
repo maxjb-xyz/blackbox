@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net"
+	"net/url"
 	"os"
 	"os/signal"
 	"runtime"
@@ -40,7 +42,7 @@ func main() {
 			nodeName = "unknown"
 		}
 	}
-	info := collectNodeInfo()
+	info := collectNodeInfo(serverURL)
 	infoJSON, err := json.Marshal(info)
 	if err != nil {
 		log.Printf("WARNING: failed to marshal node info: %v", err)
@@ -118,10 +120,16 @@ type nodeInfo struct {
 	OsInfo       string `json:"os_info"`
 }
 
-func collectNodeInfo() nodeInfo {
+func collectNodeInfo(serverURL string) nodeInfo {
+	ipAddress, err := getServerReachableIP(serverURL)
+	if err != nil {
+		log.Printf("node info: failed to resolve local IP for SERVER_URL %q: %v", serverURL, err)
+		ipAddress = getOutboundIP()
+	}
+
 	return nodeInfo{
 		AgentVersion: Version,
-		IPAddress:    getOutboundIP(),
+		IPAddress:    ipAddress,
 		OsInfo:       getOSInfo(),
 	}
 }
@@ -141,6 +149,60 @@ func getOSInfo() string {
 		}
 	}
 	return runtime.GOOS
+}
+
+func getServerReachableIP(serverURL string) (string, error) {
+	target, err := serverDialTarget(serverURL)
+	if err != nil {
+		return "", err
+	}
+
+	conn, err := net.DialTimeout("udp", target, 5*time.Second)
+	if err != nil {
+		conn, err = net.DialTimeout("tcp", target, 5*time.Second)
+		if err != nil {
+			return "", fmt.Errorf("dial %s: %w", target, err)
+		}
+	}
+	defer conn.Close()
+
+	addr, ok := conn.LocalAddr().(*net.UDPAddr)
+	if ok && addr.IP != nil {
+		return addr.IP.String(), nil
+	}
+
+	host, _, err := net.SplitHostPort(conn.LocalAddr().String())
+	if err != nil {
+		return "", fmt.Errorf("parse local address %q: %w", conn.LocalAddr().String(), err)
+	}
+	return host, nil
+}
+
+func serverDialTarget(serverURL string) (string, error) {
+	parsed, err := url.Parse(serverURL)
+	if err != nil || parsed.Host == "" {
+		parsed, err = url.Parse("http://" + serverURL)
+		if err != nil {
+			return "", fmt.Errorf("parse server url %q: %w", serverURL, err)
+		}
+	}
+
+	host := parsed.Hostname()
+	if host == "" {
+		return "", fmt.Errorf("server url %q is missing a host", serverURL)
+	}
+
+	port := parsed.Port()
+	if port == "" {
+		switch parsed.Scheme {
+		case "https", "wss":
+			port = "443"
+		default:
+			port = "80"
+		}
+	}
+
+	return net.JoinHostPort(host, port), nil
 }
 
 func getOutboundIP() string {

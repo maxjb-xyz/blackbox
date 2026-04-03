@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useNodePulse } from './NodePulse'
+import { getTokenUsername } from '../utils/auth'
 
 const NAV_ITEMS = [
   { label: 'TIMELINE', to: '/timeline' },
@@ -30,23 +32,23 @@ const baseStyle: React.CSSProperties = {
 }
 
 export default function Sidebar() {
-  const { onlineCount, totalCount } = useNodePulse()
+  const { onlineCount, totalCount, loading, error, lastUpdated } = useNodePulse()
   const navigate = useNavigate()
-
-  const username = (() => {
-    try {
-      const token = localStorage.getItem('token')
-      if (!token) return ''
-      const payload = JSON.parse(atob(token.split('.')[1]))
-      return payload.username ?? ''
-    } catch {
-      return ''
-    }
-  })()
+  const [username] = useState(() => getTokenUsername(''))
 
   function nodeBadge() {
-    if (totalCount === 0) return <span style={{ color: 'var(--muted)', marginLeft: 4 }}>[—]</span>
-    const color = onlineCount < totalCount ? '#FF4444' : 'var(--accent)'
+    if (loading && !lastUpdated) {
+      return <span style={{ color: 'var(--muted)', marginLeft: 4 }}>[...]</span>
+    }
+    if (error) {
+      return (
+        <span style={{ color: 'var(--danger)', marginLeft: 4 }} title={error.message}>
+          [!]
+        </span>
+      )
+    }
+    if (totalCount === 0) return <span style={{ color: 'var(--muted)', marginLeft: 4 }}>[0]</span>
+    const color = onlineCount < totalCount ? 'var(--danger)' : 'var(--accent)'
     return <span style={{ color, marginLeft: 4 }}>[{onlineCount}/{totalCount}]</span>
   }
 
@@ -105,16 +107,26 @@ export default function Sidebar() {
       <div style={{ flex: 1 }} />
 
       <div style={{ borderTop: '1px solid var(--border)', padding: '10px 16px' }}>
-        <span
+        <button
+          type="button"
           onClick={() => {
             localStorage.removeItem('token')
             navigate('/login')
           }}
-          style={{ ...baseStyle, padding: 0, cursor: 'pointer', display: 'block' }}
+          style={{
+            ...baseStyle,
+            padding: 0,
+            cursor: 'pointer',
+            display: 'block',
+            background: 'none',
+            border: 'none',
+            textAlign: 'left',
+            width: '100%',
+          }}
           title="Logout"
         >
           {username || 'USER'}
-        </span>
+        </button>
       </div>
     </div>
   )

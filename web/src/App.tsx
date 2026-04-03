@@ -13,14 +13,32 @@ import WebhooksPage from './pages/WebhooksPage'
 
 function AppRoutes() {
   const [bootstrapped, setBootstrapped] = useState<boolean | null>(null)
+  const [checkingSetup, setCheckingSetup] = useState(true)
+  const [setupError, setSetupError] = useState<string | null>(null)
+  const [setupCheckAttempt, setSetupCheckAttempt] = useState(0)
 
   useEffect(() => {
-    checkSetupStatus()
-      .then(status => setBootstrapped(status.bootstrapped))
-      .catch(() => setBootstrapped(false))
-  }, [])
+    let cancelled = false
 
-  if (bootstrapped === null) {
+    checkSetupStatus()
+      .then(status => {
+        if (cancelled) return
+        setBootstrapped(status.bootstrapped)
+      })
+      .catch(err => {
+        if (cancelled) return
+        setSetupError(err instanceof Error ? err.message : 'Failed to check setup status')
+      })
+      .finally(() => {
+        if (!cancelled) setCheckingSetup(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [setupCheckAttempt])
+
+  if (bootstrapped === null && checkingSetup) {
     return (
       <div
         style={{
@@ -37,11 +55,60 @@ function AppRoutes() {
     )
   }
 
+  if (bootstrapped === null && setupError) {
+    return (
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 12,
+          minHeight: '100vh',
+          color: 'var(--muted)',
+          fontSize: '12px',
+        }}
+      >
+        <span>{setupError}</span>
+        <button
+          type="button"
+          onClick={() => {
+            setCheckingSetup(true)
+            setSetupError(null)
+            setSetupCheckAttempt(attempt => attempt + 1)
+          }}
+          style={{
+            background: 'transparent',
+            border: '1px solid var(--border)',
+            color: 'var(--text)',
+            padding: '8px 12px',
+            fontFamily: 'inherit',
+            fontSize: '12px',
+            cursor: 'pointer',
+            letterSpacing: '0.08em',
+          }}
+        >
+          RETRY
+        </button>
+      </div>
+    )
+  }
+
   if (!bootstrapped) {
     return (
       <Routes>
         <Route path="*" element={<Navigate to="/setup" replace />} />
-        <Route path="/setup" element={<SetupPage onBootstrapped={() => setBootstrapped(true)} />} />
+        <Route
+          path="/setup"
+          element={
+            <SetupPage
+              onBootstrapped={() => {
+                setSetupError(null)
+                setBootstrapped(true)
+              }}
+            />
+          }
+        />
       </Routes>
     )
   }
@@ -58,6 +125,7 @@ function AppRoutes() {
         <Route path="account" element={<AccountPage />} />
         <Route path="admin" element={<AdminPage />} />
         <Route path="diagnostics" element={<DiagnosticsPage />} />
+        <Route path="*" element={<Navigate to="/timeline" replace />} />
       </Route>
     </Routes>
   )

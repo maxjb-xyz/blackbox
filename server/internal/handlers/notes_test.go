@@ -68,9 +68,10 @@ func TestListNotes_Success(t *testing.T) {
 	database := newTestDB(t)
 
 	entryID := ulid.Make().String()
+	baseTime := time.Now().UTC().Round(0)
 	require.NoError(t, database.Create(&types.Entry{
 		ID:        entryID,
-		Timestamp: time.Now().UTC(),
+		Timestamp: baseTime,
 		NodeName:  "h",
 		Source:    "docker",
 		Event:     "die",
@@ -82,16 +83,15 @@ func TestListNotes_Success(t *testing.T) {
 		UserID:    "u1",
 		Username:  "alice",
 		Content:   "note 1",
-		CreatedAt: time.Now().UTC(),
+		CreatedAt: baseTime,
 	}).Error)
-	time.Sleep(time.Millisecond)
 	require.NoError(t, database.Create(&models.EntryNote{
 		ID:        ulid.Make().String(),
 		EntryID:   entryID,
 		UserID:    "u2",
 		Username:  "bob",
 		Content:   "note 2",
-		CreatedAt: time.Now().UTC(),
+		CreatedAt: baseTime.Add(time.Millisecond),
 	}).Error)
 
 	router := chi.NewRouter()
@@ -106,6 +106,63 @@ func TestListNotes_Success(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &notes))
 	require.Len(t, notes, 2)
 	assert.Equal(t, "note 1", notes[0].Content)
+}
+
+func TestCreateNote_WhitespaceContentRejected(t *testing.T) {
+	database := newTestDB(t)
+
+	userID := ulid.Make().String()
+	entryID := ulid.Make().String()
+	require.NoError(t, database.Create(&models.User{
+		ID:       userID,
+		Username: "alice",
+	}).Error)
+	require.NoError(t, database.Create(&types.Entry{
+		ID:        entryID,
+		Timestamp: time.Now().UTC(),
+		NodeName:  "homelab-01",
+		Source:    "docker",
+		Event:     "die",
+		Content:   "container nginx died",
+	}).Error)
+
+	router := chi.NewRouter()
+	router.Post("/api/entries/{id}/notes", handlers.CreateNote(database))
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		fmt.Sprintf("/api/entries/%s/notes", entryID),
+		bytes.NewBufferString(`{"content":"   "}`),
+	)
+	req = req.WithContext(ctxWithClaims(userID))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+func TestCreateNote_EntryNotFound(t *testing.T) {
+	database := newTestDB(t)
+
+	userID := ulid.Make().String()
+	require.NoError(t, database.Create(&models.User{
+		ID:       userID,
+		Username: "alice",
+	}).Error)
+
+	router := chi.NewRouter()
+	router.Post("/api/entries/{id}/notes", handlers.CreateNote(database))
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		fmt.Sprintf("/api/entries/%s/notes", ulid.Make().String()),
+		bytes.NewBufferString(`{"content":"hello"}`),
+	)
+	req = req.WithContext(ctxWithClaims(userID))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusNotFound, rr.Code)
 }
 
 func TestDeleteNote_OwnNote(t *testing.T) {

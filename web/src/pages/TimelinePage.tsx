@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { createNote, fetchEntries, fetchEntry, fetchNotes } from '../api/client'
@@ -43,139 +43,14 @@ export default function TimelinePage() {
   const sourceFilter = searchParams.get('source') ?? ''
   const qFilter = searchParams.get('q') ?? ''
 
-  const [entries, setEntries] = useState<Entry[]>([])
-  const [nextCursor, setNextCursor] = useState<string | undefined>()
-  const [loading, setLoading] = useState(false)
-  const [done, setDone] = useState(false)
-  const [renderedIds, setRenderedIds] = useState<Set<string>>(new Set())
-
-  const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [ghostEntry, setGhostEntry] = useState<Entry | null>(null)
-  const [tooltip, setTooltip] = useState<TooltipState | null>(null)
-
-  const sentinelRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    setEntries([])
-    setNextCursor(undefined)
-    setDone(false)
-    setRenderedIds(new Set())
-    setExpandedId(null)
-    setGhostEntry(null)
-  }, [nodeFilter, sourceFilter, qFilter])
-
-  const loadMore = useCallback(async () => {
-    if (loading || done) return
-    setLoading(true)
-    try {
-      const page = await fetchEntries({
-        cursor: nextCursor,
-        limit: 50,
-        node: nodeFilter || undefined,
-        source: sourceFilter || undefined,
-        q: qFilter || undefined,
-      })
-      setEntries(prev => {
-        const nextIds = new Set(renderedIds)
-        const newEntries = page.entries.filter(entry => !nextIds.has(entry.id))
-        newEntries.forEach(entry => nextIds.add(entry.id))
-        setRenderedIds(nextIds)
-        return [...prev, ...newEntries]
-      })
-      if (!page.next_cursor) {
-        setDone(true)
-      } else {
-        setNextCursor(page.next_cursor)
-      }
-    } catch (err) {
-      console.error('loadMore:', err)
-    } finally {
-      setLoading(false)
-    }
-  }, [done, loading, nextCursor, nodeFilter, qFilter, renderedIds, sourceFilter])
-
-  useEffect(() => {
-    const sentinel = sentinelRef.current
-    if (!sentinel) return
-
-    const observer = new IntersectionObserver(
-      observerEntries => {
-        if (observerEntries[0]?.isIntersecting) loadMore()
-      },
-      { rootMargin: '200px' },
-    )
-
-    observer.observe(sentinel)
-    return () => observer.disconnect()
-  }, [loadMore])
-
-  useEffect(() => {
-    void loadMore()
-  }, [loadMore, nodeFilter, qFilter, sourceFilter])
-
-  function handleRowClick(entry: Entry) {
-    if (expandedId === entry.id) {
-      setExpandedId(null)
-      setGhostEntry(null)
-      return
-    }
-
-    setExpandedId(entry.id)
-    setGhostEntry(null)
-
-    if (entry.correlated_id) {
-      const alreadyInDom = entries.find(item => item.id === entry.correlated_id)
-      if (!alreadyInDom) {
-        fetchEntry(entry.correlated_id)
-          .then(ghost => {
-            if (!renderedIds.has(ghost.id)) {
-              setGhostEntry(ghost)
-              setRenderedIds(prev => new Set([...prev, ghost.id]))
-            }
-          })
-          .catch(() => {})
-      }
-    }
-  }
-
-  function handleOverlayClick() {
-    if (expandedId) {
-      if (ghostEntry) {
-        setRenderedIds(prev => {
-          const next = new Set(prev)
-          next.delete(ghostEntry.id)
-          return next
-        })
-      }
-      setExpandedId(null)
-      setGhostEntry(null)
-    }
-  }
-
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') handleOverlayClick()
-    }
-
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  })
-
   function setFilter(key: string, value: string) {
-    const next = new URLSearchParams(searchParams)
-    if (value) next.set(key, value)
-    else next.delete(key)
-    setSearchParams(next)
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      if (value) next.set(key, value)
+      else next.delete(key)
+      return next
+    })
   }
-
-  const displayEntries = (() => {
-    if (!expandedId || !ghostEntry) return entries
-    const expandedIndex = entries.findIndex(entry => entry.id === expandedId)
-    if (expandedIndex === -1) return entries
-    const result = [...entries]
-    result.splice(expandedIndex, 0, ghostEntry)
-    return result
-  })()
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -250,9 +125,13 @@ export default function TimelinePage() {
         {(nodeFilter || sourceFilter || qFilter) && (
           <span
             onClick={() => {
-              setFilter('node', '')
-              setFilter('source', '')
-              setFilter('q', '')
+              setSearchParams(prev => {
+                const next = new URLSearchParams(prev)
+                next.delete('node')
+                next.delete('source')
+                next.delete('q')
+                return next
+              })
             }}
             style={{ color: 'var(--muted)', fontSize: '11px', cursor: 'pointer', letterSpacing: '0.05em' }}
           >
@@ -261,6 +140,169 @@ export default function TimelinePage() {
         )}
       </div>
 
+      <TimelineFeed key={`${nodeFilter}:${sourceFilter}:${qFilter}`} nodeFilter={nodeFilter} sourceFilter={sourceFilter} qFilter={qFilter} />
+    </div>
+  )
+}
+
+interface TimelineFeedProps {
+  nodeFilter: string
+  sourceFilter: string
+  qFilter: string
+}
+
+function TimelineFeed({ nodeFilter, sourceFilter, qFilter }: TimelineFeedProps) {
+  const [entries, setEntries] = useState<Entry[]>([])
+  const [nextCursor, setNextCursor] = useState<string | undefined>()
+  const [loading, setLoading] = useState(true)
+  const [done, setDone] = useState(false)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [ghostEntry, setGhostEntry] = useState<Entry | null>(null)
+  const [tooltip, setTooltip] = useState<TooltipState | null>(null)
+  const [sentinelVisible, setSentinelVisible] = useState(false)
+
+  const sentinelRef = useRef<HTMLDivElement>(null)
+  const renderedIdsRef = useRef<Set<string>>(new Set())
+  const expandedIdRef = useRef<string | null>(null)
+  const mountedRef = useRef(true)
+
+  const loadPage = useEffectEvent(async (cursor?: string) => {
+    setLoading(true)
+    try {
+      const page = await fetchEntries({
+        cursor,
+        limit: 50,
+        node: nodeFilter || undefined,
+        source: sourceFilter || undefined,
+        q: qFilter || undefined,
+      })
+      if (!mountedRef.current) return
+
+      if (!cursor) {
+        const nextIds = new Set<string>()
+        const uniqueEntries = page.entries.filter(entry => {
+          if (nextIds.has(entry.id)) return false
+          nextIds.add(entry.id)
+          return true
+        })
+        renderedIdsRef.current = nextIds
+        setEntries(uniqueEntries)
+      } else {
+        setEntries(prev => {
+          const nextEntries = [...prev]
+          for (const entry of page.entries) {
+            if (renderedIdsRef.current.has(entry.id)) continue
+            renderedIdsRef.current.add(entry.id)
+            nextEntries.push(entry)
+          }
+          return nextEntries
+        })
+      }
+
+      setNextCursor(page.next_cursor)
+      setDone(!page.next_cursor)
+    } catch (err) {
+      if (mountedRef.current) {
+        console.error(cursor ? 'loadMore:' : 'loadEntries:', err)
+      }
+    } finally {
+      if (mountedRef.current) {
+        setLoading(false)
+      }
+    }
+  })
+
+  useEffect(() => {
+    mountedRef.current = true
+    void loadPage()
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current
+    if (!sentinel) return
+
+    const observer = new IntersectionObserver(
+      observerEntries => {
+        setSentinelVisible(Boolean(observerEntries[0]?.isIntersecting))
+      },
+      { rootMargin: '200px' },
+    )
+
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => {
+    if (loading || done || !nextCursor || !sentinelVisible) return
+    void loadPage(nextCursor)
+  }, [done, loading, nextCursor, nodeFilter, qFilter, sentinelVisible, sourceFilter])
+
+  function handleRowClick(entry: Entry) {
+    if (expandedId === entry.id) {
+      if (ghostEntry) {
+        renderedIdsRef.current.delete(ghostEntry.id)
+      }
+      expandedIdRef.current = null
+      setExpandedId(null)
+      setGhostEntry(null)
+      return
+    }
+
+    const requestedEntryId = entry.id
+    if (ghostEntry) {
+      renderedIdsRef.current.delete(ghostEntry.id)
+    }
+    expandedIdRef.current = requestedEntryId
+    setExpandedId(requestedEntryId)
+    setGhostEntry(null)
+
+    if (entry.correlated_id) {
+      const alreadyInDom = entries.find(item => item.id === entry.correlated_id)
+      if (!alreadyInDom) {
+        fetchEntry(entry.correlated_id)
+          .then(ghost => {
+            if (expandedIdRef.current !== requestedEntryId || renderedIdsRef.current.has(ghost.id)) return
+            renderedIdsRef.current.add(ghost.id)
+            setGhostEntry(ghost)
+          })
+          .catch(() => {})
+      }
+    }
+  }
+
+  function handleOverlayClick() {
+    if (!expandedId) return
+    if (ghostEntry) {
+      renderedIdsRef.current.delete(ghostEntry.id)
+    }
+    expandedIdRef.current = null
+    setExpandedId(null)
+    setGhostEntry(null)
+  }
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') handleOverlayClick()
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  })
+
+  const displayEntries = (() => {
+    if (!expandedId || !ghostEntry) return entries
+    const expandedIndex = entries.findIndex(entry => entry.id === expandedId)
+    if (expandedIndex === -1) return entries
+    const result = [...entries]
+    result.splice(expandedIndex, 0, ghostEntry)
+    return result
+  })()
+
+  return (
+    <>
       <div
         style={{
           display: 'grid',
@@ -328,7 +370,7 @@ export default function TimelinePage() {
           {tooltip.text}
         </div>
       )}
-    </div>
+    </>
   )
 }
 
@@ -391,7 +433,6 @@ function TimelineRow({
     gridTemplateColumns: '20px 130px 100px 70px 100px 70px 1fr',
     gap: '0 8px',
     padding: '4px 16px',
-    borderBottom: '1px solid var(--border)',
     cursor: 'pointer',
     background: isExpanded ? 'var(--surface)' : 'transparent',
     fontSize: '12px',

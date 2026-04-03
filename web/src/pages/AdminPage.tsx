@@ -19,6 +19,22 @@ function normalizeInvite(invite: Record<string, unknown>): InviteCode {
   }
 }
 
+async function readErrorMessage(res: Response, fallback: string) {
+  const text = await res.text().catch(() => '')
+  if (!text) return fallback
+
+  try {
+    const parsed = JSON.parse(text) as { error?: string }
+    if (typeof parsed.error === 'string' && parsed.error) {
+      return parsed.error
+    }
+  } catch {
+    /* fall back to the raw response text */
+  }
+
+  return text
+}
+
 export default function AdminPage() {
   const [invites, setInvites] = useState<InviteCode[]>([])
   const [loading, setLoading] = useState(false)
@@ -27,12 +43,17 @@ export default function AdminPage() {
 
   async function loadInvites() {
     setLoading(true)
+    setError(null)
     try {
       const res = await fetch('/api/auth/invite', { headers: authHeaders() })
-      if (res.ok) {
-        const data = (await res.json()) as Record<string, unknown>[]
-        setInvites(data.map(normalizeInvite))
+      if (!res.ok) {
+        setError(await readErrorMessage(res, 'Failed to load invites'))
+        return
       }
+      const data = (await res.json()) as Record<string, unknown>[]
+      setInvites(data.map(normalizeInvite))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load invites')
     } finally {
       setLoading(false)
     }
@@ -43,8 +64,13 @@ export default function AdminPage() {
     setError(null)
     try {
       const res = await fetch('/api/auth/invite', { method: 'POST', headers: authHeaders() })
-      if (res.ok) await loadInvites()
-      else setError('Failed to create invite')
+      if (!res.ok) {
+        setError(await readErrorMessage(res, 'Failed to create invite'))
+        return
+      }
+      await loadInvites()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create invite')
     } finally {
       setCreating(false)
     }
@@ -79,7 +105,7 @@ export default function AdminPage() {
           {creating ? 'CREATING...' : 'CREATE INVITE'}
         </button>
 
-        {error && <div style={{ color: '#FF4444', fontSize: '12px', marginBottom: 12 }}>{error}</div>}
+        {error && <div style={{ color: 'var(--danger)', fontSize: '12px', marginBottom: 12 }}>{error}</div>}
 
         {loading ? (
           <div style={{ color: 'var(--muted)', fontSize: '12px' }}>loading...</div>

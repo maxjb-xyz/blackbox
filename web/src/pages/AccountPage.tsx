@@ -1,18 +1,9 @@
 import { useNavigate } from 'react-router-dom'
+import { getTokenUsername } from '../utils/auth'
 
 export default function AccountPage() {
   const navigate = useNavigate()
-
-  const username = (() => {
-    try {
-      const token = localStorage.getItem('token')
-      if (!token) return '—'
-      const payload = JSON.parse(atob(token.split('.')[1]))
-      return payload.username ?? '—'
-    } catch {
-      return '—'
-    }
-  })()
+  const username = getTokenUsername('')
 
   function handleLogout() {
     localStorage.removeItem('token')
@@ -26,14 +17,14 @@ export default function AccountPage() {
       </div>
       <div style={{ padding: 16 }}>
         <div style={{ marginBottom: 16, fontSize: '12px', color: 'var(--muted)' }}>
-          LOGGED IN AS <span style={{ color: 'var(--text)' }}>{username}</span>
+          LOGGED IN AS <span style={{ color: 'var(--text)' }}>{username || '—'}</span>
         </div>
         <button
           onClick={handleLogout}
           style={{
             background: 'transparent',
             border: '1px solid var(--border)',
-            color: '#FF4444',
+            color: 'var(--danger)',
             padding: '8px 16px',
             fontFamily: 'inherit',
             fontSize: '12px',

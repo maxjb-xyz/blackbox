@@ -5,18 +5,33 @@ import type { HealthStatus } from '../api/client'
 
 export default function DiagnosticsPage() {
   const [health, setHealth] = useState<HealthStatus | null>(null)
+  const [healthError, setHealthError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   function reload() {
     setLoading(true)
+    setHealthError(null)
     checkHealth()
-      .then(setHealth)
-      .catch(() => setHealth({ database: 'error', oidc: 'disabled', oidc_enabled: false }))
+      .then(status => {
+        setHealth(status)
+        setHealthError(null)
+      })
+      .catch(err => {
+        setHealthError(err instanceof Error ? err.message : 'Failed to check health')
+      })
       .finally(() => setLoading(false))
   }
 
   useEffect(() => {
-    reload()
+    checkHealth()
+      .then(status => {
+        setHealth(status)
+        setHealthError(null)
+      })
+      .catch(err => {
+        setHealthError(err instanceof Error ? err.message : 'Failed to check health')
+      })
+      .finally(() => setLoading(false))
   }, [])
 
   function statusColor(status: string) {
@@ -57,6 +72,11 @@ export default function DiagnosticsPage() {
         </button>
       </div>
       <div style={{ padding: 16 }}>
+        {healthError && (
+          <div style={{ color: 'var(--danger)', fontSize: '12px', marginBottom: 12 }}>
+            {healthError}
+          </div>
+        )}
         {loading ? (
           <div style={{ color: 'var(--muted)', fontSize: '12px' }}>checking...</div>
         ) : health ? (
@@ -75,7 +95,9 @@ export default function DiagnosticsPage() {
               )
             })}
           </div>
-        ) : null}
+        ) : (
+          <div style={{ color: 'var(--muted)', fontSize: '12px' }}>health data unavailable</div>
+        )}
       </div>
     </div>
   )

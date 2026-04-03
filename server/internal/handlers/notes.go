@@ -5,10 +5,12 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"blackbox/server/internal/auth"
 	"blackbox/server/internal/models"
+	"blackbox/shared/types"
 	"github.com/go-chi/chi/v5"
 	"github.com/oklog/ulid/v2"
 	"gorm.io/gorm"
@@ -29,11 +31,25 @@ func CreateNote(database *gorm.DB) http.HandlerFunc {
 		}
 
 		entryID := chi.URLParam(r, "id")
+		var entry types.Entry
+		if err := database.First(&entry, "id = ?", entryID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				writeError(w, http.StatusNotFound, "entry not found")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "failed to fetch entry")
+			return
+		}
 
 		var body struct {
 			Content string `json:"content"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Content == "" {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+		content := strings.TrimSpace(body.Content)
+		if content == "" {
 			writeError(w, http.StatusBadRequest, "content is required")
 			return
 		}
@@ -43,7 +59,7 @@ func CreateNote(database *gorm.DB) http.HandlerFunc {
 			EntryID:   entryID,
 			UserID:    claims.UserID,
 			Username:  user.Username,
-			Content:   body.Content,
+			Content:   content,
 			CreatedAt: time.Now().UTC(),
 		}
 		if err := database.Create(&note).Error; err != nil {

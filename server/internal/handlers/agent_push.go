@@ -38,7 +38,10 @@ func upsertNode(database *gorm.DB, entry types.Entry) {
 		return
 	}
 
+	now := time.Now().UTC()
 	isHeartbeat := entry.Source == "agent" && entry.Event == "heartbeat"
+	isStart := entry.Event == "start"
+	isMetaEvent := isHeartbeat || isStart
 
 	var node models.Node
 	result := database.Where("name = ?", entry.NodeName).First(&node)
@@ -47,9 +50,9 @@ func upsertNode(database *gorm.DB, entry types.Entry) {
 		newNode := models.Node{
 			ID:       ulid.Make().String(),
 			Name:     entry.NodeName,
-			LastSeen: entry.Timestamp,
+			LastSeen: now,
 		}
-		if isHeartbeat {
+		if isMetaEvent {
 			applyHeartbeatMeta(&newNode, entry.Metadata)
 		}
 		if err := database.Create(&newNode).Error; err != nil {
@@ -63,30 +66,23 @@ func upsertNode(database *gorm.DB, entry types.Entry) {
 		return
 	}
 
-	if !isHeartbeat && entry.Timestamp.Sub(node.LastSeen) < 30*time.Second {
+	if !isMetaEvent && now.Sub(node.LastSeen) < 30*time.Second {
 		return
 	}
 
-	updates := map[string]interface{}{"last_seen": entry.Timestamp}
+	updates := map[string]interface{}{"last_seen": now}
 
-	if isHeartbeat {
-		var meta struct {
-			AgentVersion string `json:"agent_version"`
-			IPAddress    string `json:"ip_address"`
-			OsInfo       string `json:"os_info"`
+	if isMetaEvent {
+		updatedNode := node
+		applyHeartbeatMeta(&updatedNode, entry.Metadata)
+		if updatedNode.AgentVersion != "" {
+			updates["agent_version"] = updatedNode.AgentVersion
 		}
-		if err := json.Unmarshal([]byte(entry.Metadata), &meta); err == nil {
-			if meta.AgentVersion != "" {
-				updates["agent_version"] = meta.AgentVersion
-			}
-			if meta.IPAddress != "" {
-				updates["ip_address"] = meta.IPAddress
-			}
-			if meta.OsInfo != "" {
-				updates["os_info"] = meta.OsInfo
-			}
-		} else {
-			log.Printf("upsertNode heartbeat metadata parse error (node=%s): %v", entry.NodeName, err)
+		if updatedNode.IPAddress != "" {
+			updates["ip_address"] = updatedNode.IPAddress
+		}
+		if updatedNode.OsInfo != "" {
+			updates["os_info"] = updatedNode.OsInfo
 		}
 	}
 

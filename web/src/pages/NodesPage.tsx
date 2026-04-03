@@ -5,7 +5,7 @@ function formatTimestamp(ts: string) {
 }
 
 export default function NodesPage() {
-  const { nodes } = useNodePulse()
+  const { nodes, loading, error, lastUpdated } = useNodePulse()
 
   return (
     <div style={{ padding: 0 }}>
@@ -15,65 +15,56 @@ export default function NodesPage() {
         </span>
       </div>
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '24px 120px 160px 180px 120px 120px',
-          gap: '0 12px',
-          padding: '4px 16px',
-          borderBottom: '1px solid var(--border)',
-          background: 'var(--surface)',
-          color: 'var(--muted)',
-          fontSize: '10px',
-          letterSpacing: '0.1em',
-        }}
-      >
-        <span />
-        <span>NAME</span>
-        <span>LAST SEEN</span>
-        <span>OS</span>
-        <span>VERSION</span>
-        <span>IP</span>
-      </div>
+      {(loading || error || lastUpdated) && (
+        <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--border)', fontSize: '11px', color: 'var(--muted)' }}>
+          {loading && !lastUpdated && 'checking agent registry...'}
+          {!loading && error && !lastUpdated && 'failed to load agent registry'}
+          {error && lastUpdated && `showing cached node data from ${formatTimestamp(lastUpdated.toISOString())}`}
+          {!error && lastUpdated && `last updated ${formatTimestamp(lastUpdated.toISOString())}`}
+        </div>
+      )}
 
       {nodes.length === 0 ? (
         <div style={{ padding: '32px 16px', color: 'var(--muted)', fontSize: '12px', textAlign: 'center' }}>
-          no agents registered
+          {error && !lastUpdated ? 'failed to load agent registry' : loading ? 'checking agent registry...' : 'no agents registered'}
         </div>
       ) : (
-        nodes.map(node => (
-          <div
-            key={node.id}
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '24px 120px 160px 180px 120px 120px',
-              gap: '0 12px',
-              padding: '6px 16px',
-              borderBottom: '1px solid var(--border)',
-              fontSize: '12px',
-              alignItems: 'center',
-            }}
-          >
-            <span
-              style={{
-                color: node.status === 'online' ? 'var(--accent)' : '#FF4444',
-                fontSize: '14px',
-                lineHeight: 1,
-              }}
-            >
-              ●
-            </span>
-            <span style={{ color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {node.name}
-            </span>
-            <span style={{ color: 'var(--muted)' }}>{formatTimestamp(node.last_seen)}</span>
-            <span style={{ color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {node.os_info || '—'}
-            </span>
-            <span style={{ color: 'var(--muted)' }}>{node.agent_version || '—'}</span>
-            <span style={{ color: 'var(--muted)' }}>{node.ip_address || '—'}</span>
-          </div>
-        ))
+        <table className="nodes-table">
+          <thead>
+            <tr>
+              <th scope="col" />
+              <th scope="col">NAME</th>
+              <th scope="col">LAST SEEN</th>
+              <th scope="col">OS</th>
+              <th scope="col">VERSION</th>
+              <th scope="col">IP</th>
+            </tr>
+          </thead>
+          <tbody>
+            {nodes.map(node => (
+              <tr key={node.id}>
+                <td>
+                  <span
+                    className="nodes-status-dot"
+                    style={{ color: node.status === 'online' ? 'var(--accent)' : 'var(--danger)' }}
+                    aria-hidden="true"
+                  >
+                    ●
+                  </span>
+                </td>
+                <td className="nodes-cell-truncate" style={{ color: 'var(--text)' }}>
+                  {node.name}
+                </td>
+                <td style={{ color: 'var(--muted)' }}>{formatTimestamp(node.last_seen)}</td>
+                <td className="nodes-cell-truncate" style={{ color: 'var(--text)' }}>
+                  {node.os_info || '—'}
+                </td>
+                <td style={{ color: 'var(--muted)' }}>{node.agent_version || '—'}</td>
+                <td style={{ color: 'var(--muted)' }}>{node.ip_address || '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
     </div>
   )

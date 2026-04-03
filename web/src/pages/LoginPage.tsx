@@ -43,7 +43,6 @@ export default function LoginPage() {
     padding: '8px 10px',
     fontFamily: 'inherit',
     fontSize: '13px',
-    outline: 'none',
   }
 
   return (
@@ -67,6 +66,7 @@ export default function LoginPage() {
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: 12 }}>
             <label
+              htmlFor="username"
               style={{
                 display: 'block',
                 color: 'var(--muted)',
@@ -78,6 +78,8 @@ export default function LoginPage() {
               USERNAME
             </label>
             <input
+              id="username"
+              className="login-input"
               type="text"
               value={username}
               onChange={e => setUsername(e.target.value)}
@@ -89,6 +91,7 @@ export default function LoginPage() {
 
           <div style={{ marginBottom: 20 }}>
             <label
+              htmlFor="password"
               style={{
                 display: 'block',
                 color: 'var(--muted)',
@@ -100,6 +103,8 @@ export default function LoginPage() {
               PASSWORD
             </label>
             <input
+              id="password"
+              className="login-input"
               type="password"
               value={password}
               onChange={e => setPassword(e.target.value)}
@@ -114,7 +119,7 @@ export default function LoginPage() {
                 display: 'flex',
                 alignItems: 'center',
                 gap: 6,
-                color: '#FF4444',
+                color: 'var(--danger)',
                 fontSize: '12px',
                 marginBottom: 12,
               }}
