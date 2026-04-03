@@ -159,6 +159,21 @@ func TestServiceAliasHandlers(t *testing.T) {
 				assert.Zero(t, count)
 			},
 		},
+		{
+			name: "delete non-existent alias returns 404",
+			run: func(t *testing.T) {
+				database := newTestDB(t)
+
+				router := chi.NewRouter()
+				router.Delete("/api/services/aliases/{alias}", handlers.DeleteServiceAlias(database))
+
+				req := httptest.NewRequest(http.MethodDelete, "/api/services/aliases/does-not-exist", nil)
+				rr := httptest.NewRecorder()
+				router.ServeHTTP(rr, req)
+
+				assert.Equal(t, http.StatusNotFound, rr.Code)
+			},
+		},
 	}
 
 	for _, tt := range tests {
