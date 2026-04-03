@@ -10,24 +10,27 @@ import (
 )
 
 func TestIssueAndVerifyJWT_RoundTrip(t *testing.T) {
-	token, err := auth.IssueJWT("user-123", true, "test-secret", time.Hour)
+	token, err := auth.IssueJWT("user-123", "alice", true, "test-secret", time.Hour)
 	require.NoError(t, err)
 	assert.NotEmpty(t, token)
 
 	claims, err := auth.VerifyJWT(token, "test-secret")
 	require.NoError(t, err)
 	assert.Equal(t, "user-123", claims.UserID)
+	assert.Equal(t, "alice", claims.Username)
 	assert.True(t, claims.IsAdmin)
 }
 
 func TestVerifyJWT_WrongSecret(t *testing.T) {
-	token, _ := auth.IssueJWT("user-123", false, "secret-a", time.Hour)
-	_, err := auth.VerifyJWT(token, "secret-b")
+	token, err := auth.IssueJWT("user-123", "alice", false, "secret-a", time.Hour)
+	require.NoError(t, err)
+	_, err = auth.VerifyJWT(token, "secret-b")
 	assert.Error(t, err)
 }
 
 func TestVerifyJWT_Expired(t *testing.T) {
-	token, _ := auth.IssueJWT("user-123", false, "secret", -time.Second)
-	_, err := auth.VerifyJWT(token, "secret")
+	token, err := auth.IssueJWT("user-123", "alice", false, "secret", -time.Second)
+	require.NoError(t, err)
+	_, err = auth.VerifyJWT(token, "secret")
 	assert.Error(t, err)
 }

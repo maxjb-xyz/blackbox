@@ -7,6 +7,7 @@
   --text: #E0E0E0;
   --muted: #666666;
   --accent: #00FF88;
+  --danger: #FF4444;
 }
 
 * {
@@ -20,4 +21,111 @@ body {
   font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
   font-size: 13px;
   margin: 0;
+}
+
+/* Timeline row transitions */
+.timeline-row {
+  transition: opacity 0.2s ease, filter 0.2s ease;
+  border-bottom: 1px solid var(--border);
+}
+
+.timeline-row.dimmed {
+  opacity: 0.2;
+  filter: blur(2px);
+  pointer-events: none;
+}
+
+/* Tooltip portal */
+.tooltip-portal {
+  position: fixed;
+  z-index: 9999;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 11px;
+  padding: 4px 8px;
+  pointer-events: none;
+  max-width: 400px;
+  white-space: pre-wrap;
+}
+
+/* Ghost card */
+.timeline-row.ghost-card {
+  border: 1px dashed var(--accent);
+  opacity: 0.85;
+}
+
+.login-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.nodes-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.nodes-table thead {
+  background: var(--surface);
+}
+
+.nodes-table th {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  text-align: left;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.nodes-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.nodes-table th:first-child,
+.nodes-table td:first-child {
+  width: 24px;
+  padding-left: 16px;
+}
+
+.nodes-table th:nth-child(2),
+.nodes-table td:nth-child(2) {
+  width: 120px;
+}
+
+.nodes-table th:nth-child(3),
+.nodes-table td:nth-child(3) {
+  width: 160px;
+}
+
+.nodes-table th:nth-child(4),
+.nodes-table td:nth-child(4) {
+  width: 180px;
+}
+
+.nodes-table th:nth-child(5),
+.nodes-table td:nth-child(5) {
+  width: 120px;
+}
+
+.nodes-table th:last-child,
+.nodes-table td:last-child {
+  width: 120px;
+  padding-right: 16px;
+}
+
+.nodes-status-dot {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.nodes-cell-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

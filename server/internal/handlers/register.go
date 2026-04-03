@@ -61,7 +61,7 @@ func Register(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 			}
 
 			var issueErr error
-			token, issueErr = auth.IssueJWT(userID, false, jwtSecret, jwtTTL())
+			token, issueErr = auth.IssueJWT(userID, user.Username, false, jwtSecret, jwtTTL())
 			return issueErr
 		})
 

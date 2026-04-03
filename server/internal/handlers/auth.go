@@ -62,7 +62,7 @@ func Bootstrap(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 			return
 		}
 
-		token, err := auth.IssueJWT(user.ID, user.IsAdmin, jwtSecret, jwtTTL())
+		token, err := auth.IssueJWT(user.ID, user.Username, user.IsAdmin, jwtSecret, jwtTTL())
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to issue token")
 			return
@@ -100,7 +100,7 @@ func Login(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 			return
 		}
 
-		token, err := auth.IssueJWT(user.ID, user.IsAdmin, jwtSecret, jwtTTL())
+		token, err := auth.IssueJWT(user.ID, user.Username, user.IsAdmin, jwtSecret, jwtTTL())
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to issue token")
 			return
@@ -234,7 +234,7 @@ func OIDCCallback(database *gorm.DB, oidcProvider *auth.OIDCProvider, jwtSecret 
 			}
 		}
 
-		token, err := auth.IssueJWT(user.ID, user.IsAdmin, jwtSecret, jwtTTL())
+		token, err := auth.IssueJWT(user.ID, user.Username, user.IsAdmin, jwtSecret, jwtTTL())
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to issue token")
 			return
