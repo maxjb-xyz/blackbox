@@ -21,3 +21,35 @@ body {
   font-size: 13px;
   margin: 0;
 }
+
+/* Timeline row transitions */
+.timeline-row {
+  transition: opacity 0.2s ease, filter 0.2s ease;
+}
+
+.timeline-row.dimmed {
+  opacity: 0.2;
+  filter: blur(2px);
+  pointer-events: none;
+}
+
+/* Tooltip portal */
+.tooltip-portal {
+  position: fixed;
+  z-index: 9999;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 11px;
+  padding: 4px 8px;
+  pointer-events: none;
+  max-width: 400px;
+  white-space: pre-wrap;
+}
+
+/* Ghost card */
+.ghost-card {
+  border: 1px dashed var(--accent) !important;
+  opacity: 0.85;
+}
