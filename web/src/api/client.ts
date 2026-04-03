@@ -44,6 +44,12 @@ export interface EntryNote {
   created_at: string
 }
 
+export interface EntryNotesPage {
+  notes: EntryNote[]
+  has_more: boolean
+  next_offset?: number
+}
+
 function authHeaders(): Record<string, string> {
   const token = localStorage.getItem('token')
   return token ? { Authorization: `Bearer ${token}` } : {}
@@ -123,7 +129,8 @@ export async function fetchEntry(id: string): Promise<Entry> {
 export async function fetchNotes(entryId: string): Promise<EntryNote[]> {
   const res = await fetch(`/api/entries/${entryId}/notes`, { headers: authHeaders() })
   if (!res.ok) throw new Error('Failed to fetch notes')
-  return res.json()
+  const data = (await res.json()) as EntryNotesPage
+  return data.notes
 }
 
 export async function createNote(entryId: string, content: string): Promise<EntryNote> {

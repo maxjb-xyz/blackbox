@@ -22,13 +22,15 @@ func TestIssueAndVerifyJWT_RoundTrip(t *testing.T) {
 }
 
 func TestVerifyJWT_WrongSecret(t *testing.T) {
-	token, _ := auth.IssueJWT("user-123", "alice", false, "secret-a", time.Hour)
-	_, err := auth.VerifyJWT(token, "secret-b")
+	token, err := auth.IssueJWT("user-123", "alice", false, "secret-a", time.Hour)
+	require.NoError(t, err)
+	_, err = auth.VerifyJWT(token, "secret-b")
 	assert.Error(t, err)
 }
 
 func TestVerifyJWT_Expired(t *testing.T) {
-	token, _ := auth.IssueJWT("user-123", "alice", false, "secret", -time.Second)
-	_, err := auth.VerifyJWT(token, "secret")
+	token, err := auth.IssueJWT("user-123", "alice", false, "secret", -time.Second)
+	require.NoError(t, err)
+	_, err = auth.VerifyJWT(token, "secret")
 	assert.Error(t, err)
 }

@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { Navigate } from 'react-router-dom'
+import { getTokenIsAdmin } from '../utils/auth'
 
 interface InviteCode {
   code: string
@@ -40,12 +42,14 @@ async function readErrorMessage(res: Response, fallback: string) {
 }
 
 export default function AdminPage() {
+  const isAdmin = getTokenIsAdmin()
   const [invites, setInvites] = useState<InviteCode[]>([])
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  async function loadInvites() {
+  const loadInvites = useCallback(async () => {
+    if (!isAdmin) return
     setLoading(true)
     setError(null)
     try {
@@ -61,9 +65,10 @@ export default function AdminPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [isAdmin])
 
-  async function createInvite() {
+  const createInvite = useCallback(async () => {
+    if (!isAdmin) return
     setCreating(true)
     setError(null)
     try {
@@ -78,11 +83,16 @@ export default function AdminPage() {
     } finally {
       setCreating(false)
     }
-  }
+  }, [isAdmin, loadInvites])
 
   useEffect(() => {
+    if (!isAdmin) return
     void loadInvites()
-  }, [])
+  }, [isAdmin, loadInvites])
+
+  if (!isAdmin) {
+    return <Navigate to="/timeline" replace />
+  }
 
   return (
     <div>
@@ -125,8 +135,8 @@ export default function AdminPage() {
               </tr>
             </thead>
             <tbody>
-              {invites.map(invite => (
-                <tr key={invite.code}>
+              {invites.map((invite, index) => (
+                <tr key={`${invite.code}-${invite.created_at || index}`}>
                   <td style={{ padding: '6px 8px 6px 0', color: 'var(--text)', fontFamily: 'inherit' }}>{invite.code}</td>
                   <td style={{ padding: '6px 8px', color: invite.used ? 'var(--muted)' : 'var(--accent)' }}>
                     {invite.used ? 'USED' : 'AVAILABLE'}

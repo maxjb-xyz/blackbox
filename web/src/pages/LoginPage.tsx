@@ -22,7 +22,7 @@ export default function LoginPage() {
   useEffect(() => {
     checkHealth()
       .then(health => setOidcEnabled(health.oidc_enabled))
-      .catch(() => {})
+      .catch(err => console.error('Health check failed', err))
   }, [])
 
   const redirectTo = sanitizeRedirectTo(searchParams.get('redirect_to'))
@@ -131,7 +131,7 @@ export default function LoginPage() {
                 marginBottom: 12,
               }}
             >
-              <AlertCircle size={12} />
+              <AlertCircle size={14} />
               <span>{error}</span>
             </div>
           )}

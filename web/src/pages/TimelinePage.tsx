@@ -402,8 +402,8 @@ function TimelineRow({
   useEffect(() => {
     if (isExpanded && !notesLoaded) {
       fetchNotes(entry.id)
-        .then(data => {
-          setNotes(data)
+        .then(pageNotes => {
+          setNotes(pageNotes)
           setNotesLoaded(true)
         })
         .catch(() => setNotesLoaded(true))

@@ -1,7 +1,10 @@
 import { useNodePulse } from '../components/NodePulse'
 
-function formatTimestamp(ts: string) {
-  return new Date(ts).toISOString().replace('T', ' ').substring(0, 19)
+function formatTimestamp(ts?: string | null) {
+  if (!ts) return '—'
+  const date = new Date(ts)
+  if (Number.isNaN(date.getTime())) return '—'
+  return date.toISOString().replace('T', ' ').substring(0, 19)
 }
 
 export default function NodesPage() {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -98,10 +99,17 @@ func TestListNotes_Success(t *testing.T) {
 	router.ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusOK, rr.Code)
-	var notes []models.EntryNote
-	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &notes))
+	var resp struct {
+		Notes      []models.EntryNote `json:"notes"`
+		HasMore    bool               `json:"has_more"`
+		NextOffset int                `json:"next_offset"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	notes := resp.Notes
 	require.Len(t, notes, 2)
 	assert.Equal(t, "note 1", notes[0].Content)
+	assert.Equal(t, "note 2", notes[1].Content)
+	assert.False(t, resp.HasMore)
 }
 
 func TestCreateNote_WhitespaceContentRejected(t *testing.T) {
@@ -131,6 +139,82 @@ func TestCreateNote_WhitespaceContentRejected(t *testing.T) {
 	router.ServeHTTP(rr, req)
 
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+func TestCreateNote_ContentTooLongRejected(t *testing.T) {
+	database := newTestDB(t)
+
+	userID := ulid.Make().String()
+	entryID := ulid.Make().String()
+	require.NoError(t, database.Create(&types.Entry{
+		ID:        entryID,
+		Timestamp: time.Now().UTC(),
+		NodeName:  "homelab-01",
+		Source:    "docker",
+		Event:     "die",
+		Content:   "container nginx died",
+	}).Error)
+
+	router := chi.NewRouter()
+	router.Post("/api/entries/{id}/notes", handlers.CreateNote(database))
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		fmt.Sprintf("/api/entries/%s/notes", entryID),
+		bytes.NewBufferString(`{"content":"`+strings.Repeat("x", 2001)+`"}`),
+	)
+	req = req.WithContext(ctxWithClaims(userID, "alice"))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+func TestListNotes_Paginates(t *testing.T) {
+	database := newTestDB(t)
+
+	entryID := ulid.Make().String()
+	baseTime := time.Now().UTC().Round(0)
+	require.NoError(t, database.Create(&types.Entry{
+		ID:        entryID,
+		Timestamp: baseTime,
+		NodeName:  "h",
+		Source:    "docker",
+		Event:     "die",
+		Content:   "x",
+	}).Error)
+
+	for i := 0; i < 3; i++ {
+		require.NoError(t, database.Create(&models.EntryNote{
+			ID:        ulid.Make().String(),
+			EntryID:   entryID,
+			UserID:    fmt.Sprintf("u%d", i),
+			Username:  fmt.Sprintf("user-%d", i),
+			Content:   fmt.Sprintf("note %d", i),
+			CreatedAt: baseTime.Add(time.Duration(i) * time.Millisecond),
+		}).Error)
+	}
+
+	router := chi.NewRouter()
+	router.Get("/api/entries/{id}/notes", handlers.ListNotes(database))
+
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/entries/%s/notes?limit=2&offset=1", entryID), nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	var resp struct {
+		Notes      []models.EntryNote `json:"notes"`
+		HasMore    bool               `json:"has_more"`
+		NextOffset int                `json:"next_offset"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	require.Len(t, resp.Notes, 2)
+	assert.Equal(t, "note 1", resp.Notes[0].Content)
+	assert.Equal(t, "note 2", resp.Notes[1].Content)
+	assert.False(t, resp.HasMore)
+	assert.Zero(t, resp.NextOffset)
 }
 
 func TestCreateNote_EntryNotFound(t *testing.T) {

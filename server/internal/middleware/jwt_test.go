@@ -9,11 +9,13 @@ import (
 	"blackbox/server/internal/auth"
 	"blackbox/server/internal/middleware"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestJWTAuth_ValidToken(t *testing.T) {
 	secret := "test-secret"
-	token, _ := auth.IssueJWT("user-1", "alice", false, secret, time.Hour)
+	token, err := auth.IssueJWT("user-1", "alice", false, secret, time.Hour)
+	require.NoError(t, err)
 
 	reached := false
 	handler := middleware.JWTAuth(secret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

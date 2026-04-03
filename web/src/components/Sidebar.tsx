@@ -1,7 +1,6 @@
-import { useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useNodePulse } from './NodePulse'
-import { getTokenUsername } from '../utils/auth'
+import { getTokenIsAdmin, getTokenUsername } from '../utils/auth'
 
 const NAV_ITEMS = [
   { label: 'TIMELINE', to: '/timeline' },
@@ -11,14 +10,15 @@ const NAV_ITEMS = [
 const ADMIN_ITEMS = [
   { label: 'WEBHOOKS', to: '/webhooks' },
   { label: 'ACCOUNT', to: '/account' },
-  { label: 'ADMIN', to: '/admin' },
+  { label: 'ADMIN', to: '/admin', adminOnly: true },
   { label: 'DIAGNOSTICS', to: '/diagnostics' },
 ] as const
 
 export default function Sidebar() {
   const { onlineCount, totalCount, loading, error, lastUpdated } = useNodePulse()
   const navigate = useNavigate()
-  const [username] = useState(() => getTokenUsername(''))
+  const username = getTokenUsername('')
+  const isAdmin = getTokenIsAdmin()
 
   function navClassName(isActive: boolean) {
     return [
@@ -67,7 +67,7 @@ export default function Sidebar() {
       <div className="my-2 border-t border-[var(--border)]" />
 
       <nav>
-        {ADMIN_ITEMS.map(item => (
+        {ADMIN_ITEMS.filter(item => !('adminOnly' in item) || !item.adminOnly || isAdmin).map(item => (
           <NavLink
             key={item.to}
             to={item.to}

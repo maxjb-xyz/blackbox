@@ -4,17 +4,30 @@ function decodeBase64URL(value: string) {
   return atob(padded)
 }
 
-export function getTokenUsername(fallback = '') {
+interface TokenClaims {
+  username?: unknown
+  is_admin?: unknown
+}
+
+function getTokenClaims(): TokenClaims | null {
   try {
     const token = localStorage.getItem('token')
-    if (!token) return fallback
+    if (!token) return null
 
     const [, payload] = token.split('.')
-    if (!payload) return fallback
+    if (!payload) return null
 
-    const parsed = JSON.parse(decodeBase64URL(payload)) as { username?: unknown }
-    return typeof parsed.username === 'string' && parsed.username ? parsed.username : fallback
+    return JSON.parse(decodeBase64URL(payload)) as TokenClaims
   } catch {
-    return fallback
+    return null
   }
+}
+
+export function getTokenUsername(fallback = '') {
+  const parsed = getTokenClaims()
+  return typeof parsed?.username === 'string' && parsed.username ? parsed.username : fallback
+}
+
+export function getTokenIsAdmin() {
+  return getTokenClaims()?.is_admin === true
 }
