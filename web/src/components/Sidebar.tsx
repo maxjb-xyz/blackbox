@@ -15,74 +15,48 @@ const ADMIN_ITEMS = [
   { label: 'DIAGNOSTICS', to: '/diagnostics' },
 ] as const
 
-const activeStyle: React.CSSProperties = {
-  borderLeft: '2px solid var(--accent)',
-  paddingLeft: '14px',
-  color: 'var(--accent)',
-}
-
-const baseStyle: React.CSSProperties = {
-  display: 'block',
-  padding: '6px 16px',
-  fontSize: '11px',
-  letterSpacing: '0.1em',
-  color: 'var(--muted)',
-  textDecoration: 'none',
-  lineHeight: '1.4',
-}
-
 export default function Sidebar() {
   const { onlineCount, totalCount, loading, error, lastUpdated } = useNodePulse()
   const navigate = useNavigate()
   const [username] = useState(() => getTokenUsername(''))
 
+  function navClassName(isActive: boolean) {
+    return [
+      'block border-l-2 px-4 py-1 text-xs leading-[1.4] tracking-wider no-underline transition-colors',
+      isActive ? 'border-l-[var(--accent)] pl-[14px] text-[var(--accent)]' : 'border-l-transparent text-[var(--muted)]',
+    ].join(' ')
+  }
+
   function nodeBadge() {
     if (loading && !lastUpdated) {
-      return <span style={{ color: 'var(--muted)', marginLeft: 4 }}>[...]</span>
+      return <span className="ml-1 text-[var(--muted)]">[...]</span>
     }
     if (error) {
       return (
-        <span style={{ color: 'var(--danger)', marginLeft: 4 }} title={error.message}>
+        <span className="ml-1 text-[var(--danger)]" title={error.message}>
           [!]
         </span>
       )
     }
-    if (totalCount === 0) return <span style={{ color: 'var(--muted)', marginLeft: 4 }}>[0]</span>
-    const color = onlineCount < totalCount ? 'var(--danger)' : 'var(--accent)'
-    return <span style={{ color, marginLeft: 4 }}>[{onlineCount}/{totalCount}]</span>
+    if (totalCount === 0) return <span className="ml-1 text-[var(--muted)]">[0]</span>
+    const colorClassName = onlineCount < totalCount ? 'text-[var(--danger)]' : 'text-[var(--accent)]'
+    return <span className={`ml-1 ${colorClassName}`}>[{onlineCount}/{totalCount}]</span>
   }
 
   return (
-    <div
-      style={{
-        width: 180,
-        minHeight: '100vh',
-        background: 'var(--surface)',
-        borderRight: '1px solid var(--border)',
-        display: 'flex',
-        flexDirection: 'column',
-      }}
-    >
-      <div
-        style={{
-          padding: '16px',
-          fontSize: '12px',
-          letterSpacing: '0.15em',
-          color: 'var(--accent)',
-          fontWeight: 'bold',
-        }}
-      >
+    <div className="flex min-h-screen w-[180px] flex-col border-r border-[var(--border)] bg-[#0B0B0B] font-mono">
+      <div className="px-4 py-4 text-xs font-bold tracking-[0.15em] text-[var(--accent)]">
         BLACKBOX
       </div>
 
-      <div style={{ borderTop: '1px solid var(--border)' }} />
+      <div className="border-t border-[var(--border)]" />
 
-      <nav style={{ paddingTop: 8 }}>
+      <nav className="pt-2">
         {NAV_ITEMS.map(item => (
           <NavLink
             key={item.to}
             to={item.to}
-            style={({ isActive }) => ({ ...baseStyle, ...(isActive ? activeStyle : {}) })}
+            className={({ isActive }) => navClassName(isActive)}
           >
             {item.label}
             {'pulse' in item && item.pulse && nodeBadge()}
@@ -90,39 +64,30 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      <div style={{ borderTop: '1px solid var(--border)', margin: '8px 0' }} />
+      <div className="my-2 border-t border-[var(--border)]" />
 
       <nav>
         {ADMIN_ITEMS.map(item => (
           <NavLink
             key={item.to}
             to={item.to}
-            style={({ isActive }) => ({ ...baseStyle, ...(isActive ? activeStyle : {}) })}
+            className={({ isActive }) => navClassName(isActive)}
           >
             {item.label}
           </NavLink>
         ))}
       </nav>
 
-      <div style={{ flex: 1 }} />
+      <div className="flex-1" />
 
-      <div style={{ borderTop: '1px solid var(--border)', padding: '10px 16px' }}>
+      <div className="border-t border-[var(--border)] px-4 py-[10px]">
         <button
           type="button"
           onClick={() => {
             localStorage.removeItem('token')
             navigate('/login')
           }}
-          style={{
-            ...baseStyle,
-            padding: 0,
-            cursor: 'pointer',
-            display: 'block',
-            background: 'none',
-            border: 'none',
-            textAlign: 'left',
-            width: '100%',
-          }}
+          className="block w-full cursor-pointer border-none bg-transparent px-0 py-0 text-left text-xs leading-[1.4] tracking-wider text-[var(--muted)]"
           title="Logout"
         >
           {username || 'USER'}

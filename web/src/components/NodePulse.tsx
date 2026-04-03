@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import type { Node } from '../api/client'
 import { fetchNodes } from '../api/client'
 
@@ -30,11 +30,15 @@ export function NodePulseProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+  const pollingRef = useRef(false)
 
   useEffect(() => {
     let cancelled = false
 
     async function poll() {
+      if (cancelled || pollingRef.current) return
+
+      pollingRef.current = true
       if (!cancelled) setLoading(true)
       try {
         const data = await fetchNodes()
@@ -46,6 +50,7 @@ export function NodePulseProvider({ children }: { children: React.ReactNode }) {
         if (cancelled) return
         setError(err instanceof Error ? err : new Error('Failed to fetch nodes'))
       } finally {
+        pollingRef.current = false
         if (!cancelled) setLoading(false)
       }
     }
@@ -56,6 +61,7 @@ export function NodePulseProvider({ children }: { children: React.ReactNode }) {
     }, 30_000)
     return () => {
       cancelled = true
+      pollingRef.current = false
       clearInterval(interval)
     }
   }, [])

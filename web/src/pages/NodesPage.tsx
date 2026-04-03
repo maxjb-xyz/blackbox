@@ -47,7 +47,8 @@ export default function NodesPage() {
                   <span
                     className="nodes-status-dot"
                     style={{ color: node.status === 'online' ? 'var(--accent)' : 'var(--danger)' }}
-                    aria-hidden="true"
+                    role="img"
+                    aria-label={node.status}
                   >
                     ●
                   </span>

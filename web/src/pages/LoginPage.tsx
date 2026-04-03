@@ -3,6 +3,13 @@ import { AlertCircle, Terminal } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { checkHealth, login } from '../api/client'
 
+function sanitizeRedirectTo(value: string | null) {
+  if (!value) return '/timeline'
+  if (!value.startsWith('/')) return '/timeline'
+  if (value.includes('://') || value.startsWith('//') || value.includes('..')) return '/timeline'
+  return value
+}
+
 export default function LoginPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -18,7 +25,7 @@ export default function LoginPage() {
       .catch(() => {})
   }, [])
 
-  const redirectTo = searchParams.get('redirect_to') ?? '/timeline'
+  const redirectTo = sanitizeRedirectTo(searchParams.get('redirect_to'))
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -27,7 +34,7 @@ export default function LoginPage() {
     try {
       const token = await login(username, password)
       localStorage.setItem('token', token)
-      navigate(redirectTo, { replace: true })
+      navigate(sanitizeRedirectTo(redirectTo), { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed')
     } finally {

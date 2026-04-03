@@ -11,6 +11,10 @@ function authHeaders(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
+// Normalize invite payloads defensively because the server returns mixed shapes:
+// CreateInvite uses a snake_case map, while ListInvites serializes the model with
+// exported field names. Keep the code/Code, used/Used/used_by/UsedBy, and
+// created_at/CreatedAt mappings aligned unless server responses are unified.
 function normalizeInvite(invite: Record<string, unknown>): InviteCode {
   return {
     code: String(invite.code ?? invite.Code ?? ''),
