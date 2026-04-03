@@ -63,6 +63,42 @@ func TestServiceAliasHandlers(t *testing.T) {
 			},
 		},
 		{
+			name: "create alias trims whitespace",
+			run: func(t *testing.T) {
+				database := newTestDB(t)
+
+				req := httptest.NewRequest(http.MethodPost, "/api/services/aliases", bytes.NewBufferString(`{"canonical":"  traefik  ","alias":"  traefik-proxy  "}`))
+				req.Header.Set("Content-Type", "application/json")
+				rr := httptest.NewRecorder()
+				handlers.CreateServiceAlias(database)(rr, req)
+
+				require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
+
+				var resp models.ServiceAlias
+				require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+				assert.Equal(t, "traefik", resp.Canonical)
+				assert.Equal(t, "traefik-proxy", resp.Alias)
+
+				var alias models.ServiceAlias
+				require.NoError(t, database.Where("alias = ?", "traefik-proxy").First(&alias).Error)
+				assert.Equal(t, "traefik", alias.Canonical)
+				assert.Equal(t, "traefik-proxy", alias.Alias)
+			},
+		},
+		{
+			name: "reject whitespace only alias values",
+			run: func(t *testing.T) {
+				database := newTestDB(t)
+
+				req := httptest.NewRequest(http.MethodPost, "/api/services/aliases", bytes.NewBufferString(`{"canonical":"   ","alias":"traefik-proxy"}`))
+				req.Header.Set("Content-Type", "application/json")
+				rr := httptest.NewRecorder()
+				handlers.CreateServiceAlias(database)(rr, req)
+
+				assert.Equal(t, http.StatusBadRequest, rr.Code)
+			},
+		},
+		{
 			name: "reject duplicate alias",
 			run: func(t *testing.T) {
 				database := newTestDB(t)
@@ -94,19 +130,19 @@ func TestServiceAliasHandlers(t *testing.T) {
 			name: "delete alias",
 			run: func(t *testing.T) {
 				database := newTestDB(t)
-				require.NoError(t, database.Create(&models.ServiceAlias{Canonical: "traefik", Alias: "traefik-proxy"}).Error)
+				require.NoError(t, database.Create(&models.ServiceAlias{Canonical: "traefik", Alias: "traefik/proxy"}).Error)
 
 				router := chi.NewRouter()
 				router.Delete("/api/services/aliases/{alias}", handlers.DeleteServiceAlias(database))
 
-				req := httptest.NewRequest(http.MethodDelete, "/api/services/aliases/traefik-proxy", nil)
+				req := httptest.NewRequest(http.MethodDelete, "/api/services/aliases/traefik%2Fproxy", nil)
 				rr := httptest.NewRecorder()
 				router.ServeHTTP(rr, req)
 
 				assert.Equal(t, http.StatusNoContent, rr.Code)
 
 				var count int64
-				require.NoError(t, database.Model(&models.ServiceAlias{}).Where("alias = ?", "traefik-proxy").Count(&count).Error)
+				require.NoError(t, database.Model(&models.ServiceAlias{}).Where("alias = ?", "traefik/proxy").Count(&count).Error)
 				assert.Zero(t, count)
 			},
 		},

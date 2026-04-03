@@ -20,11 +20,12 @@ func TestCreateEntry(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name        string
-		setup       func(t *testing.T, database *gorm.DB)
-		body        string
-		wantStatus  int
-		assertEntry func(t *testing.T, entry types.Entry)
+		name           string
+		setup          func(t *testing.T, database *gorm.DB)
+		body           string
+		wantStatus     int
+		checkTimestamp bool
+		assertEntry    func(t *testing.T, entry types.Entry)
 	}{
 		{
 			name:       "creates manual entry with explicit timestamp and services",
@@ -89,9 +90,10 @@ func TestCreateEntry(t *testing.T) {
 			},
 		},
 		{
-			name:       "falls back to server time for invalid timestamp",
-			body:       `{"title":"Ad hoc check","note":"","timestamp":"not-a-time"}`,
-			wantStatus: http.StatusCreated,
+			name:           "uses server time when timestamp omitted",
+			body:           `{"title":"Ad hoc check","note":""}`,
+			wantStatus:     http.StatusCreated,
+			checkTimestamp: true,
 			assertEntry: func(t *testing.T, entry types.Entry) {
 				t.Helper()
 				assert.Equal(t, "", entry.Service)
@@ -100,6 +102,14 @@ func TestCreateEntry(t *testing.T) {
 				require.NoError(t, json.Unmarshal([]byte(entry.Metadata), &meta))
 				assert.Equal(t, "", meta["note"])
 				assert.Equal(t, []interface{}{}, meta["services"])
+			},
+		},
+		{
+			name:       "rejects invalid timestamp",
+			body:       `{"title":"Ad hoc check","note":"","timestamp":"not-a-time"}`,
+			wantStatus: http.StatusBadRequest,
+			assertEntry: func(t *testing.T, entry types.Entry) {
+				t.Helper()
 			},
 		},
 		{
@@ -122,6 +132,8 @@ func TestCreateEntry(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			database := newTestDB(t)
 			if tt.setup != nil {
 				tt.setup(t, database)
@@ -151,7 +163,7 @@ func TestCreateEntry(t *testing.T) {
 			require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &responseEntry))
 			assert.Equal(t, entries[0].ID, responseEntry.ID)
 
-			if tt.name == "falls back to server time for invalid timestamp" {
+			if tt.checkTimestamp {
 				assert.True(t, entries[0].Timestamp.After(before) || entries[0].Timestamp.Equal(before))
 				assert.True(t, entries[0].Timestamp.Before(after) || entries[0].Timestamp.Equal(after))
 			}

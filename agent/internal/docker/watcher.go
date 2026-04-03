@@ -247,6 +247,9 @@ func buildCollapsedContainerEntry(nodeName, event string, rawEvents []dockereven
 		"raw_events": buildRawEvents(rawEvents),
 	})
 
+	// Callers currently build collapsed entries from at least one raw event, but
+	// keep a defensive time.Now().UTC() fallback so future empty rawEvents slices
+	// still produce a usable timestamp if messageTimestamp cannot be derived.
 	timestamp := time.Now().UTC()
 	if len(rawEvents) > 0 {
 		timestamp = messageTimestamp(rawEvents[len(rawEvents)-1])

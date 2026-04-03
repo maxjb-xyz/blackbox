@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"blackbox/server/internal/models"
@@ -67,7 +68,12 @@ func CreateServiceAlias(database *gorm.DB) http.HandlerFunc {
 
 func DeleteServiceAlias(database *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		alias := strings.TrimSpace(chi.URLParam(r, "alias"))
+		alias, err := url.PathUnescape(chi.URLParam(r, "alias"))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid alias")
+			return
+		}
+		alias = strings.TrimSpace(alias)
 		if alias == "" {
 			writeError(w, http.StatusBadRequest, "alias is required")
 			return

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"blackbox/server/internal/correlation"
@@ -37,7 +38,8 @@ func WebhookUptime(database *gorm.DB) http.HandlerFunc {
 			return
 		}
 
-		serviceName, err := services.NormalizeService(database, payload.Monitor.Name)
+		rawServiceName := strings.TrimSpace(payload.Monitor.Name)
+		serviceName, err := services.NormalizeService(database, rawServiceName)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to normalize service")
 			return
@@ -46,6 +48,7 @@ func WebhookUptime(database *gorm.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "service name is required")
 			return
 		}
+		serviceCandidates := uniqueServiceNames(serviceName, rawServiceName)
 		ts, timeFallback := parseWebhookTime(payload.Heartbeat.Time)
 
 		meta := map[string]interface{}{
@@ -65,7 +68,7 @@ func WebhookUptime(database *gorm.DB) http.HandlerFunc {
 			meta["status"] = "down"
 
 			if !timeFallback {
-				cause, err := correlation.FindCause(database, serviceName, ts)
+				cause, err := findCauseForServices(database, serviceCandidates, ts)
 				if err != nil {
 					log.Printf("correlation lookup failed for %s: %v", payload.Monitor.Name, err)
 				} else if cause != nil {
@@ -82,21 +85,23 @@ func WebhookUptime(database *gorm.DB) http.HandlerFunc {
 			meta["status"] = "up"
 			meta["recovery_msg"] = payload.Heartbeat.Msg
 
-			var downEntry types.Entry
-			err := database.Where(
-				"service = ? AND event = ? AND source = ?",
-				serviceName, "down", "webhook",
-			).Order("timestamp DESC").First(&downEntry).Error
-			switch {
-			case errors.Is(err, gorm.ErrRecordNotFound):
-			case err != nil:
-				log.Printf("failed to load prior down event for %s: %v", payload.Monitor.Name, err)
-			default:
-				if ts.Before(downEntry.Timestamp) {
-					meta["duration_seconds"] = int64(0)
-				} else {
-					meta["duration_seconds"] = int64(ts.Sub(downEntry.Timestamp).Seconds())
-					meta["down_since"] = downEntry.Timestamp.UTC().Format(time.RFC3339)
+			if !timeFallback {
+				var downEntry types.Entry
+				err := database.Where(
+					"service IN ? AND event = ? AND source = ? AND timestamp <= ?",
+					serviceCandidates, "down", "webhook", ts,
+				).Order("timestamp DESC").First(&downEntry).Error
+				switch {
+				case errors.Is(err, gorm.ErrRecordNotFound):
+				case err != nil:
+					log.Printf("failed to load prior down event for %s: %v", payload.Monitor.Name, err)
+				default:
+					if ts.Before(downEntry.Timestamp) {
+						meta["duration_seconds"] = int64(0)
+					} else {
+						meta["duration_seconds"] = int64(ts.Sub(downEntry.Timestamp).Seconds())
+						meta["down_since"] = downEntry.Timestamp.UTC().Format(time.RFC3339)
+					}
 				}
 			}
 		}
@@ -139,4 +144,37 @@ func parseWebhookTime(value string) (time.Time, bool) {
 
 	ts = ts.UTC()
 	return ts, false
+}
+
+func uniqueServiceNames(names ...string) []string {
+	seen := make(map[string]struct{}, len(names))
+	unique := make([]string, 0, len(names))
+	for _, name := range names {
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		unique = append(unique, name)
+	}
+	return unique
+}
+
+func findCauseForServices(database *gorm.DB, services []string, ts time.Time) (*types.Entry, error) {
+	var best *types.Entry
+	for _, service := range services {
+		cause, err := correlation.FindCause(database, service, ts)
+		if err != nil {
+			return nil, err
+		}
+		if cause == nil {
+			continue
+		}
+		if best == nil || cause.Timestamp.After(best.Timestamp) {
+			best = cause
+		}
+	}
+	return best, nil
 }

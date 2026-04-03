@@ -10,6 +10,7 @@ import (
 	"blackbox/shared/types"
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
 )
 
@@ -34,8 +35,12 @@ func Init(path string) (*gorm.DB, error) {
 		}
 		sqlDB.SetMaxOpenConns(1)
 	}
+	var preservedAliases []models.ServiceAlias
 	if database.Migrator().HasTable(&models.ServiceAlias{}) {
-		if err := database.Where("TRIM(canonical) = '' OR canonical IS NULL OR TRIM(alias) = '' OR alias IS NULL").Delete(&models.ServiceAlias{}).Error; err != nil {
+		if err := database.Exec("DELETE FROM service_aliases WHERE TRIM(canonical) = '' OR canonical IS NULL OR TRIM(alias) = '' OR alias IS NULL").Error; err != nil {
+			return nil, err
+		}
+		if err := database.Raw("SELECT TRIM(canonical) AS canonical, TRIM(alias) AS alias FROM service_aliases").Scan(&preservedAliases).Error; err != nil {
 			return nil, err
 		}
 	}
@@ -49,6 +54,14 @@ func Init(path string) (*gorm.DB, error) {
 		&models.ServiceAlias{},
 	); err != nil {
 		return nil, err
+	}
+	if err := database.Exec("DELETE FROM service_aliases WHERE TRIM(canonical) = '' OR canonical IS NULL OR TRIM(alias) = '' OR alias IS NULL").Error; err != nil {
+		return nil, err
+	}
+	if len(preservedAliases) > 0 {
+		if err := database.Clauses(clause.OnConflict{DoNothing: true}).Create(&preservedAliases).Error; err != nil {
+			return nil, err
+		}
 	}
 	go sweepExpiredOIDCStates(database)
 	return database, nil

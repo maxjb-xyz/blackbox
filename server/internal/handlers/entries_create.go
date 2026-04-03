@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -33,9 +34,12 @@ func CreateEntry(database *gorm.DB) http.HandlerFunc {
 
 		timestamp := time.Now().UTC()
 		if req.Timestamp != "" {
-			if parsed, err := time.Parse(time.RFC3339, req.Timestamp); err == nil {
-				timestamp = parsed.UTC()
+			parsed, err := time.Parse(time.RFC3339, req.Timestamp)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "invalid timestamp format")
+				return
 			}
+			timestamp = parsed.UTC()
 		}
 
 		serviceNames := req.Services
@@ -86,6 +90,8 @@ func CreateEntry(database *gorm.DB) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		_ = json.NewEncoder(w).Encode(entry)
+		if err := json.NewEncoder(w).Encode(entry); err != nil {
+			log.Printf("failed to encode create entry response for entry %s: %v", entry.ID, err)
+		}
 	}
 }
