@@ -37,6 +37,7 @@ func Init(path string) (*gorm.DB, error) {
 		&types.Entry{},
 		&models.Node{},
 		&models.EntryNote{},
+		&models.ServiceAlias{},
 	); err != nil {
 		return nil, err
 	}

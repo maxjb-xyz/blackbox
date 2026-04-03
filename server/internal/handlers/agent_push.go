@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"blackbox/server/internal/models"
+	"blackbox/server/internal/services"
 	"blackbox/shared/types"
 	"github.com/oklog/ulid/v2"
 	"gorm.io/gorm"
@@ -24,6 +25,7 @@ func AgentPush(database *gorm.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "entry id is required")
 			return
 		}
+		entry.Service = services.NormalizeService(database, entry.Service)
 		if err := database.Create(&entry).Error; err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to save entry")
 			return

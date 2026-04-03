@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"blackbox/server/internal/services"
 	"blackbox/shared/types"
 	"github.com/oklog/ulid/v2"
 	"gorm.io/gorm"
@@ -48,7 +49,7 @@ func WebhookWatchtower(database *gorm.DB) http.HandlerFunc {
 			Timestamp: time.Now().UTC(),
 			NodeName:  "webhook",
 			Source:    "webhook",
-			Service:   "watchtower",
+			Service:   services.NormalizeService(database, "watchtower"),
 			Event:     "update",
 			Content:   payload.Message,
 			Metadata:  string(metaBytes),

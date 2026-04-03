@@ -113,10 +113,14 @@ func main() {
 		r.Get("/api/auth/invite", handlers.ListInvites(database))
 		r.Get("/api/nodes", handlers.ListNodes(database))
 		r.Get("/api/entries", handlers.ListEntries(database))
+		r.Post("/api/entries", handlers.CreateEntry(database))
 		r.Get("/api/entries/{id}", handlers.GetEntry(database))
 		r.Post("/api/entries/{id}/notes", handlers.CreateNote(database))
 		r.Get("/api/entries/{id}/notes", handlers.ListNotes(database))
 		r.Delete("/api/notes/{id}", handlers.DeleteNote(database))
+		r.Get("/api/services/aliases", handlers.ListServiceAliases(database))
+		r.Post("/api/services/aliases", handlers.CreateServiceAlias(database))
+		r.Delete("/api/services/aliases/{alias}", handlers.DeleteServiceAlias(database))
 	})
 
 	r.Group(func(r chi.Router) {

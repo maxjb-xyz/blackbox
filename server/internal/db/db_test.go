@@ -61,3 +61,16 @@ func TestInit_MigratesInviteCodeAndOIDCState(t *testing.T) {
 	}
 	assert.NoError(t, database.Create(&state).Error)
 }
+
+func TestInit_MigratesServiceAliases(t *testing.T) {
+	tmp, err := os.CreateTemp("", "blackbox-test-*.db")
+	require.NoError(t, err)
+	tmp.Close()
+	defer os.Remove(tmp.Name())
+
+	database, err := db.Init(tmp.Name())
+	require.NoError(t, err)
+
+	assert.NoError(t, database.Create(&models.ServiceAlias{Canonical: "traefik", Alias: "traefik-proxy"}).Error)
+	assert.NoError(t, database.Create(&models.ServiceAlias{Canonical: "traefik", Alias: "traefik-edge"}).Error)
+}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"blackbox/server/internal/handlers"
+	"blackbox/server/internal/models"
 	"blackbox/shared/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -122,6 +123,47 @@ func TestWebhookUptime_UpEvent(t *testing.T) {
 	assert.Equal(t, "my-app", meta["monitor"])
 	assert.Equal(t, "up", meta["status"])
 	assert.Equal(t, "OK: 200 OK - 45ms", meta["recovery_msg"])
+}
+
+func TestWebhookUptime_UpEvent_AddsOutageDurationAndNormalizesService(t *testing.T) {
+	database := newTestDB(t)
+	require.NoError(t, database.Create(&models.ServiceAlias{
+		Canonical: "traefik",
+		Alias:     "traefik-proxy",
+	}).Error)
+
+	downAt := time.Date(2026, 4, 2, 2, 0, 0, 0, time.UTC)
+	require.NoError(t, database.Create(&types.Entry{
+		ID:        "01DOWNENTRY0000001",
+		Timestamp: downAt,
+		NodeName:  "webhook",
+		Source:    "webhook",
+		Service:   "traefik",
+		Event:     "down",
+		Content:   "Monitor 'traefik-proxy' is down: timeout",
+		Metadata:  `{"monitor":"traefik-proxy","status":"down"}`,
+	}).Error)
+
+	body := `{
+		"heartbeat": {"status": 1, "time": "2026-04-02T02:05:30Z", "msg": "OK"},
+		"monitor":   {"name": "traefik-proxy"}
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/api/webhooks/uptime", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handlers.WebhookUptime(database)(w, req)
+
+	require.Equal(t, http.StatusCreated, w.Code)
+
+	var entry types.Entry
+	require.NoError(t, database.Where("event = ?", "up").First(&entry).Error)
+	assert.Equal(t, "traefik", entry.Service)
+
+	var meta map[string]interface{}
+	require.NoError(t, json.Unmarshal([]byte(entry.Metadata), &meta))
+	assert.Equal(t, float64(330), meta["duration_seconds"])
+	assert.Equal(t, "2026-04-02T02:00:00Z", meta["down_since"])
 }
 
 func TestWebhookUptime_MissingMonitorName(t *testing.T) {
