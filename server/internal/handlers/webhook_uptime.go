@@ -42,6 +42,10 @@ func WebhookUptime(database *gorm.DB) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "failed to normalize service")
 			return
 		}
+		if serviceName == "" {
+			writeError(w, http.StatusBadRequest, "service name is required")
+			return
+		}
 		ts, timeFallback := parseWebhookTime(payload.Heartbeat.Time)
 
 		meta := map[string]interface{}{

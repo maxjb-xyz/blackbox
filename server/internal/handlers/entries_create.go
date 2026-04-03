@@ -50,7 +50,9 @@ func CreateEntry(database *gorm.DB) http.HandlerFunc {
 				writeError(w, http.StatusInternalServerError, "failed to normalize service")
 				return
 			}
-			normalizedServices = append(normalizedServices, normalized)
+			if normalized != "" {
+				normalizedServices = append(normalizedServices, normalized)
+			}
 		}
 
 		service := ""

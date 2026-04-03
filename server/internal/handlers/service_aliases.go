@@ -16,8 +16,6 @@ type createServiceAliasRequest struct {
 	Alias     string `json:"alias"`
 }
 
-const sqliteConstraintUnique = 2067
-
 func ListServiceAliases(database *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var aliases []models.ServiceAlias
@@ -53,7 +51,7 @@ func CreateServiceAlias(database *gorm.DB) http.HandlerFunc {
 			Alias:     alias,
 		}
 		if err := database.Create(&record).Error; err != nil {
-			if isDuplicateServiceAliasError(err) {
+			if errors.Is(err, gorm.ErrDuplicatedKey) {
 				writeError(w, http.StatusConflict, "failed to create service alias")
 			} else {
 				writeError(w, http.StatusInternalServerError, "failed to create service alias")
@@ -65,11 +63,6 @@ func CreateServiceAlias(database *gorm.DB) http.HandlerFunc {
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(record)
 	}
-}
-
-func isDuplicateServiceAliasError(err error) bool {
-	var coder interface{ Code() int }
-	return errors.As(err, &coder) && coder.Code() == sqliteConstraintUnique
 }
 
 func DeleteServiceAlias(database *gorm.DB) http.HandlerFunc {

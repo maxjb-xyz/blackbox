@@ -74,5 +74,7 @@ func TestInit_MigratesServiceAliases(t *testing.T) {
 	assert.NoError(t, database.Create(&models.ServiceAlias{Canonical: "traefik", Alias: "traefik-proxy"}).Error)
 	assert.NoError(t, database.Create(&models.ServiceAlias{Canonical: "traefik", Alias: "traefik-edge"}).Error)
 	assert.Error(t, database.Create(&models.ServiceAlias{Canonical: "", Alias: "blank-canonical"}).Error)
+	assert.Error(t, database.Create(&models.ServiceAlias{Canonical: "   ", Alias: "blank-canonical-whitespace"}).Error)
 	assert.Error(t, database.Create(&models.ServiceAlias{Canonical: "traefik", Alias: ""}).Error)
+	assert.Error(t, database.Create(&models.ServiceAlias{Canonical: "traefik", Alias: "   "}).Error)
 }

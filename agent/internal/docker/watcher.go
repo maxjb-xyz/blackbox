@@ -316,7 +316,7 @@ func emitEntries(nodeName string, out chan<- types.Entry, entries []types.Entry)
 		case out <- entry:
 		default:
 			log.Printf(
-				"docker watcher: dropped event node=%s action=%s id=%s type=%s",
+				"docker watcher: dropped event node=%s action=%s service=%s source=%s",
 				nodeName,
 				entry.Event,
 				entry.Service,

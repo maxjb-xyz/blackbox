@@ -219,6 +219,23 @@ func TestWebhookUptime_MissingMonitorName(t *testing.T) {
 	assert.Empty(t, entries)
 }
 
+func TestWebhookUptime_RejectsWhitespaceOnlyMonitorName(t *testing.T) {
+	database := newTestDB(t)
+
+	body := `{"heartbeat": {"status": 0, "msg": "down"}, "monitor": {"name":"   "}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/webhooks/uptime", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handlers.WebhookUptime(database)(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	var entries []types.Entry
+	require.NoError(t, database.Find(&entries).Error)
+	assert.Empty(t, entries)
+}
+
 func TestWebhookUptime_MalformedJSON(t *testing.T) {
 	database := newTestDB(t)
 

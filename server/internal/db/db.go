@@ -3,6 +3,7 @@ package db
 import (
 	"fmt"
 	"log"
+	"sync/atomic"
 	"time"
 
 	"blackbox/server/internal/models"
@@ -12,13 +13,16 @@ import (
 	"gorm.io/gorm/logger"
 )
 
+var memoryDBCounter atomic.Uint64
+
 func Init(path string) (*gorm.DB, error) {
 	dsn := path
 	if path == ":memory:" {
-		dsn = fmt.Sprintf("file:blackbox-%d?mode=memory&cache=shared", time.Now().UnixNano())
+		dsn = fmt.Sprintf("file:blackbox-%d-%d?mode=memory&cache=shared", time.Now().UnixNano(), memoryDBCounter.Add(1))
 	}
 	database, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
+		Logger:         logger.Default.LogMode(logger.Silent),
+		TranslateError: true,
 	})
 	if err != nil {
 		return nil, err
@@ -31,7 +35,7 @@ func Init(path string) (*gorm.DB, error) {
 		sqlDB.SetMaxOpenConns(1)
 	}
 	if database.Migrator().HasTable(&models.ServiceAlias{}) {
-		if err := database.Where("TRIM(canonical) = '' OR TRIM(alias) = ''").Delete(&models.ServiceAlias{}).Error; err != nil {
+		if err := database.Where("TRIM(canonical) = '' OR canonical IS NULL OR TRIM(alias) = '' OR alias IS NULL").Delete(&models.ServiceAlias{}).Error; err != nil {
 			return nil, err
 		}
 	}

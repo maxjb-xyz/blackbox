@@ -85,3 +85,29 @@ func TestAgentPush_NormalizesServiceAlias(t *testing.T) {
 	require.NoError(t, database.First(&saved, "id = ?", entry.ID).Error)
 	assert.Equal(t, "traefik", saved.Service)
 }
+
+func TestAgentPush_RejectsBlankServiceAfterNormalization(t *testing.T) {
+	database := newTestDB(t)
+
+	entry := types.Entry{
+		ID:        "01TESTULIDENTRY3",
+		Timestamp: time.Now().UTC(),
+		NodeName:  "homelab-01",
+		Source:    "docker",
+		Service:   "   ",
+		Event:     "start",
+		Content:   "Container started",
+	}
+	body, _ := json.Marshal(entry)
+	req := httptest.NewRequest(http.MethodPost, "/api/agent/push", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handlers.AgentPush(database)(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	var count int64
+	require.NoError(t, database.Model(&types.Entry{}).Count(&count).Error)
+	assert.Zero(t, count)
+}

@@ -30,6 +30,10 @@ func AgentPush(database *gorm.DB) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "failed to normalize service")
 			return
 		}
+		if serviceName == "" && !isAgentMetaEvent(entry) {
+			writeError(w, http.StatusBadRequest, "service is required")
+			return
+		}
 		entry.Service = serviceName
 		if err := database.Create(&entry).Error; err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to save entry")
@@ -38,6 +42,10 @@ func AgentPush(database *gorm.DB) http.HandlerFunc {
 		upsertNode(database, entry)
 		w.WriteHeader(http.StatusCreated)
 	}
+}
+
+func isAgentMetaEvent(entry types.Entry) bool {
+	return entry.Source == "agent" && (entry.Event == "heartbeat" || entry.Event == "start")
 }
 
 func upsertNode(database *gorm.DB, entry types.Entry) {

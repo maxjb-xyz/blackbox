@@ -69,6 +69,26 @@ func TestCreateEntry(t *testing.T) {
 			},
 		},
 		{
+			name:       "ignores blank normalized services",
+			body:       `{"title":"Failover completed","note":"manual run","services":["   ","postgres-primary"],"timestamp":"2026-04-02T10:15:30Z"}`,
+			wantStatus: http.StatusCreated,
+			setup: func(t *testing.T, database *gorm.DB) {
+				t.Helper()
+				require.NoError(t, database.Create(&models.ServiceAlias{
+					Canonical: "postgres",
+					Alias:     "postgres-primary",
+				}).Error)
+			},
+			assertEntry: func(t *testing.T, entry types.Entry) {
+				t.Helper()
+				assert.Equal(t, "postgres", entry.Service)
+
+				var meta map[string]interface{}
+				require.NoError(t, json.Unmarshal([]byte(entry.Metadata), &meta))
+				assert.Equal(t, []interface{}{"postgres"}, meta["services"])
+			},
+		},
+		{
 			name:       "falls back to server time for invalid timestamp",
 			body:       `{"title":"Ad hoc check","note":"","timestamp":"not-a-time"}`,
 			wantStatus: http.StatusCreated,

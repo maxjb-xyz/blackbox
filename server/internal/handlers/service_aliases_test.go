@@ -18,9 +18,8 @@ func TestServiceAliasHandlers(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name   string
-		run    func(t *testing.T)
-		verify func(t *testing.T, database interface{})
+		name string
+		run  func(t *testing.T)
 	}{
 		{
 			name: "list aliases",
