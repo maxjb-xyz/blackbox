@@ -184,7 +184,7 @@ func TestListNotes_Paginates(t *testing.T) {
 		Content:   "x",
 	}).Error)
 
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 4; i++ {
 		require.NoError(t, database.Create(&models.EntryNote{
 			ID:        ulid.Make().String(),
 			EntryID:   entryID,
@@ -213,8 +213,8 @@ func TestListNotes_Paginates(t *testing.T) {
 	require.Len(t, resp.Notes, 2)
 	assert.Equal(t, "note 1", resp.Notes[0].Content)
 	assert.Equal(t, "note 2", resp.Notes[1].Content)
-	assert.False(t, resp.HasMore)
-	assert.Zero(t, resp.NextOffset)
+	assert.True(t, resp.HasMore)
+	assert.Equal(t, 3, resp.NextOffset)
 }
 
 func TestCreateNote_EntryNotFound(t *testing.T) {

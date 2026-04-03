@@ -34,7 +34,7 @@ export default function LoginPage() {
     try {
       const token = await login(username, password)
       localStorage.setItem('token', token)
-      navigate(sanitizeRedirectTo(redirectTo), { replace: true })
+      navigate(redirectTo, { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed')
     } finally {

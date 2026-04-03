@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState } from 'react'
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { createNote, fetchEntries, fetchEntry, fetchNotes } from '../api/client'
@@ -7,8 +7,10 @@ import { useNodePulse } from '../components/NodePulse'
 
 const SOURCE_OPTIONS = ['', 'docker', 'files', 'agent', 'webhook']
 
-function formatTimestamp(ts: string) {
+function formatTimestamp(ts?: string | null) {
+  if (!ts) return ''
   const d = new Date(ts)
+  if (Number.isNaN(d.getTime())) return ''
   return d.toISOString().replace('T', ' ').substring(0, 16)
 }
 
@@ -164,6 +166,7 @@ function TimelineFeed({ nodeFilter, sourceFilter, qFilter }: TimelineFeedProps) 
   const sentinelRef = useRef<HTMLDivElement>(null)
   const renderedIdsRef = useRef<Set<string>>(new Set())
   const expandedIdRef = useRef<string | null>(null)
+  const ghostEntryRef = useRef<Entry | null>(null)
   const mountedRef = useRef(true)
 
   const loadPage = useEffectEvent(async (cursor?: string) => {
@@ -242,8 +245,9 @@ function TimelineFeed({ nodeFilter, sourceFilter, qFilter }: TimelineFeedProps) 
 
   function handleRowClick(entry: Entry) {
     if (expandedId === entry.id) {
-      if (ghostEntry) {
-        renderedIdsRef.current.delete(ghostEntry.id)
+      if (ghostEntryRef.current) {
+        renderedIdsRef.current.delete(ghostEntryRef.current.id)
+        ghostEntryRef.current = null
       }
       expandedIdRef.current = null
       setExpandedId(null)
@@ -252,8 +256,9 @@ function TimelineFeed({ nodeFilter, sourceFilter, qFilter }: TimelineFeedProps) 
     }
 
     const requestedEntryId = entry.id
-    if (ghostEntry) {
-      renderedIdsRef.current.delete(ghostEntry.id)
+    if (ghostEntryRef.current) {
+      renderedIdsRef.current.delete(ghostEntryRef.current.id)
+      ghostEntryRef.current = null
     }
     expandedIdRef.current = requestedEntryId
     setExpandedId(requestedEntryId)
@@ -266,6 +271,7 @@ function TimelineFeed({ nodeFilter, sourceFilter, qFilter }: TimelineFeedProps) 
           .then(ghost => {
             if (expandedIdRef.current !== requestedEntryId || renderedIdsRef.current.has(ghost.id)) return
             renderedIdsRef.current.add(ghost.id)
+            ghostEntryRef.current = ghost
             setGhostEntry(ghost)
           })
           .catch(() => {})
@@ -273,24 +279,33 @@ function TimelineFeed({ nodeFilter, sourceFilter, qFilter }: TimelineFeedProps) 
     }
   }
 
-  function handleOverlayClick() {
-    if (!expandedId) return
-    if (ghostEntry) {
-      renderedIdsRef.current.delete(ghostEntry.id)
+  const handleOverlayClick = useCallback(() => {
+    if (!expandedIdRef.current) return
+    if (ghostEntryRef.current) {
+      renderedIdsRef.current.delete(ghostEntryRef.current.id)
+      ghostEntryRef.current = null
     }
     expandedIdRef.current = null
     setExpandedId(null)
     setGhostEntry(null)
-  }
+  }, [])
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') handleOverlayClick()
+      if (e.key !== 'Escape') return
+      if (!expandedIdRef.current) return
+      if (ghostEntryRef.current) {
+        renderedIdsRef.current.delete(ghostEntryRef.current.id)
+        ghostEntryRef.current = null
+      }
+      expandedIdRef.current = null
+      setExpandedId(null)
+      setGhostEntry(null)
     }
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  })
+  }, [])
 
   const displayEntries = (() => {
     if (!expandedId || !ghostEntry) return entries

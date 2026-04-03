@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"blackbox/server/internal/auth"
 	"blackbox/server/internal/models"
@@ -54,7 +55,7 @@ func CreateNote(database *gorm.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "content is required")
 			return
 		}
-		if len(content) > maxNoteLength {
+		if utf8.RuneCountInString(content) > maxNoteLength {
 			writeError(w, http.StatusBadRequest, "content exceeds max length")
 			return
 		}
@@ -150,22 +151,21 @@ func DeleteNote(database *gorm.DB) http.HandlerFunc {
 
 		noteID := chi.URLParam(r, "id")
 
-		var note models.EntryNote
-		if err := database.First(&note, "id = ?", noteID).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				writeError(w, http.StatusNotFound, "note not found")
-				return
-			}
-			writeError(w, http.StatusInternalServerError, "failed to fetch note")
-			return
-		}
-
-		result := database.Where("id = ? AND user_id = ?", note.ID, claims.UserID).Delete(&models.EntryNote{})
+		result := database.Where("id = ? AND user_id = ?", noteID, claims.UserID).Delete(&models.EntryNote{})
 		if result.Error != nil {
 			writeError(w, http.StatusInternalServerError, "failed to delete note")
 			return
 		}
 		if result.RowsAffected == 0 {
+			var note models.EntryNote
+			if err := database.First(&note, "id = ?", noteID).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					writeError(w, http.StatusNotFound, "note not found")
+					return
+				}
+				writeError(w, http.StatusInternalServerError, "failed to fetch note")
+				return
+			}
 			writeError(w, http.StatusForbidden, "not your note")
 			return
 		}

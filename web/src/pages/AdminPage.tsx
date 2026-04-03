@@ -1,16 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
+import { authHeaders } from '../api/client'
 import { getTokenIsAdmin } from '../utils/auth'
 
 interface InviteCode {
   code: string
   used: boolean
   created_at: string
-}
-
-function authHeaders(): Record<string, string> {
-  const token = localStorage.getItem('token')
-  return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
 // Normalize invite payloads defensively because the server returns mixed shapes:
