@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"blackbox/server/internal/models"
+	"blackbox/server/internal/services"
 	"blackbox/shared/types"
 	"github.com/oklog/ulid/v2"
 	"gorm.io/gorm"
@@ -24,6 +25,16 @@ func AgentPush(database *gorm.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "entry id is required")
 			return
 		}
+		serviceName, err := services.NormalizeService(database, entry.Service)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to normalize service")
+			return
+		}
+		if serviceName == "" && !isAgentMetaEvent(entry) {
+			writeError(w, http.StatusBadRequest, "service is required")
+			return
+		}
+		entry.Service = serviceName
 		if err := database.Create(&entry).Error; err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to save entry")
 			return
@@ -31,6 +42,10 @@ func AgentPush(database *gorm.DB) http.HandlerFunc {
 		upsertNode(database, entry)
 		w.WriteHeader(http.StatusCreated)
 	}
+}
+
+func isAgentMetaEvent(entry types.Entry) bool {
+	return entry.Source == "agent" && (entry.Event == "heartbeat" || entry.Event == "start")
 }
 
 func upsertNode(database *gorm.DB, entry types.Entry) {
