@@ -158,6 +158,14 @@ func TestDeleteNote_OwnNote(t *testing.T) {
 
 	userID := ulid.Make().String()
 	noteID := ulid.Make().String()
+	require.NoError(t, database.Create(&types.Entry{
+		ID:        "e1",
+		Timestamp: time.Now().UTC(),
+		NodeName:  "homelab-01",
+		Source:    "docker",
+		Event:     "die",
+		Content:   "container nginx died",
+	}).Error)
 	require.NoError(t, database.Create(&models.EntryNote{
 		ID:        noteID,
 		EntryID:   "e1",
@@ -182,6 +190,14 @@ func TestDeleteNote_OtherUserForbidden(t *testing.T) {
 	database := newTestDB(t)
 
 	noteID := ulid.Make().String()
+	require.NoError(t, database.Create(&types.Entry{
+		ID:        "e1",
+		Timestamp: time.Now().UTC(),
+		NodeName:  "homelab-01",
+		Source:    "docker",
+		Event:     "die",
+		Content:   "container nginx died",
+	}).Error)
 	require.NoError(t, database.Create(&models.EntryNote{
 		ID:        noteID,
 		EntryID:   "e1",

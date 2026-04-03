@@ -145,3 +145,34 @@ func TestAgentPush_StartUpdatesMetadataForExistingNode(t *testing.T) {
 	assert.Equal(t, "Debian 13", node.OsInfo)
 	assert.WithinDuration(t, time.Now().UTC(), node.LastSeen, 2*time.Second)
 }
+
+func TestAgentPush_DockerStartRemainsThrottled(t *testing.T) {
+	database := newTestDB(t)
+
+	baseTime := time.Now().UTC().Add(-5 * time.Second).Round(0)
+	require.NoError(t, database.Create(&models.Node{
+		ID:       ulid.Make().String(),
+		Name:     "homelab-01",
+		LastSeen: baseTime,
+	}).Error)
+
+	entry := types.Entry{
+		ID:        ulid.Make().String(),
+		Timestamp: time.Now().UTC(),
+		NodeName:  "homelab-01",
+		Source:    "docker",
+		Event:     "start",
+		Content:   "container nginx started",
+	}
+	body, err := json.Marshal(entry)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/agent/push", bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+
+	handlers.AgentPush(database)(rr, req)
+
+	var node models.Node
+	require.NoError(t, database.Where("name = ?", "homelab-01").First(&node).Error)
+	assert.True(t, node.LastSeen.Equal(baseTime), "expected docker start to be throttled; baseTime=%v got=%v", baseTime, node.LastSeen)
+}
