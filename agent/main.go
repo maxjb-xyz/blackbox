@@ -2,9 +2,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log"
+	"net"
 	"os"
 	"os/signal"
+	"runtime"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -35,6 +39,12 @@ func main() {
 		if err != nil {
 			nodeName = "unknown"
 		}
+	}
+	info := collectNodeInfo()
+	infoJSON, err := json.Marshal(info)
+	if err != nil {
+		log.Printf("WARNING: failed to marshal node info: %v", err)
+		infoJSON = []byte("{}")
 	}
 
 	watchPaths := splitEnv("WATCH_PATHS")
@@ -67,6 +77,7 @@ func main() {
 		Source:    "agent",
 		Event:     "start",
 		Content:   "Blackbox Agent started",
+		Metadata:  string(infoJSON),
 	}
 
 	go func() {
@@ -84,6 +95,7 @@ func main() {
 					Source:    "agent",
 					Event:     "heartbeat",
 					Content:   "Blackbox Agent heartbeat",
+					Metadata:  string(infoJSON),
 				}
 			}
 		}
@@ -98,6 +110,80 @@ func main() {
 	cancel()
 	<-s.Done()
 	log.Println("shutdown complete")
+}
+
+type nodeInfo struct {
+	AgentVersion string `json:"agent_version"`
+	IPAddress    string `json:"ip_address"`
+	OsInfo       string `json:"os_info"`
+}
+
+func collectNodeInfo() nodeInfo {
+	return nodeInfo{
+		AgentVersion: Version,
+		IPAddress:    getOutboundIP(),
+		OsInfo:       getOSInfo(),
+	}
+}
+
+func getOSInfo() string {
+	data, err := os.ReadFile("/etc/os-release")
+	if err != nil {
+		return runtime.GOOS
+	}
+	lines := strings.Split(string(data), "\n")
+	for _, prefix := range []string{"PRETTY_NAME=", "NAME="} {
+		for _, line := range lines {
+			if strings.HasPrefix(line, prefix) {
+				val := strings.TrimPrefix(line, prefix)
+				return strings.Trim(val, `"`)
+			}
+		}
+	}
+	return runtime.GOOS
+}
+
+func getOutboundIP() string {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return ""
+	}
+	sort.Slice(ifaces, func(i, j int) bool { return ifaces[i].Name < ifaces[j].Name })
+	dockerPrefixes := []string{"172.17.", "172.18.", "172.19.", "172.20.", "172.21.", "172.22.", "172.23.", "172.24."}
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagLoopback != 0 || iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			ip4 := ip.To4()
+			if ip4 == nil || ip4.IsLoopback() {
+				continue
+			}
+			ipStr := ip4.String()
+			skip := false
+			for _, prefix := range dockerPrefixes {
+				if strings.HasPrefix(ipStr, prefix) {
+					skip = true
+					break
+				}
+			}
+			if !skip {
+				return ipStr
+			}
+		}
+	}
+	return ""
 }
 
 func mustEnv(key string) string {
