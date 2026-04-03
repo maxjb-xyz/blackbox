@@ -9,8 +9,9 @@ import (
 )
 
 type Claims struct {
-	UserID  string `json:"user_id"`
-	IsAdmin bool   `json:"is_admin"`
+	UserID   string `json:"user_id"`
+	Username string `json:"username"`
+	IsAdmin  bool   `json:"is_admin"`
 	jwt.RegisteredClaims
 }
 
@@ -23,10 +24,11 @@ func ClaimsFromContext(ctx context.Context) (*Claims, bool) {
 	return c, ok
 }
 
-func IssueJWT(userID string, isAdmin bool, secret string, ttl time.Duration) (string, error) {
+func IssueJWT(userID string, username string, isAdmin bool, secret string, ttl time.Duration) (string, error) {
 	claims := Claims{
-		UserID:  userID,
-		IsAdmin: isAdmin,
+		UserID:   userID,
+		Username: username,
+		IsAdmin:  isAdmin,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(ttl)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

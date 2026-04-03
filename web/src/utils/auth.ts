@@ -12,8 +12,8 @@ export function getTokenUsername(fallback = '') {
     const [, payload] = token.split('.')
     if (!payload) return fallback
 
-    const parsed = JSON.parse(decodeBase64URL(payload)) as { user_id?: unknown }
-    return typeof parsed.user_id === 'string' && parsed.user_id ? parsed.user_id : fallback
+    const parsed = JSON.parse(decodeBase64URL(payload)) as { username?: unknown }
+    return typeof parsed.username === 'string' && parsed.username ? parsed.username : fallback
   } catch {
     return fallback
   }

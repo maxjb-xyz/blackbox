@@ -24,12 +24,6 @@ func CreateNote(database *gorm.DB) http.HandlerFunc {
 			return
 		}
 
-		var user models.User
-		if err := database.First(&user, "id = ?", claims.UserID).Error; err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to resolve user")
-			return
-		}
-
 		entryID := chi.URLParam(r, "id")
 		var entry types.Entry
 		if err := database.First(&entry, "id = ?", entryID).Error; err != nil {
@@ -58,7 +52,7 @@ func CreateNote(database *gorm.DB) http.HandlerFunc {
 			ID:        ulid.Make().String(),
 			EntryID:   entryID,
 			UserID:    claims.UserID,
-			Username:  user.Username,
+			Username:  claims.Username,
 			Content:   content,
 			CreatedAt: time.Now().UTC(),
 		}

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"blackbox/server/internal/auth"
 	"blackbox/server/internal/handlers"
 	"blackbox/server/internal/models"
 	"github.com/stretchr/testify/assert"
@@ -27,6 +28,9 @@ func TestBootstrap_CreatesAdminAndReturnsToken(t *testing.T) {
 	var resp map[string]string
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
 	assert.NotEmpty(t, resp["token"])
+	claims, err := auth.VerifyJWT(resp["token"], "jwt-test-secret")
+	require.NoError(t, err)
+	assert.Equal(t, "admin", claims.Username)
 
 	var user models.User
 	require.NoError(t, database.First(&user, "username = ?", "admin").Error)
@@ -65,6 +69,9 @@ func TestLogin_ValidCredentials(t *testing.T) {
 	var resp map[string]string
 	require.NoError(t, json.NewDecoder(w2.Body).Decode(&resp))
 	assert.NotEmpty(t, resp["token"])
+	claims, err := auth.VerifyJWT(resp["token"], "jwt-test-secret")
+	require.NoError(t, err)
+	assert.Equal(t, "admin", claims.Username)
 }
 
 func TestLogin_WrongPassword(t *testing.T) {

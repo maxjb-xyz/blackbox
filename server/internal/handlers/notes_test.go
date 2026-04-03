@@ -20,8 +20,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func ctxWithClaims(userID string) context.Context {
-	claims := &auth.Claims{UserID: userID}
+func ctxWithClaims(userID, username string) context.Context {
+	claims := &auth.Claims{UserID: userID, Username: username}
 	return context.WithValue(context.Background(), auth.ClaimsKey, claims)
 }
 
@@ -29,10 +29,6 @@ func TestCreateNote_Success(t *testing.T) {
 	database := newTestDB(t)
 
 	userID := ulid.Make().String()
-	require.NoError(t, database.Create(&models.User{
-		ID:       userID,
-		Username: "alice",
-	}).Error)
 
 	entry := types.Entry{
 		ID:        ulid.Make().String(),
@@ -51,7 +47,7 @@ func TestCreateNote_Success(t *testing.T) {
 	router.Post("/api/entries/{id}/notes", handlers.CreateNote(database))
 
 	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/entries/%s/notes", entry.ID), bytes.NewReader(body))
-	req = req.WithContext(ctxWithClaims(userID))
+	req = req.WithContext(ctxWithClaims(userID, "alice"))
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
@@ -113,10 +109,6 @@ func TestCreateNote_WhitespaceContentRejected(t *testing.T) {
 
 	userID := ulid.Make().String()
 	entryID := ulid.Make().String()
-	require.NoError(t, database.Create(&models.User{
-		ID:       userID,
-		Username: "alice",
-	}).Error)
 	require.NoError(t, database.Create(&types.Entry{
 		ID:        entryID,
 		Timestamp: time.Now().UTC(),
@@ -134,7 +126,7 @@ func TestCreateNote_WhitespaceContentRejected(t *testing.T) {
 		fmt.Sprintf("/api/entries/%s/notes", entryID),
 		bytes.NewBufferString(`{"content":"   "}`),
 	)
-	req = req.WithContext(ctxWithClaims(userID))
+	req = req.WithContext(ctxWithClaims(userID, "alice"))
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
@@ -145,10 +137,6 @@ func TestCreateNote_EntryNotFound(t *testing.T) {
 	database := newTestDB(t)
 
 	userID := ulid.Make().String()
-	require.NoError(t, database.Create(&models.User{
-		ID:       userID,
-		Username: "alice",
-	}).Error)
 
 	router := chi.NewRouter()
 	router.Post("/api/entries/{id}/notes", handlers.CreateNote(database))
@@ -158,7 +146,7 @@ func TestCreateNote_EntryNotFound(t *testing.T) {
 		fmt.Sprintf("/api/entries/%s/notes", ulid.Make().String()),
 		bytes.NewBufferString(`{"content":"hello"}`),
 	)
-	req = req.WithContext(ctxWithClaims(userID))
+	req = req.WithContext(ctxWithClaims(userID, "alice"))
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
@@ -183,7 +171,7 @@ func TestDeleteNote_OwnNote(t *testing.T) {
 	router.Delete("/api/notes/{id}", handlers.DeleteNote(database))
 
 	req := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/notes/%s", noteID), nil)
-	req = req.WithContext(ctxWithClaims(userID))
+	req = req.WithContext(ctxWithClaims(userID, ""))
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
@@ -207,7 +195,7 @@ func TestDeleteNote_OtherUserForbidden(t *testing.T) {
 	router.Delete("/api/notes/{id}", handlers.DeleteNote(database))
 
 	req := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/notes/%s", noteID), nil)
-	req = req.WithContext(ctxWithClaims("different-user"))
+	req = req.WithContext(ctxWithClaims("different-user", ""))
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 

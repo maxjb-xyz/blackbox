@@ -13,7 +13,7 @@ import (
 
 func TestJWTAuth_ValidToken(t *testing.T) {
 	secret := "test-secret"
-	token, _ := auth.IssueJWT("user-1", false, secret, time.Hour)
+	token, _ := auth.IssueJWT("user-1", "alice", false, secret, time.Hour)
 
 	reached := false
 	handler := middleware.JWTAuth(secret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -21,6 +21,7 @@ func TestJWTAuth_ValidToken(t *testing.T) {
 		claims, ok := auth.ClaimsFromContext(r.Context())
 		assert.True(t, ok)
 		assert.Equal(t, "user-1", claims.UserID)
+		assert.Equal(t, "alice", claims.Username)
 	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
