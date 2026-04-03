@@ -1,11 +1,14 @@
 package docker
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 	"time"
 
 	dockerevents "github.com/docker/docker/api/types/events"
+
+	"blackbox/shared/types"
 )
 
 func TestEventCollapser_CollapsesRestartSequence(t *testing.T) {
@@ -118,6 +121,72 @@ func TestEventCollapser_EmitsImmediateStartAndPassesThroughImageEvents(t *testin
 	}
 	if imageEntries[0].Event != "pull" || imageEntries[0].Content != "image pulled: sha256:abc123" {
 		t.Fatalf("unexpected image entry: %+v", imageEntries[0])
+	}
+}
+
+func TestRunWatchLoop_PreservesBufferedEventsAcrossReconnect(t *testing.T) {
+	base := time.Date(2026, 4, 2, 12, 0, 0, 0, time.UTC)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	collapser := newEventCollapser("node-1")
+	out := make(chan types.Entry, 4)
+	tickCh := make(chan time.Time)
+
+	msgCh1 := make(chan dockerevents.Message, 1)
+	errCh1 := make(chan error)
+	msgCh1 <- testDockerMessage(base, "container", "stop", "abc123", "traefik", "")
+	close(msgCh1)
+
+	done1 := make(chan error, 1)
+	go func() {
+		done1 <- runWatchLoop(ctx, "node-1", out, msgCh1, errCh1, tickCh, collapser, func() time.Time {
+			return base
+		})
+	}()
+
+	if err := <-done1; err == nil || err.Error() != "docker event message channel closed" {
+		t.Fatalf("expected closed message channel error, got %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected no emitted entries before reconnect, got %d", len(out))
+	}
+
+	msgCh2 := make(chan dockerevents.Message, 1)
+	errCh2 := make(chan error)
+	msgCh2 <- testDockerMessage(base.Add(2*time.Second), "container", "start", "abc123", "traefik", "")
+	close(msgCh2)
+
+	done2 := make(chan error, 1)
+	go func() {
+		done2 <- runWatchLoop(ctx, "node-1", out, msgCh2, errCh2, tickCh, collapser, func() time.Time {
+			return base.Add(2 * time.Second)
+		})
+	}()
+
+	entry := <-out
+	if entry.Event != "restart" {
+		t.Fatalf("expected restart event after reconnect, got %q", entry.Event)
+	}
+	if entry.Service != "traefik" {
+		t.Fatalf("expected service traefik, got %q", entry.Service)
+	}
+
+	var meta struct {
+		RawEvents []map[string]interface{} `json:"raw_events"`
+	}
+	if err := json.Unmarshal([]byte(entry.Metadata), &meta); err != nil {
+		t.Fatalf("unmarshal metadata: %v", err)
+	}
+	if len(meta.RawEvents) != 2 {
+		t.Fatalf("expected 2 raw events, got %d", len(meta.RawEvents))
+	}
+	if meta.RawEvents[0]["action"] != "stop" || meta.RawEvents[1]["action"] != "start" {
+		t.Fatalf("unexpected raw event actions: %#v", meta.RawEvents)
+	}
+
+	if err := <-done2; err == nil || err.Error() != "docker event message channel closed" {
+		t.Fatalf("expected closed message channel error after reconnect, got %v", err)
 	}
 }
 

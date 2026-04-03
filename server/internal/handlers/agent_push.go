@@ -25,7 +25,12 @@ func AgentPush(database *gorm.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "entry id is required")
 			return
 		}
-		entry.Service = services.NormalizeService(database, entry.Service)
+		serviceName, err := services.NormalizeService(database, entry.Service)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to normalize service")
+			return
+		}
+		entry.Service = serviceName
 		if err := database.Create(&entry).Error; err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to save entry")
 			return

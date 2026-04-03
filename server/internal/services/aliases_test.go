@@ -33,9 +33,20 @@ func TestNormalizeService(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := services.NormalizeService(database, tt.in); got != tt.want {
+			got, err := services.NormalizeService(database, tt.in)
+			if err != nil {
+				t.Fatalf("NormalizeService(%q) returned error: %v", tt.in, err)
+			}
+			if got != tt.want {
 				t.Fatalf("NormalizeService(%q) = %q, want %q", tt.in, got, tt.want)
 			}
 		})
+	}
+
+	if err := database.Exec("DROP TABLE service_aliases").Error; err != nil {
+		t.Fatalf("drop table: %v", err)
+	}
+	if _, err := services.NormalizeService(database, "traefik-proxy"); err == nil {
+		t.Fatal("expected NormalizeService to return an error when alias lookup fails")
 	}
 }

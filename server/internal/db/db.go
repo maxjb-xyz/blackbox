@@ -30,6 +30,11 @@ func Init(path string) (*gorm.DB, error) {
 		}
 		sqlDB.SetMaxOpenConns(1)
 	}
+	if database.Migrator().HasTable(&models.ServiceAlias{}) {
+		if err := database.Where("TRIM(canonical) = '' OR TRIM(alias) = ''").Delete(&models.ServiceAlias{}).Error; err != nil {
+			return nil, err
+		}
+	}
 	if err := database.AutoMigrate(
 		&models.User{},
 		&models.InviteCode{},

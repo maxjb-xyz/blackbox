@@ -3,8 +3,10 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
+	servicealiases "blackbox/server/internal/services"
 	"blackbox/shared/types"
 	"github.com/oklog/ulid/v2"
 	"gorm.io/gorm"
@@ -23,6 +25,7 @@ func CreateEntry(database *gorm.DB) http.HandlerFunc {
 		if !decodeWebhookBody(w, r, 1<<20, &req) {
 			return
 		}
+		req.Title = strings.TrimSpace(req.Title)
 		if req.Title == "" {
 			writeError(w, http.StatusBadRequest, "title is required")
 			return
@@ -35,19 +38,29 @@ func CreateEntry(database *gorm.DB) http.HandlerFunc {
 			}
 		}
 
-		services := req.Services
-		if services == nil {
-			services = []string{}
+		serviceNames := req.Services
+		if serviceNames == nil {
+			serviceNames = []string{}
+		}
+
+		normalizedServices := make([]string, 0, len(serviceNames))
+		for _, name := range serviceNames {
+			normalized, err := servicealiases.NormalizeService(database, name)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to normalize service")
+				return
+			}
+			normalizedServices = append(normalizedServices, normalized)
 		}
 
 		service := ""
-		if len(services) > 0 {
-			service = services[0]
+		if len(normalizedServices) > 0 {
+			service = normalizedServices[0]
 		}
 
 		metaBytes, err := json.Marshal(map[string]interface{}{
 			"note":     req.Note,
-			"services": services,
+			"services": normalizedServices,
 		})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to encode metadata")

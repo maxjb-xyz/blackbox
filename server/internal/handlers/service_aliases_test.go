@@ -78,6 +78,20 @@ func TestServiceAliasHandlers(t *testing.T) {
 			},
 		},
 		{
+			name: "returns internal error for non-duplicate db failure",
+			run: func(t *testing.T) {
+				database := newTestDB(t)
+				require.NoError(t, database.Exec("DROP TABLE service_aliases").Error)
+
+				req := httptest.NewRequest(http.MethodPost, "/api/services/aliases", bytes.NewBufferString(`{"canonical":"traefik","alias":"traefik-proxy"}`))
+				req.Header.Set("Content-Type", "application/json")
+				rr := httptest.NewRecorder()
+				handlers.CreateServiceAlias(database)(rr, req)
+
+				assert.Equal(t, http.StatusInternalServerError, rr.Code)
+			},
+		},
+		{
 			name: "delete alias",
 			run: func(t *testing.T) {
 				database := newTestDB(t)

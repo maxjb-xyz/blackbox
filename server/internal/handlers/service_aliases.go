@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -14,6 +15,8 @@ type createServiceAliasRequest struct {
 	Canonical string `json:"canonical"`
 	Alias     string `json:"alias"`
 }
+
+const sqliteConstraintUnique = 2067
 
 func ListServiceAliases(database *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -50,7 +53,11 @@ func CreateServiceAlias(database *gorm.DB) http.HandlerFunc {
 			Alias:     alias,
 		}
 		if err := database.Create(&record).Error; err != nil {
-			writeError(w, http.StatusConflict, "failed to create service alias")
+			if isDuplicateServiceAliasError(err) {
+				writeError(w, http.StatusConflict, "failed to create service alias")
+			} else {
+				writeError(w, http.StatusInternalServerError, "failed to create service alias")
+			}
 			return
 		}
 
@@ -58,6 +65,11 @@ func CreateServiceAlias(database *gorm.DB) http.HandlerFunc {
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(record)
 	}
+}
+
+func isDuplicateServiceAliasError(err error) bool {
+	var coder interface{ Code() int }
+	return errors.As(err, &coder) && coder.Code() == sqliteConstraintUnique
 }
 
 func DeleteServiceAlias(database *gorm.DB) http.HandlerFunc {

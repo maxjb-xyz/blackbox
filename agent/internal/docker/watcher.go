@@ -28,8 +28,10 @@ var watchedActions = map[string]bool{
 }
 
 func Watch(ctx context.Context, nodeName string, out chan<- types.Entry) {
+	collapser := newEventCollapser(nodeName)
+
 	for {
-		if err := watch(ctx, nodeName, out); err != nil {
+		if err := watch(ctx, nodeName, out, collapser); err != nil {
 			if ctx.Err() != nil {
 				return
 			}
@@ -45,7 +47,7 @@ func Watch(ctx context.Context, nodeName string, out chan<- types.Entry) {
 	}
 }
 
-func watch(ctx context.Context, nodeName string, out chan<- types.Entry) error {
+func watch(ctx context.Context, nodeName string, out chan<- types.Entry, collapser *eventCollapser) error {
 	cli, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation())
 	if err != nil {
 		return fmt.Errorf("create docker client: %w", err)
@@ -60,14 +62,27 @@ func watch(ctx context.Context, nodeName string, out chan<- types.Entry) error {
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
 
-	collapser := newEventCollapser(nodeName)
+	return runWatchLoop(ctx, nodeName, out, msgCh, errCh, ticker.C, collapser, func() time.Time {
+		return time.Now().UTC()
+	})
+}
 
+func runWatchLoop(
+	ctx context.Context,
+	nodeName string,
+	out chan<- types.Entry,
+	msgCh <-chan dockerevents.Message,
+	errCh <-chan error,
+	tickCh <-chan time.Time,
+	collapser *eventCollapser,
+	now func() time.Time,
+) error {
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-ticker.C:
-			emitEntries(nodeName, out, collapser.FlushExpired(time.Now().UTC()))
+		case <-tickCh:
+			emitEntries(nodeName, out, collapser.FlushExpired(now()))
 		case err, ok := <-errCh:
 			if !ok {
 				return fmt.Errorf("docker event error channel closed")
@@ -81,7 +96,7 @@ func watch(ctx context.Context, nodeName string, out chan<- types.Entry) error {
 			if !watchedActions[action] {
 				continue
 			}
-			emitEntries(nodeName, out, collapser.Handle(time.Now().UTC(), msg))
+			emitEntries(nodeName, out, collapser.Handle(now(), msg))
 		}
 	}
 }

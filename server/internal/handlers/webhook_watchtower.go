@@ -44,12 +44,18 @@ func WebhookWatchtower(database *gorm.DB) http.HandlerFunc {
 			metaBytes = []byte("{}")
 		}
 
+		serviceName, err := services.NormalizeService(database, "watchtower")
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to normalize service")
+			return
+		}
+
 		entry := types.Entry{
 			ID:        ulid.Make().String(),
 			Timestamp: time.Now().UTC(),
 			NodeName:  "webhook",
 			Source:    "webhook",
-			Service:   services.NormalizeService(database, "watchtower"),
+			Service:   serviceName,
 			Event:     "update",
 			Content:   payload.Message,
 			Metadata:  string(metaBytes),

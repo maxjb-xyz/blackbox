@@ -166,6 +166,42 @@ func TestWebhookUptime_UpEvent_AddsOutageDurationAndNormalizesService(t *testing
 	assert.Equal(t, "2026-04-02T02:00:00Z", meta["down_since"])
 }
 
+func TestWebhookUptime_UpEvent_ClampsNegativeOutageDuration(t *testing.T) {
+	database := newTestDB(t)
+
+	downAt := time.Date(2026, 4, 2, 2, 10, 0, 0, time.UTC)
+	require.NoError(t, database.Create(&types.Entry{
+		ID:        "01DOWNENTRY0000002",
+		Timestamp: downAt,
+		NodeName:  "webhook",
+		Source:    "webhook",
+		Service:   "my-app",
+		Event:     "down",
+		Content:   "Monitor 'my-app' is down: timeout",
+		Metadata:  `{"monitor":"my-app","status":"down"}`,
+	}).Error)
+
+	body := `{
+		"heartbeat": {"status": 1, "time": "2026-04-02T02:05:30Z", "msg": "OK"},
+		"monitor":   {"name": "my-app"}
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/api/webhooks/uptime", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handlers.WebhookUptime(database)(w, req)
+
+	require.Equal(t, http.StatusCreated, w.Code)
+
+	var entry types.Entry
+	require.NoError(t, database.Where("event = ?", "up").First(&entry).Error)
+
+	var meta map[string]interface{}
+	require.NoError(t, json.Unmarshal([]byte(entry.Metadata), &meta))
+	assert.Equal(t, float64(0), meta["duration_seconds"])
+	assert.Nil(t, meta["down_since"])
+}
+
 func TestWebhookUptime_MissingMonitorName(t *testing.T) {
 	database := newTestDB(t)
 

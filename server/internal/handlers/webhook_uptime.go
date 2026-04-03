@@ -37,7 +37,11 @@ func WebhookUptime(database *gorm.DB) http.HandlerFunc {
 			return
 		}
 
-		serviceName := services.NormalizeService(database, payload.Monitor.Name)
+		serviceName, err := services.NormalizeService(database, payload.Monitor.Name)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to normalize service")
+			return
+		}
 		ts, timeFallback := parseWebhookTime(payload.Heartbeat.Time)
 
 		meta := map[string]interface{}{
@@ -84,8 +88,12 @@ func WebhookUptime(database *gorm.DB) http.HandlerFunc {
 			case err != nil:
 				log.Printf("failed to load prior down event for %s: %v", payload.Monitor.Name, err)
 			default:
-				meta["duration_seconds"] = int64(ts.Sub(downEntry.Timestamp).Seconds())
-				meta["down_since"] = downEntry.Timestamp.UTC().Format(time.RFC3339)
+				if ts.Before(downEntry.Timestamp) {
+					meta["duration_seconds"] = int64(0)
+				} else {
+					meta["duration_seconds"] = int64(ts.Sub(downEntry.Timestamp).Seconds())
+					meta["down_since"] = downEntry.Timestamp.UTC().Format(time.RFC3339)
+				}
 			}
 		}
 
