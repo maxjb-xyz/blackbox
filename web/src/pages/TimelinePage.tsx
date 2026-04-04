@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { createNote, fetchEntries, fetchEntry, fetchNotes } from '../api/client'
+import { createNote, fetchEntries, fetchEntry, fetchEntryServices, fetchNotes } from '../api/client'
 import type { Entry, EntryNote } from '../api/client'
 import { useNodePulse } from '../components/NodePulse'
 import { useWebSocketContext } from '../components/WebSocketProvider'
@@ -14,6 +14,16 @@ const SOURCE_TINT: Record<string, string> = {
   webhook: 'rgba(42, 26, 58, 0.35)',
   agent: 'rgba(10, 46, 46, 0.35)',
 }
+
+const FILTER_CONTROL_STYLE = {
+  background: 'var(--bg)',
+  border: '1px solid var(--border)',
+  fontSize: '12px',
+  padding: '2px 6px',
+  fontFamily: 'inherit',
+} as const
+
+const ROW_GRID_TEMPLATE = '20px 130px 110px 80px 140px 90px minmax(0, 1fr)'
 
 function eventBorderColor(event: string): string {
   if (event === 'die' || event === 'down') return '#FF4444'
@@ -88,10 +98,18 @@ function mergeEntries(existing: Entry[], incoming: Entry[]): Entry[] {
   return Array.from(merged.values()).sort(compareEntries)
 }
 
-function matchesEntryFilters(entry: Entry, nodeFilter: string, sourceFilter: string, qFilter: string, hideHeartbeat: boolean): boolean {
+function matchesEntryFilters(
+  entry: Entry,
+  nodeFilter: string,
+  sourceFilter: string,
+  serviceFilter: string,
+  qFilter: string,
+  hideHeartbeat: boolean,
+): boolean {
   if (hideHeartbeat && entry.source === 'agent' && entry.event === 'heartbeat') return false
   if (nodeFilter && entry.node_name !== nodeFilter) return false
   if (sourceFilter && entry.source !== sourceFilter) return false
+  if (serviceFilter && entry.service !== serviceFilter) return false
   if (qFilter) {
     const q = qFilter.toLowerCase()
     const haystacks = [entry.content, entry.service].filter(Boolean).map(value => value.toLowerCase())
@@ -100,15 +118,308 @@ function matchesEntryFilters(entry: Entry, nodeFilter: string, sourceFilter: str
   return true
 }
 
+interface SearchableSelectProps {
+  value: string
+  options: string[]
+  placeholder: string
+  onChange: (value: string) => void
+}
+
+function SearchableSelect({ value, options, placeholder, onChange }: SearchableSelectProps) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [highlightedIndex, setHighlightedIndex] = useState(0)
+
+  const rootRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const optionRefs = useRef<Array<HTMLButtonElement | null>>([])
+  const listboxId = 'timeline-service-filter-options'
+
+  const filteredOptions = options.filter(option => option.toLowerCase().includes(query.trim().toLowerCase()))
+
+  useEffect(() => {
+    if (!isOpen) return
+
+    function handlePointerDown(event: MouseEvent) {
+      if (rootRef.current?.contains(event.target as Node)) return
+      setIsOpen(false)
+      setQuery('')
+    }
+
+    document.addEventListener('mousedown', handlePointerDown)
+    return () => document.removeEventListener('mousedown', handlePointerDown)
+  }, [isOpen])
+
+  useEffect(() => {
+    if (!isOpen) return
+    const frame = requestAnimationFrame(() => inputRef.current?.focus())
+    return () => cancelAnimationFrame(frame)
+  }, [isOpen])
+
+  useEffect(() => {
+    if (!isOpen) return
+    setHighlightedIndex(current => {
+      if (filteredOptions.length === 0) return 0
+      if (!query) {
+        const selectedIndex = value ? filteredOptions.findIndex(option => option === value) : 0
+        if (selectedIndex >= 0) return selectedIndex
+      }
+      return Math.min(current, filteredOptions.length - 1)
+    })
+  }, [filteredOptions, isOpen, query, value])
+
+  useEffect(() => {
+    if (!isOpen) return
+    optionRefs.current[highlightedIndex]?.scrollIntoView({ block: 'nearest' })
+  }, [highlightedIndex, isOpen])
+
+  function openMenu(nextQuery = '') {
+    setQuery(nextQuery)
+    setIsOpen(true)
+  }
+
+  function closeMenu() {
+    setIsOpen(false)
+    setQuery('')
+  }
+
+  function handleSelect(option: string) {
+    onChange(option)
+    closeMenu()
+  }
+
+  function handleInputKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      setHighlightedIndex(current => Math.min(current + 1, Math.max(filteredOptions.length - 1, 0)))
+      return
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      setHighlightedIndex(current => Math.max(current - 1, 0))
+      return
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      const nextOption = filteredOptions[highlightedIndex]
+      if (nextOption) handleSelect(nextOption)
+      return
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      closeMenu()
+    }
+  }
+
+  function handleTriggerKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
+    if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      openMenu()
+      return
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      closeMenu()
+      return
+    }
+    if (event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      event.preventDefault()
+      openMenu(event.key)
+    }
+  }
+
+  return (
+    <div ref={rootRef} style={{ position: 'relative', width: 200 }}>
+      <button
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        aria-label="Service filter"
+        onClick={() => {
+          if (isOpen) closeMenu()
+          else openMenu()
+        }}
+        onKeyDown={handleTriggerKeyDown}
+        style={{
+          ...FILTER_CONTROL_STYLE,
+          width: '100%',
+          color: value ? 'var(--text)' : 'var(--muted)',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingRight: value ? 42 : 22,
+        }}
+      >
+        <span
+          style={{
+            minWidth: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {value || placeholder}
+        </span>
+      </button>
+
+      {value && (
+        <button
+          type="button"
+          title="Clear service filter"
+          aria-label="Clear service filter"
+          onClick={event => {
+            event.stopPropagation()
+            onChange('')
+            closeMenu()
+          }}
+          style={{
+            position: 'absolute',
+            top: '50%',
+            right: 20,
+            transform: 'translateY(-50%)',
+            background: 'none',
+            border: 'none',
+            color: 'var(--muted)',
+            fontSize: '12px',
+            lineHeight: 1,
+            cursor: 'pointer',
+            padding: 0,
+            fontFamily: 'inherit',
+          }}
+        >
+          ×
+        </button>
+      )}
+
+      <span
+        aria-hidden="true"
+        style={{
+          position: 'absolute',
+          top: '50%',
+          right: 8,
+          transform: 'translateY(-50%)',
+          color: 'var(--muted)',
+          fontSize: '10px',
+          pointerEvents: 'none',
+        }}
+      >
+        {isOpen ? '^' : 'v'}
+      </span>
+
+      {isOpen && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 4px)',
+            left: 0,
+            right: 0,
+            zIndex: 20,
+            background: 'var(--surface)',
+            border: '1px solid var(--border)',
+            boxShadow: '0 10px 24px rgba(0, 0, 0, 0.45)',
+          }}
+        >
+          <div style={{ padding: 6, borderBottom: '1px solid var(--border)' }}>
+            <input
+              ref={inputRef}
+              type="text"
+              role="combobox"
+              aria-expanded={isOpen}
+              aria-controls={listboxId}
+              aria-activedescendant={filteredOptions[highlightedIndex] ? `${listboxId}-option-${highlightedIndex}` : undefined}
+              value={query}
+              onChange={event => setQuery(event.target.value)}
+              onKeyDown={handleInputKeyDown}
+              placeholder="FILTER SERVICES..."
+              style={{
+                ...FILTER_CONTROL_STYLE,
+                width: '100%',
+                color: 'var(--text)',
+                padding: '4px 8px',
+              }}
+            />
+          </div>
+
+          <div id={listboxId} role="listbox" style={{ maxHeight: 200, overflowY: 'auto' }}>
+            {filteredOptions.length === 0 ? (
+              <div
+                style={{
+                  padding: '8px',
+                  color: 'var(--muted)',
+                  fontSize: '11px',
+                  letterSpacing: '0.05em',
+                }}
+              >
+                NO MATCHES
+              </div>
+            ) : (
+              filteredOptions.map((option, index) => (
+                <button
+                  ref={element => { optionRefs.current[index] = element }}
+                  id={`${listboxId}-option-${index}`}
+                  key={option}
+                  type="button"
+                  role="option"
+                  aria-selected={option === value}
+                  onClick={() => handleSelect(option)}
+                  onMouseEnter={() => setHighlightedIndex(index)}
+                  style={{
+                    width: '100%',
+                    background: index === highlightedIndex ? 'var(--bg)' : 'transparent',
+                    color: option === value ? 'var(--accent)' : 'var(--text)',
+                    border: 'none',
+                    borderBottom: index === filteredOptions.length - 1 ? 'none' : '1px solid var(--border)',
+                    padding: '6px 8px',
+                    textAlign: 'left',
+                    fontFamily: 'inherit',
+                    fontSize: '11px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {option}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function TimelinePage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const { nodes } = useNodePulse()
   const [viewMode, setViewMode] = useState<ViewMode>(getStoredViewMode)
   const [hideHeartbeat, setHideHeartbeat] = useState<boolean>(getStoredHideHeartbeat)
+  const [serviceOptions, setServiceOptions] = useState<string[]>([])
+
+  const serviceRequestRef = useRef(0)
+  const serviceMountedRef = useRef(true)
 
   const nodeFilter = searchParams.get('node') ?? ''
   const sourceFilter = searchParams.get('source') ?? ''
+  const serviceFilter = searchParams.get('service') ?? ''
   const qFilter = searchParams.get('q') ?? ''
+
+  const refreshServices = useCallback(() => {
+    const requestId = ++serviceRequestRef.current
+    void fetchEntryServices()
+      .then(({ services }) => {
+        if (!serviceMountedRef.current || requestId !== serviceRequestRef.current) return
+        setServiceOptions(services)
+      })
+      .catch(err => {
+        if (serviceMountedRef.current) console.error('fetchEntryServices:', err)
+      })
+  }, [])
+
+  useEffect(() => {
+    serviceMountedRef.current = true
+    refreshServices()
+    return () => { serviceMountedRef.current = false }
+  }, [refreshServices])
 
   function setFilter(key: string, value: string) {
     setSearchParams(prev => {
@@ -149,18 +460,14 @@ export default function TimelinePage() {
           flexWrap: 'wrap',
         }}
       >
-        <span style={{ color: 'var(--muted)', fontSize: '11px', letterSpacing: '0.1em' }}>FILTER:</span>
+        <span style={{ color: 'var(--muted)', fontSize: '12px', letterSpacing: '0.1em' }}>FILTER:</span>
 
         <select
           value={nodeFilter}
           onChange={e => setFilter('node', e.target.value)}
           style={{
-            background: 'var(--bg)',
+            ...FILTER_CONTROL_STYLE,
             color: nodeFilter ? 'var(--text)' : 'var(--muted)',
-            border: '1px solid var(--border)',
-            fontSize: '11px',
-            padding: '2px 6px',
-            fontFamily: 'inherit',
           }}
         >
           <option value="">ALL NODES</option>
@@ -173,12 +480,8 @@ export default function TimelinePage() {
           value={sourceFilter}
           onChange={e => setFilter('source', e.target.value)}
           style={{
-            background: 'var(--bg)',
+            ...FILTER_CONTROL_STYLE,
             color: sourceFilter ? 'var(--text)' : 'var(--muted)',
-            border: '1px solid var(--border)',
-            fontSize: '11px',
-            padding: '2px 6px',
-            fontFamily: 'inherit',
           }}
         >
           {SOURCE_OPTIONS.map(source => (
@@ -188,34 +491,39 @@ export default function TimelinePage() {
           ))}
         </select>
 
+        <SearchableSelect
+          value={serviceFilter}
+          options={serviceOptions}
+          placeholder="ALL SERVICES"
+          onChange={value => setFilter('service', value)}
+        />
+
         <input
           type="text"
           placeholder="SEARCH..."
           value={qFilter}
           onChange={e => setFilter('q', e.target.value)}
           style={{
-            background: 'var(--bg)',
+            ...FILTER_CONTROL_STYLE,
             color: 'var(--text)',
-            border: '1px solid var(--border)',
-            fontSize: '11px',
             padding: '2px 8px',
-            fontFamily: 'inherit',
             width: 200,
           }}
         />
 
-        {(nodeFilter || sourceFilter || qFilter) && (
+        {(nodeFilter || sourceFilter || serviceFilter || qFilter) && (
           <span
             onClick={() => {
               setSearchParams(prev => {
                 const next = new URLSearchParams(prev)
                 next.delete('node')
                 next.delete('source')
+                next.delete('service')
                 next.delete('q')
                 return next
               })
             }}
-            style={{ color: 'var(--muted)', fontSize: '11px', cursor: 'pointer', letterSpacing: '0.05em' }}
+            style={{ color: 'var(--muted)', fontSize: '12px', cursor: 'pointer', letterSpacing: '0.05em' }}
           >
             CLEAR
           </span>
@@ -228,7 +536,7 @@ export default function TimelinePage() {
               background: 'none',
               border: '1px solid var(--border)',
               color: hideHeartbeat ? 'var(--muted)' : 'var(--accent)',
-              fontSize: '10px',
+              fontSize: '12px',
               padding: '2px 8px',
               fontFamily: 'inherit',
               cursor: 'pointer',
@@ -244,7 +552,7 @@ export default function TimelinePage() {
               background: 'none',
               border: '1px solid var(--border)',
               color: 'var(--muted)',
-              fontSize: '10px',
+              fontSize: '12px',
               padding: '2px 8px',
               fontFamily: 'inherit',
               cursor: 'pointer',
@@ -257,12 +565,14 @@ export default function TimelinePage() {
       </div>
 
       <TimelineFeed
-        key={`${nodeFilter}:${sourceFilter}:${qFilter}:${hideHeartbeat}`}
+        key={`${nodeFilter}:${sourceFilter}:${serviceFilter}:${qFilter}:${hideHeartbeat}`}
         nodeFilter={nodeFilter}
         sourceFilter={sourceFilter}
+        serviceFilter={serviceFilter}
         qFilter={qFilter}
         hideHeartbeat={hideHeartbeat}
         viewMode={viewMode}
+        onEntriesChanged={refreshServices}
       />
     </div>
   )
@@ -271,12 +581,22 @@ export default function TimelinePage() {
 interface TimelineFeedProps {
   nodeFilter: string
   sourceFilter: string
+  serviceFilter: string
   qFilter: string
   hideHeartbeat: boolean
   viewMode: ViewMode
+  onEntriesChanged: () => void
 }
 
-function TimelineFeed({ nodeFilter, sourceFilter, qFilter, hideHeartbeat, viewMode }: TimelineFeedProps) {
+function TimelineFeed({
+  nodeFilter,
+  sourceFilter,
+  serviceFilter,
+  qFilter,
+  hideHeartbeat,
+  viewMode,
+  onEntriesChanged,
+}: TimelineFeedProps) {
   const { lastMessage } = useWebSocketContext()
   const [entries, setEntries] = useState<Entry[]>([])
   const [nextCursor, setNextCursor] = useState<string | undefined>()
@@ -311,6 +631,7 @@ function TimelineFeed({ nodeFilter, sourceFilter, qFilter, hideHeartbeat, viewMo
         limit: 50,
         node: nodeFilter || undefined,
         source: sourceFilter || undefined,
+        service: serviceFilter || undefined,
         q: qFilter || undefined,
         hideHeartbeat,
       })
@@ -332,6 +653,7 @@ function TimelineFeed({ nodeFilter, sourceFilter, qFilter, hideHeartbeat, viewMo
 
       setNextCursor(page.next_cursor)
       setDone(!page.next_cursor)
+      onEntriesChanged()
     } catch (err) {
       if (mountedRef.current) {
         console.error(cursor ? 'loadMore:' : 'loadEntries:', err)
@@ -361,14 +683,15 @@ function TimelineFeed({ nodeFilter, sourceFilter, qFilter, hideHeartbeat, viewMo
   useEffect(() => {
     if (loading || done || !nextCursor || !sentinelVisible) return
     void loadPage(nextCursor)
-  }, [done, loading, nextCursor, nodeFilter, qFilter, sentinelVisible, sourceFilter])
+  }, [done, loading, nextCursor, nodeFilter, qFilter, sentinelVisible, serviceFilter, sourceFilter])
 
   useEffect(() => {
     if (!lastMessage || lastMessage.type !== 'entry') return
+    onEntriesChanged()
     const newEntry = lastMessage.data as Entry
     const materializedGhost = ghostEntryRef.current?.id === newEntry.id
     if (renderedIdsRef.current.has(newEntry.id) && !materializedGhost) return
-    if (!matchesEntryFilters(newEntry, nodeFilter, sourceFilter, qFilter, hideHeartbeat)) return
+    if (!matchesEntryFilters(newEntry, nodeFilter, sourceFilter, serviceFilter, qFilter, hideHeartbeat)) return
     if (materializedGhost) {
       renderedIdsRef.current.delete(newEntry.id)
       ghostEntryRef.current = null
@@ -379,7 +702,7 @@ function TimelineFeed({ nodeFilter, sourceFilter, qFilter, hideHeartbeat, viewMo
       renderedIdsRef.current = new Set(mergedEntries.map(entry => entry.id))
       return mergedEntries
     })
-  }, [hideHeartbeat, lastMessage, nodeFilter, qFilter, sourceFilter])
+  }, [hideHeartbeat, lastMessage, nodeFilter, onEntriesChanged, qFilter, serviceFilter, sourceFilter])
 
   function handleRowClick(entry: Entry) {
     if (expandedId === entry.id) {
@@ -458,13 +781,13 @@ function TimelineFeed({ nodeFilter, sourceFilter, qFilter, hideHeartbeat, viewMo
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: '20px 130px 100px 70px 100px 90px 1fr',
+            gridTemplateColumns: ROW_GRID_TEMPLATE,
             gap: '0 8px',
             padding: '4px 24px',
             borderBottom: '1px solid var(--border)',
             background: 'var(--surface)',
             color: 'var(--muted)',
-            fontSize: '10px',
+            fontSize: '11px',
             letterSpacing: '0.1em',
             flexShrink: 0,
           }}
@@ -483,7 +806,7 @@ function TimelineFeed({ nodeFilter, sourceFilter, qFilter, hideHeartbeat, viewMo
       >
         {viewMode === 'cards' ? (
           <div style={{ maxWidth: 760, margin: '0 auto', padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <AnimatePresence>
+            <AnimatePresence initial={false}>
               {displayEntries.map(entry => (
                 <TimelineCard
                   key={entry.id}
@@ -499,7 +822,7 @@ function TimelineFeed({ nodeFilter, sourceFilter, qFilter, hideHeartbeat, viewMo
             </AnimatePresence>
           </div>
         ) : (
-          <AnimatePresence>
+          <AnimatePresence initial={false}>
             {displayEntries.map(entry => (
               <TimelineRow
                 key={entry.id}
@@ -551,6 +874,27 @@ interface EntryProps {
   onTooltipClear: () => void
 }
 
+function ExpandableSection({ isOpen, children }: { isOpen: boolean, children: React.ReactNode }) {
+  return (
+    <AnimatePresence initial={false}>
+      {isOpen && (
+        <motion.div
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: 'auto', opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          transition={{
+            height: { duration: 0.16, ease: 'easeOut' },
+            opacity: { duration: 0.12, ease: 'easeOut' },
+          }}
+          style={{ overflow: 'hidden', width: '100%' }}
+        >
+          {children}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  )
+}
+
 function ExpandedDetails({ entry }: { entry: Entry }) {
   const [notes, setNotes] = useState<EntryNote[]>([])
   const [notesLoaded, setNotesLoaded] = useState(false)
@@ -581,15 +925,15 @@ function ExpandedDetails({ entry }: { entry: Entry }) {
   const formattedMeta = entry.metadata && entry.metadata !== '{}' ? formatMetadata(entry.metadata) : null
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+    <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
       {formattedMeta && (
         <div style={{ marginBottom: 12 }}>
-          <div style={{ color: 'var(--muted)', fontSize: '10px', letterSpacing: '0.1em', marginBottom: 4 }}>METADATA</div>
+          <div style={{ color: 'var(--muted)', fontSize: '11px', letterSpacing: '0.1em', marginBottom: 4 }}>METADATA</div>
           <div style={{ position: 'relative' }}>
             <pre
               style={{
                 color: 'var(--text)',
-                fontSize: '11px',
+                fontSize: '12px',
                 margin: 0,
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-all',
@@ -606,7 +950,7 @@ function ExpandedDetails({ entry }: { entry: Entry }) {
                   background: 'none',
                   border: 'none',
                   color: 'var(--accent)',
-                  fontSize: '10px',
+                  fontSize: '11px',
                   cursor: 'pointer',
                   padding: '4px 0 0 0',
                   fontFamily: 'inherit',
@@ -621,7 +965,7 @@ function ExpandedDetails({ entry }: { entry: Entry }) {
       )}
 
       <div>
-        <div style={{ color: 'var(--muted)', fontSize: '10px', letterSpacing: '0.1em', marginBottom: 6 }}>NOTES</div>
+        <div style={{ color: 'var(--muted)', fontSize: '11px', letterSpacing: '0.1em', marginBottom: 6 }}>NOTES</div>
         {!notesLoaded && (
           <div style={{ marginBottom: 8 }}>
             {[80, 60, 72].map((width, i) => (
@@ -630,10 +974,10 @@ function ExpandedDetails({ entry }: { entry: Entry }) {
           </div>
         )}
         {notesLoaded && notes.length === 0 && (
-          <div style={{ color: 'var(--muted)', fontSize: '11px', marginBottom: 8 }}>no notes yet</div>
+          <div style={{ color: 'var(--muted)', fontSize: '12px', marginBottom: 8 }}>no notes yet</div>
         )}
         {notes.map(note => (
-          <div key={note.id} style={{ marginBottom: 4, fontSize: '11px' }}>
+          <div key={note.id} style={{ marginBottom: 4, fontSize: '12px' }}>
             <span style={{ color: 'var(--accent)' }}>{note.username}</span>
             <span style={{ color: 'var(--muted)', margin: '0 6px' }}>{formatTimestamp(note.created_at)}</span>
             <span style={{ color: 'var(--text)' }}>- {note.content}</span>
@@ -654,7 +998,7 @@ function ExpandedDetails({ entry }: { entry: Entry }) {
               color: 'var(--text)',
               padding: '4px 8px',
               fontFamily: 'inherit',
-              fontSize: '11px',
+              fontSize: '12px',
               outline: 'none',
             }}
           />
@@ -667,7 +1011,7 @@ function ExpandedDetails({ entry }: { entry: Entry }) {
               border: 'none',
               padding: '4px 10px',
               fontFamily: 'inherit',
-              fontSize: '11px',
+              fontSize: '12px',
               fontWeight: 'bold',
               letterSpacing: '0.05em',
               cursor: noteInput.trim() ? 'pointer' : 'not-allowed',
@@ -677,7 +1021,7 @@ function ExpandedDetails({ entry }: { entry: Entry }) {
           </button>
         </div>
       </div>
-    </motion.div>
+    </div>
   )
 }
 
@@ -691,10 +1035,13 @@ function TimelineCard({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip
 
   return (
     <motion.div
-      layout
       data-row
       role="button"
       tabIndex={isDimmed ? -1 : 0}
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: isDimmed ? 0.2 : 1, y: 0 }}
+      exit={{ opacity: 0, y: -6 }}
+      transition={{ duration: 0.16, ease: 'easeOut' }}
       onClick={onClick}
       onKeyDown={handleKeyDown}
       onMouseEnter={
@@ -711,16 +1058,16 @@ function TimelineCard({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip
         borderLeft: `3px solid ${eventBorderColor(entry.event)}`,
         padding: '14px 18px',
         cursor: 'pointer',
-        opacity: isDimmed ? 0.2 : 1,
         filter: isDimmed ? 'blur(2px)' : 'none',
         pointerEvents: isDimmed ? 'none' : 'auto',
         outline: isGhost ? '1px dashed var(--accent)' : 'none',
-        transition: 'opacity 0.2s ease, filter 0.2s ease',
+        transition: 'filter 0.2s ease',
         userSelect: 'none',
+        overflow: 'hidden',
       }}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-        <span style={{ color: 'var(--muted)', fontSize: '11px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, gap: 12 }}>
+        <span style={{ color: 'var(--muted)', fontSize: '12px', minWidth: 0 }}>
           {formatTimestamp(entry.timestamp)}
           {entry.node_name && <span style={{ margin: '0 6px' }}>|</span>}
           {entry.node_name}
@@ -737,18 +1084,12 @@ function TimelineCard({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip
             padding: '2px 6px',
             border: `1px solid ${eventBorderColor(entry.event)}`,
           }}
-        >
+      >
           {entry.event.toUpperCase()}
         </span>
       </div>
 
-      {entry.service && (
-        <div style={{ color: 'var(--text)', fontSize: '12px', fontWeight: 'bold', marginBottom: 2 }}>
-          {entry.service}
-        </div>
-      )}
-
-      <div style={{ color: 'var(--text)', fontSize: '13px', marginBottom: 0 }}>
+      <div style={{ color: 'var(--text)', fontSize: '13px', marginBottom: 0, minWidth: 0 }}>
         {entry.content}
         {isGhost && (
           <span style={{ marginLeft: 8, color: 'var(--accent)', fontSize: '10px', letterSpacing: '0.05em' }}>[LINKED]</span>
@@ -758,7 +1099,27 @@ function TimelineCard({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip
         )}
       </div>
 
-      {isExpanded && <ExpandedDetails entry={entry} />}
+      {entry.service && (
+        <div
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            marginTop: 8,
+            border: '1px solid var(--border)',
+            padding: '2px 6px',
+            color: 'var(--muted)',
+            fontSize: '10px',
+            letterSpacing: '0.05em',
+            background: 'rgba(0, 0, 0, 0.18)',
+          }}
+        >
+          [{` ${entry.service} `}]
+        </div>
+      )}
+
+      <ExpandableSection isOpen={isExpanded}>
+        <ExpandedDetails entry={entry} />
+      </ExpandableSection>
     </motion.div>
   )
 }
@@ -776,14 +1137,17 @@ function TimelineRow({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip,
 
   return (
     <motion.div
-      layout
       data-row
       className={rowClassName}
       role="button"
       tabIndex={isDimmed ? -1 : 0}
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: isDimmed ? 0.2 : isGhost ? 0.85 : 1, y: 0 }}
+      exit={{ opacity: 0, y: -6 }}
+      transition={{ duration: 0.16, ease: 'easeOut' }}
       style={{
         display: 'grid',
-        gridTemplateColumns: '20px 130px 100px 70px 100px 90px 1fr',
+        gridTemplateColumns: ROW_GRID_TEMPLATE,
         gap: '0 8px',
         padding: '4px 24px',
         cursor: 'pointer',
@@ -791,6 +1155,7 @@ function TimelineRow({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip,
         fontSize: '13px',
         alignItems: 'start',
         userSelect: 'none',
+        overflow: 'hidden',
       }}
       onClick={onClick}
       onKeyDown={handleKeyDown}
@@ -807,28 +1172,47 @@ function TimelineRow({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip,
       <span style={{ color: 'var(--accent)', fontSize: '11px', lineHeight: '20px' }}>
         {entry.correlated_id ? '^' : ''}
       </span>
-      <span style={{ color: 'var(--muted)', fontSize: '11px', whiteSpace: 'nowrap' }}>
+      <span style={{ color: 'var(--muted)', fontSize: '12px', whiteSpace: 'nowrap' }}>
         {formatTimestamp(entry.timestamp)}
       </span>
-      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text)' }}>
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text)', minWidth: 0 }}>
         {entry.node_name}
       </span>
-      <span style={{ color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <span style={{ color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
         {entry.source}
       </span>
-      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {entry.service}
-      </span>
+      <div style={{ overflow: 'hidden', minWidth: 0 }}>
+        {entry.service && (
+          <span
+            style={{
+              display: 'inline-block',
+              maxWidth: '100%',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              padding: '2px 6px',
+              border: '1px solid var(--border)',
+              color: 'var(--accent)',
+              fontSize: '10px',
+              letterSpacing: '0.05em',
+              background: 'var(--bg)',
+            }}
+          >
+            {entry.service}
+          </span>
+        )}
+      </div>
       <span style={{
         color: eventTextColor(entry.event),
         overflow: 'hidden',
         textOverflow: 'ellipsis',
         whiteSpace: 'nowrap',
+        minWidth: 0,
       }}>
         {entry.event}
       </span>
 
-      <div>
+      <div style={{ minWidth: 0, width: '100%' }}>
         <span style={{
           color: 'var(--text)',
           overflow: 'hidden',
@@ -842,7 +1226,9 @@ function TimelineRow({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip,
           )}
         </span>
 
-        {isExpanded && <ExpandedDetails entry={entry} />}
+        <ExpandableSection isOpen={isExpanded}>
+          <ExpandedDetails entry={entry} />
+        </ExpandableSection>
       </div>
     </motion.div>
   )
