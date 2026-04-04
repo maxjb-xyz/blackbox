@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  go-test:
+    name: Go Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache-dependency-path: |
+            server/go.sum
+            agent/go.sum
+            shared/go.sum
+
+      - name: Test (server)
+        run: cd server && go test ./...
+
+      - name: Test (agent)
+        run: cd agent && go test ./...
+
+      - name: Test (shared)
+        run: cd shared && go test ./...
+
+  go-lint:
+    name: Go Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache-dependency-path: |
+            server/go.sum
+            agent/go.sum
+            shared/go.sum
+
+      - name: golangci-lint (server)
+        uses: golangci/golangci-lint-action@v6
+        with:
+          working-directory: server
+
+      - name: golangci-lint (agent)
+        uses: golangci/golangci-lint-action@v6
+        with:
+          working-directory: agent
+
+      - name: golangci-lint (shared)
+        uses: golangci/golangci-lint-action@v6
+        with:
+          working-directory: shared
+
+  frontend-build:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+      - run: npm run build
