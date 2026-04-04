@@ -123,6 +123,8 @@ docker compose up -d
 - Rate limiting on auth endpoints
 - Security headers middleware
 
+---
+
 ## Configuration Reference
 
 ### Server Environment Variables
