@@ -27,6 +27,8 @@ var (
 	Commit  = "unknown"
 )
 
+const defaultDBPath = "/data/blackbox.db"
+
 func main() {
 	log.Printf("Blackbox Server %s (%s) starting", Version, Commit)
 
@@ -45,7 +47,7 @@ func main() {
 		log.Fatal("WEBHOOK_SECRET environment variable is required")
 	}
 
-	dbPath := getEnv("DB_PATH", "/data/lablog.db")
+	dbPath := getEnv("DB_PATH", defaultDBPath)
 	database, err := db.Init(dbPath)
 	if err != nil {
 		log.Fatalf("database init failed: %v", err)
