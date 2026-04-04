@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"blackbox/server/internal/hub"
 	"blackbox/server/internal/services"
 	"blackbox/shared/types"
 	"github.com/oklog/ulid/v2"
@@ -18,7 +19,7 @@ type watchtowerPayload struct {
 	Level   string `json:"Level"`
 }
 
-func WebhookWatchtower(database *gorm.DB) http.HandlerFunc {
+func WebhookWatchtower(database *gorm.DB, h *hub.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var payload watchtowerPayload
 		if !decodeJSONBody(w, r, 1<<20, &payload) {
@@ -63,6 +64,11 @@ func WebhookWatchtower(database *gorm.DB) http.HandlerFunc {
 		if err := database.Create(&entry).Error; err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to save entry")
 			return
+		}
+		if h != nil {
+			if msg := MarshalWSMessage("entry", entry); msg != nil {
+				h.Broadcast(msg)
+			}
 		}
 
 		w.WriteHeader(http.StatusCreated)

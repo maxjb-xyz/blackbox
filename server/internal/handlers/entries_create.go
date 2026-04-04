@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"blackbox/server/internal/hub"
 	servicealiases "blackbox/server/internal/services"
 	"blackbox/shared/types"
 	"github.com/oklog/ulid/v2"
@@ -20,7 +21,7 @@ type createEntryRequest struct {
 	Timestamp string   `json:"timestamp"`
 }
 
-func CreateEntry(database *gorm.DB) http.HandlerFunc {
+func CreateEntry(database *gorm.DB, h *hub.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req createEntryRequest
 		if !decodeJSONBody(w, r, 1<<20, &req) {
@@ -86,6 +87,11 @@ func CreateEntry(database *gorm.DB) http.HandlerFunc {
 		if err := database.Create(&entry).Error; err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to save entry")
 			return
+		}
+		if h != nil {
+			if msg := MarshalWSMessage("entry", entry); msg != nil {
+				h.Broadcast(msg)
+			}
 		}
 
 		w.Header().Set("Content-Type", "application/json")

@@ -83,7 +83,7 @@ func Bootstrap(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 			}
 
 			var issueErr error
-			token, issueErr = auth.IssueJWT(user.ID, user.Username, user.IsAdmin, jwtSecret, jwtTTL())
+			token, issueErr = auth.IssueJWT(user.ID, user.Username, user.IsAdmin, user.TokenVersion, jwtSecret, jwtTTL())
 			return issueErr
 		})
 		if txErr == errAlreadyBootstrapped {
@@ -100,9 +100,10 @@ func Bootstrap(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 		events.LogSystem(database, "auth", "admin.bootstrap", "admin user "+req.Username+" created")
 
 		writeSessionResponse(w, &auth.Claims{
-			UserID:   user.ID,
-			Username: user.Username,
-			IsAdmin:  user.IsAdmin,
+			UserID:       user.ID,
+			Username:     user.Username,
+			IsAdmin:      user.IsAdmin,
+			TokenVersion: user.TokenVersion,
 		}, http.StatusCreated)
 	}
 }
@@ -130,7 +131,7 @@ func Login(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 			return
 		}
 
-		token, err := auth.IssueJWT(user.ID, user.Username, user.IsAdmin, jwtSecret, jwtTTL())
+		token, err := auth.IssueJWT(user.ID, user.Username, user.IsAdmin, user.TokenVersion, jwtSecret, jwtTTL())
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to issue token")
 			return
@@ -141,9 +142,10 @@ func Login(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 		events.LogSystem(database, "auth", "user.login", "user "+req.Username+" logged in")
 
 		writeSessionResponse(w, &auth.Claims{
-			UserID:   user.ID,
-			Username: user.Username,
-			IsAdmin:  user.IsAdmin,
+			UserID:       user.ID,
+			Username:     user.Username,
+			IsAdmin:      user.IsAdmin,
+			TokenVersion: user.TokenVersion,
 		}, http.StatusOK)
 	}
 }
@@ -273,7 +275,7 @@ func OIDCCallback(database *gorm.DB, oidcProvider *auth.OIDCProvider, jwtSecret 
 			}
 		}
 
-		token, err := auth.IssueJWT(user.ID, user.Username, user.IsAdmin, jwtSecret, jwtTTL())
+		token, err := auth.IssueJWT(user.ID, user.Username, user.IsAdmin, user.TokenVersion, jwtSecret, jwtTTL())
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to issue token")
 			return

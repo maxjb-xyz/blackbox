@@ -25,7 +25,7 @@ func TestAgentPush_SavesEntry(t *testing.T) {
 		Content:   "Container nginx started",
 	}
 	req, w, authMiddleware := authenticatedAgentRequest(t, entry, "homelab-01")
-	authMiddleware(handlers.AgentPush(database)).ServeHTTP(w, req)
+	authMiddleware(handlers.AgentPush(database, nil)).ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusCreated, w.Code)
 
@@ -40,7 +40,7 @@ func TestAgentPush_RejectsMissingID(t *testing.T) {
 
 	entry := types.Entry{NodeName: "node1", Source: "docker"}
 	req, w, authMiddleware := authenticatedAgentRequest(t, entry, "node1")
-	authMiddleware(handlers.AgentPush(database)).ServeHTTP(w, req)
+	authMiddleware(handlers.AgentPush(database, nil)).ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
@@ -62,7 +62,7 @@ func TestAgentPush_NormalizesServiceAlias(t *testing.T) {
 		Content:   "Container traefik-proxy started",
 	}
 	req, w, authMiddleware := authenticatedAgentRequest(t, entry, "homelab-01")
-	authMiddleware(handlers.AgentPush(database)).ServeHTTP(w, req)
+	authMiddleware(handlers.AgentPush(database, nil)).ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusCreated, w.Code)
 
@@ -84,7 +84,7 @@ func TestAgentPush_RejectsBlankServiceAfterNormalization(t *testing.T) {
 		Content:   "Container started",
 	}
 	req, w, authMiddleware := authenticatedAgentRequest(t, entry, "homelab-01")
-	authMiddleware(handlers.AgentPush(database)).ServeHTTP(w, req)
+	authMiddleware(handlers.AgentPush(database, nil)).ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 
@@ -106,7 +106,7 @@ func TestAgentPush_AllowsBlankServiceForAgentMetaEvents(t *testing.T) {
 		Content:   "Blackbox Agent heartbeat",
 	}
 	req, w, authMiddleware := authenticatedAgentRequest(t, entry, "homelab-01")
-	authMiddleware(handlers.AgentPush(database)).ServeHTTP(w, req)
+	authMiddleware(handlers.AgentPush(database, nil)).ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusCreated, w.Code)
 

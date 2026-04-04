@@ -14,6 +14,7 @@ import (
 	"blackbox/server/internal/auth"
 	"blackbox/server/internal/db"
 	"blackbox/server/internal/handlers"
+	"blackbox/server/internal/hub"
 	"blackbox/server/internal/middleware"
 	"blackbox/server/internal/static"
 	"github.com/go-chi/chi/v5"
@@ -53,6 +54,7 @@ func main() {
 		log.Fatalf("database init failed: %v", err)
 	}
 	log.Printf("database initialized at %s", dbPath)
+	eventHub := hub.New()
 
 	oidcEnabled := os.Getenv("OIDC_ENABLED") == "true"
 	var oidcProviderPtr unsafe.Pointer
@@ -119,12 +121,13 @@ func main() {
 
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.JWTAuth(jwtSecret))
+		r.Use(middleware.TokenVersionCheck(database))
 		r.Get("/api/auth/me", handlers.CurrentUser())
 		r.Post("/api/auth/invite", handlers.CreateInvite(database))
 		r.Get("/api/auth/invite", handlers.ListInvites(database))
 		r.Get("/api/nodes", handlers.ListNodes(database))
 		r.Get("/api/entries", handlers.ListEntries(database))
-		r.Post("/api/entries", handlers.CreateEntry(database))
+		r.Post("/api/entries", handlers.CreateEntry(database, eventHub))
 		r.Get("/api/entries/{id}", handlers.GetEntry(database))
 		r.Post("/api/entries/{id}/notes", handlers.CreateNote(database))
 		r.Get("/api/entries/{id}/notes", handlers.ListNotes(database))
@@ -132,17 +135,29 @@ func main() {
 		r.Get("/api/services/aliases", handlers.ListServiceAliases(database))
 		r.Post("/api/services/aliases", handlers.CreateServiceAlias(database))
 		r.Delete("/api/services/aliases/{alias}", handlers.DeleteServiceAlias(database))
+		r.Get("/api/ws", handlers.WebSocketHandler(eventHub))
+	})
+
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.JWTAuth(jwtSecret))
+		r.Use(middleware.TokenVersionCheck(database))
+		r.Use(middleware.RequireAdmin())
+		r.Get("/api/admin/users", handlers.ListAdminUsers(database))
+		r.Patch("/api/admin/users/{id}", handlers.UpdateAdminUser(database, eventHub))
+		r.Post("/api/admin/users/{id}/force-logout", handlers.ForceLogoutUser(database, eventHub))
+		r.Delete("/api/admin/users/{id}", handlers.DeleteAdminUser(database, eventHub))
+		r.Get("/api/admin/config", handlers.AdminConfig(webhookSecret))
 	})
 
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.AgentAuth(agentConfig))
-		r.Post("/api/agent/push", handlers.AgentPush(database))
+		r.Post("/api/agent/push", handlers.AgentPush(database, eventHub))
 	})
 
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.WebhookAuth(webhookSecret))
-		r.Post("/api/webhooks/uptime", handlers.WebhookUptime(database))
-		r.Post("/api/webhooks/watchtower", handlers.WebhookWatchtower(database))
+		r.Post("/api/webhooks/uptime", handlers.WebhookUptime(database, eventHub))
+		r.Post("/api/webhooks/watchtower", handlers.WebhookWatchtower(database, eventHub))
 	})
 
 	spaHandler := static.Handler(staticFiles)

@@ -6,7 +6,8 @@
   --border: #222222;
   --text: #E0E0E0;
   --muted: #666666;
-  --accent: #00FF88;
+  --accent: #FF3333;
+  --success: #00CC44;
   --danger: #FF4444;
 }
 
@@ -19,7 +20,7 @@ body {
   background-color: var(--bg);
   color: var(--text);
   font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
-  font-size: 13px;
+  font-size: 14px;
   margin: 0;
 }
 

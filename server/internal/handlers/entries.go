@@ -41,6 +41,10 @@ func ListEntries(database *gorm.DB) http.HandlerFunc {
 			like := "%" + q + "%"
 			tx = tx.Where("content LIKE ? OR service LIKE ?", like, like)
 		}
+		hideHeartbeat := r.URL.Query().Get("hide_heartbeat") == "true"
+		if hideHeartbeat {
+			tx = tx.Where("NOT (source = 'agent' AND event = 'heartbeat')")
+		}
 
 		var entries []types.Entry
 		if err := tx.Find(&entries).Error; err != nil {

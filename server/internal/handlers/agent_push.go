@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"blackbox/server/internal/hub"
 	"blackbox/server/internal/middleware"
 	"blackbox/server/internal/models"
 	"blackbox/server/internal/services"
@@ -17,7 +18,7 @@ import (
 
 const maxAgentEntryBodyBytes = 64 << 10
 
-func AgentPush(database *gorm.DB) http.HandlerFunc {
+func AgentPush(database *gorm.DB, h *hub.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		nodeName, ok := middleware.AgentNodeFromContext(r.Context())
 		if !ok {
@@ -52,7 +53,14 @@ func AgentPush(database *gorm.DB) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "failed to save entry")
 			return
 		}
-		upsertNode(database, entry)
+		if h != nil {
+			if msg := MarshalWSMessage("entry", entry); msg != nil {
+				h.Broadcast(msg)
+			}
+		}
+		if upsertNode(database, entry) {
+			broadcastNodeStatus(database, h)
+		}
 		w.WriteHeader(http.StatusCreated)
 	}
 }
@@ -61,9 +69,9 @@ func isAgentMetaEvent(entry types.Entry) bool {
 	return entry.Source == "agent" && (entry.Event == "heartbeat" || entry.Event == "start")
 }
 
-func upsertNode(database *gorm.DB, entry types.Entry) {
+func upsertNode(database *gorm.DB, entry types.Entry) bool {
 	if entry.NodeName == "" {
-		return
+		return false
 	}
 
 	now := time.Now().UTC()
@@ -85,17 +93,18 @@ func upsertNode(database *gorm.DB, entry types.Entry) {
 		}
 		if err := database.Create(&newNode).Error; err != nil {
 			log.Printf("upsertNode create error (node=%s): %v", entry.NodeName, err)
+			return false
 		}
-		return
+		return true
 	}
 
 	if result.Error != nil {
 		log.Printf("upsertNode lookup error (node=%s): %v", entry.NodeName, result.Error)
-		return
+		return false
 	}
 
 	if !isMetaEvent && now.Sub(node.LastSeen) < 30*time.Second {
-		return
+		return false
 	}
 
 	updates := map[string]interface{}{"last_seen": now}
@@ -116,7 +125,9 @@ func upsertNode(database *gorm.DB, entry types.Entry) {
 
 	if err := database.Model(&node).Updates(updates).Error; err != nil {
 		log.Printf("upsertNode update error (node=%s): %v", entry.NodeName, err)
+		return false
 	}
+	return true
 }
 
 func applyHeartbeatMeta(node *models.Node, metadata string) {
@@ -136,5 +147,29 @@ func applyHeartbeatMeta(node *models.Node, metadata string) {
 	}
 	if meta.OsInfo != "" {
 		node.OsInfo = meta.OsInfo
+	}
+}
+
+func broadcastNodeStatus(database *gorm.DB, h *hub.Hub) {
+	if h == nil {
+		return
+	}
+	var nodes []models.Node
+	if err := database.Find(&nodes).Error; err != nil {
+		return
+	}
+	online := 0
+	threshold := time.Now().Add(-7 * time.Minute)
+	for _, n := range nodes {
+		if n.LastSeen.After(threshold) {
+			online++
+		}
+	}
+	type nodeStatus struct {
+		Online int `json:"online"`
+		Total  int `json:"total"`
+	}
+	if msg := MarshalWSMessage("node_status", nodeStatus{Online: online, Total: len(nodes)}); msg != nil {
+		h.Broadcast(msg)
 	}
 }

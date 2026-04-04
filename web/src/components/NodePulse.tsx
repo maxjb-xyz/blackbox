@@ -1,6 +1,7 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import type { Node } from '../api/client'
 import { fetchNodes } from '../api/client'
+import { useWebSocketContext } from './WebSocketProvider'
 
 interface NodePulseContextValue {
   nodes: Node[]
@@ -31,40 +32,54 @@ export function NodePulseProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<Error | null>(null)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const pollingRef = useRef(false)
+  const queuedRef = useRef(false)
+  const mountedRef = useRef(true)
 
   useEffect(() => {
-    let cancelled = false
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
 
-    async function poll() {
-      if (cancelled || pollingRef.current) return
+  const poll = useCallback(async () => {
+    if (!mountedRef.current) return
+    if (pollingRef.current) {
+      queuedRef.current = true
+      return
+    }
 
-      pollingRef.current = true
-      if (!cancelled) setLoading(true)
-      try {
-        const data = await fetchNodes()
-        if (cancelled) return
-        setNodes(data)
-        setError(null)
-        setLastUpdated(new Date())
-      } catch (err) {
-        if (cancelled) return
-        setError(err instanceof Error ? err : new Error('Failed to fetch nodes'))
-      } finally {
-        pollingRef.current = false
-        if (!cancelled) setLoading(false)
+    pollingRef.current = true
+    if (mountedRef.current) setLoading(true)
+    try {
+      const data = await fetchNodes()
+      if (!mountedRef.current) return
+      setNodes(data)
+      setError(null)
+      setLastUpdated(new Date())
+    } catch (err) {
+      if (!mountedRef.current) return
+      setError(err instanceof Error ? err : new Error('Failed to fetch nodes'))
+    } finally {
+      pollingRef.current = false
+      if (mountedRef.current) setLoading(false)
+      if (queuedRef.current) {
+        queuedRef.current = false
+        void poll()
       }
     }
-
-    void poll()
-    const interval = setInterval(() => {
-      void poll()
-    }, 30_000)
-    return () => {
-      cancelled = true
-      pollingRef.current = false
-      clearInterval(interval)
-    }
   }, [])
+
+  useEffect(() => {
+    void poll()
+    const interval = setInterval(() => void poll(), 30_000)
+    return () => clearInterval(interval)
+  }, [poll])
+
+  // Trigger immediate refresh on WS node_status message
+  const { lastMessage } = useWebSocketContext()
+  useEffect(() => {
+    if (!lastMessage || lastMessage.type !== 'node_status') return
+    void poll()
+  }, [lastMessage, poll])
 
   const onlineCount = nodes.filter(node => node.status === 'online').length
   const totalCount = nodes.length

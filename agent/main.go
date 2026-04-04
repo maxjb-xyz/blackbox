@@ -137,6 +137,10 @@ func collectNodeInfo(serverURL string) nodeInfo {
 func getOSInfo() string {
 	data, err := os.ReadFile("/etc/os-release")
 	if err != nil {
+		// Detect distroless Docker containers that have no /etc/os-release
+		if _, statErr := os.Stat("/.dockerenv"); statErr == nil {
+			return "docker"
+		}
 		return runtime.GOOS
 	}
 	lines := strings.Split(string(data), "\n")

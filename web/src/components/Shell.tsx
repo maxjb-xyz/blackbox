@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import { NodePulseProvider } from './NodePulse'
+import { WebSocketProvider } from './WebSocketProvider'
 import { useSession } from '../session'
 
 export default function Shell() {
@@ -19,13 +20,15 @@ export default function Shell() {
   if (loading || !user) return null
 
   return (
-    <NodePulseProvider>
-      <div style={{ display: 'flex', minHeight: '100vh' }}>
-        <Sidebar />
-        <main style={{ flex: 1, overflow: 'auto', background: 'var(--bg)' }}>
-          <Outlet />
-        </main>
-      </div>
-    </NodePulseProvider>
+    <WebSocketProvider>
+      <NodePulseProvider>
+        <div style={{ display: 'flex', minHeight: '100vh' }}>
+          <Sidebar />
+          <main style={{ flex: 1, overflow: 'auto', background: 'var(--bg)' }}>
+            <Outlet />
+          </main>
+        </div>
+      </NodePulseProvider>
+    </WebSocketProvider>
   )
 }
