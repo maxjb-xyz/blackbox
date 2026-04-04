@@ -26,7 +26,6 @@ export default function Shell() {
           <Sidebar />
           <main style={{ flex: 1, overflow: 'auto', background: 'var(--bg)' }}>
             <div
-              key={location.pathname}
               className="terminal-startup"
               style={{ width: '100%', maxWidth: 1400, margin: '0 auto', minHeight: '100%' }}
             >
