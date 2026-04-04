@@ -137,11 +137,6 @@ docker compose up -d
 | `DB_PATH` | No | `/data/blackbox.db` | Path to the SQLite database file. |
 | `LISTEN_ADDR` | No | `:8080` | TCP address the server binds to. |
 | `JWT_TTL` | No | `24h` | JWT cookie lifetime. Accepts Go duration strings (e.g., `12h`, `7d`). |
-| `OIDC_ENABLED` | No | `false` | Set to `true` to enable OpenID Connect login. |
-| `OIDC_ISSUER` | If OIDC | — | OIDC issuer URL (e.g., `https://auth.example.com`). |
-| `OIDC_CLIENT_ID` | If OIDC | — | OIDC application client ID. |
-| `OIDC_CLIENT_SECRET` | If OIDC | — | OIDC application client secret. |
-| `OIDC_REDIRECT_URL` | If OIDC | — | Callback URL (e.g., `https://blackbox.example.com/api/auth/oidc/callback`). |
 
 ### Agent Environment Variables
 
@@ -258,24 +253,43 @@ Blackbox will log every image update with the container name and new image versi
 
 ## OIDC / SSO Setup
 
-Blackbox supports any OIDC-compliant provider (Authentik, Authelia, Keycloak, etc.).
+Blackbox supports multiple OIDC providers configured from the Admin panel under **Settings > OIDC**.
 
-**Example — Authentik:**
+Each provider entry requires:
 
-1. Create a new **OAuth2/OIDC Provider** in Authentik.
-2. Set the redirect URI to `https://blackbox.example.com/api/auth/oidc/callback`.
-3. Configure the server:
+- **Name**
+- **Issuer URL**
+- **Client ID**
+- **Client Secret**
+- **Redirect URL**
 
-```yaml
-environment:
-  OIDC_ENABLED: "true"
-  OIDC_ISSUER: "https://authentik.example.com"
-  OIDC_CLIENT_ID: "your-client-id"
-  OIDC_CLIENT_SECRET: "your-client-secret"
-  OIDC_REDIRECT_URL: "https://blackbox.example.com/api/auth/oidc/callback"
+You can configure providers such as Google, Authentik, Keycloak, and other OIDC-compliant identity providers. The redirect URL format is:
+
+```text
+https://<your-domain>/api/auth/oidc/<provider-id>/callback
 ```
 
-When OIDC is enabled, a **Sign in with SSO** button appears on the login page alongside local auth.
+Each provider also has an access policy:
+
+- `open`
+- `existing accounts only`
+- `invite required`
+
+Once configured, the login page shows one or more **Sign in with SSO** options alongside local auth.
+
+---
+
+## User Registration / Invites
+
+Admin users can create invite codes in the Admin panel and copy the full invite link directly for sharing with new users.
+
+Invited users register at:
+
+```text
+/register?code=<invite-code>
+```
+
+Admins can also revoke unused invite codes from the Admin panel at any time.
 
 ---
 
