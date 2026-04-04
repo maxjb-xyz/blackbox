@@ -208,3 +208,9 @@ export async function deleteAdminUser(id: string): Promise<void> {
     throw new Error((data as { error?: string }).error ?? 'Failed to delete user')
   }
 }
+
+export async function fetchAdminConfig(): Promise<{ webhook_secret: string }> {
+  const res = await apiFetch('/api/admin/config')
+  if (!res.ok) throw new Error('Failed to fetch admin config')
+  return res.json()
+}
