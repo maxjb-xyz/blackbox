@@ -20,18 +20,43 @@ body {
   background-color: var(--bg);
   color: var(--text);
   font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
-  font-size: 14px;
+  font-size: 13px;
   margin: 0;
+}
+
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.cursor-blink {
+  animation: cursor-blink 1s step-end infinite;
+  color: var(--accent);
+  margin-left: 2px;
+}
+
+@keyframes terminal-startup {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.terminal-startup {
+  animation: terminal-startup 0.3s ease-out;
 }
 
 /* Timeline row transitions */
 .timeline-row {
-  transition: opacity 0.2s ease, filter 0.2s ease;
+  transition: filter 0.2s ease;
   border-bottom: 1px solid var(--border);
 }
 
 .timeline-row.dimmed {
-  opacity: 0.2;
   filter: blur(2px);
   pointer-events: none;
 }
@@ -44,7 +69,7 @@ body {
   border: 1px solid var(--border);
   color: var(--muted);
   font-family: inherit;
-  font-size: 11px;
+  font-size: 12px;
   padding: 4px 8px;
   pointer-events: none;
   max-width: 400px;
@@ -74,7 +99,7 @@ body {
 
 .nodes-table th {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 400;
   letter-spacing: 0.1em;
   text-align: left;
@@ -85,7 +110,7 @@ body {
 .nodes-table td {
   padding: 6px 8px;
   border-bottom: 1px solid var(--border);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .nodes-table th:first-child,

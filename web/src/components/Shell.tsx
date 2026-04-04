@@ -25,7 +25,13 @@ export default function Shell() {
         <div style={{ display: 'flex', minHeight: '100vh' }}>
           <Sidebar />
           <main style={{ flex: 1, overflow: 'auto', background: 'var(--bg)' }}>
-            <Outlet />
+            <div
+              key={location.pathname}
+              className="terminal-startup"
+              style={{ width: '100%', maxWidth: 1400, margin: '0 auto', minHeight: '100%' }}
+            >
+              <Outlet />
+            </div>
           </main>
         </div>
       </NodePulseProvider>
