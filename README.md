@@ -32,36 +32,61 @@ When your homelab breaks, Blackbox tells you what happened. You just write why.
 
 ---
 
-## Architecture
+## Quick Start
 
-Blackbox is split into two components designed to run across multiple nodes.
+> This gets a single-node setup running in minutes. For multi-node, see [Multi-Node Deployment](#multi-node-deployment).
+> The server image runs as distroless `nonroot` and can write a named volume mounted at `/data` without `user: "0:0"`. The agent example still uses `root` because read-only access to `/var/run/docker.sock` commonly requires it unless you map the host Docker socket group into the container.
 
+**1. Create a `docker-compose.yml`:**
+
+```yaml
+services:
+  blackbox-server:
+    image: ghcr.io/maxjb-xyz/blackbox-server:latest
+    container_name: blackbox-server
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - blackbox-data:/data
+    environment:
+      JWT_SECRET: "change-me-to-a-long-random-string"
+      AGENT_TOKENS: "my-homelab=change-me-to-a-secret-agent-token"
+      WEBHOOK_SECRET: "change-me-to-a-webhook-secret"
+    networks:
+      - blackbox
+
+  blackbox-agent:
+    image: ghcr.io/maxjb-xyz/blackbox-agent:latest
+    user: "0:0"
+    container_name: blackbox-agent
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /etc:/watch/etc:ro
+    environment:
+      SERVER_URL: "http://blackbox-server:8080"
+      AGENT_TOKEN: "change-me-to-a-secret-agent-token"
+      NODE_NAME: "my-homelab"
+      WATCH_PATHS: "/watch/etc"
+    networks:
+      - blackbox
+
+volumes:
+  blackbox-data:
+
+networks:
+  blackbox:
+    driver: bridge
 ```
-┌─────────────────────────────────────────────┐
-│               Blackbox Server               │
-│  ┌──────────┐  ┌──────────┐  ┌───────────┐  │
-│  │ React UI │  │ REST API │  │  SQLite   │  │
-│  │(embedded)│  │ + Auth   │  │  /data/   │  │
-│  └──────────┘  └──────────┘  └───────────┘  │
-│         ▲              ▲              ▲     │
-└─────────┼──────────────┼──────────────┼─────┘
-          │              │              │
-    Browser           Agents        Webhooks
-                         │
-         ┌───────────────┼───────────────┐
-         │               │               │
-  ┌──────┴─────┐  ┌──────┴─────┐  ┌──────┴─────┐
-  │  Agent     │  │  Agent     │  │  Agent     │
-  │  node-01   │  │  node-02   │  │  node-03   │
-  │            │  │            │  │            │
-  │ Docker sock│  │ Docker sock│  │ Watch paths│
-  └────────────┘  └────────────┘  └────────────┘
+
+**2. Start it:**
+
+```bash
+docker compose up -d
 ```
 
-| Component | Role |
-|-----------|------|
-| **Server** | Central brain. Hosts the UI, stores the database, receives events from agents, and handles webhook ingestion. |
-| **Agent** | Lightweight binary deployed on each node. Watches Docker and config files, pushes events to the server. |
+**3. Open `http://your-server:8080` and complete the setup wizard.**
 
 ---
 
@@ -97,58 +122,6 @@ Blackbox is split into two components designed to run across multiple nodes.
 - Constant-time token comparison for all shared secrets
 - Rate limiting on auth endpoints
 - Security headers middleware
-
----
-
-## Quick Start
-
-> This gets a single-node setup running in minutes. For multi-node, see [Multi-Node Deployment](#multi-node-deployment).
-> The server image runs as distroless `nonroot` and can write a named volume mounted at `/data` without `user: "0:0"`. The agent example still uses `root` because read-only access to `/var/run/docker.sock` commonly requires it unless you map the host Docker socket group into the container.
-
-**1. Create a `docker-compose.yml`:**
-
-```yaml
-services:
-  blackbox-server:
-    image: ghcr.io/maxjb-xyz/blackbox-server:latest
-    container_name: blackbox-server
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-    volumes:
-      - blackbox-data:/data
-    environment:
-      JWT_SECRET: "change-me-to-a-long-random-string"
-      AGENT_TOKENS: "my-homelab=change-me-to-a-secret-agent-token"
-      WEBHOOK_SECRET: "change-me-to-a-webhook-secret"
-
-  blackbox-agent:
-    image: ghcr.io/maxjb-xyz/blackbox-agent:latest
-    user: "0:0"
-    container_name: blackbox-agent
-    restart: unless-stopped
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /etc:/watch/etc:ro
-    environment:
-      SERVER_URL: "http://blackbox-server:8080"
-      AGENT_TOKEN: "change-me-to-a-secret-agent-token"
-      NODE_NAME: "my-homelab"
-      WATCH_PATHS: "/watch/etc"
-
-volumes:
-  blackbox-data:
-```
-
-**2. Start it:**
-
-```bash
-docker compose up -d
-```
-
-**3. Open `http://your-server:8080` and complete the setup wizard.**
-
----
 
 ## Configuration Reference
 
@@ -294,7 +267,7 @@ Blackbox supports any OIDC-compliant provider (Authentik, Authelia, Keycloak, et
 ```yaml
 environment:
   OIDC_ENABLED: "true"
-  OIDC_ISSUER: "https://authentik.example.com/application/o/blackbox/"
+  OIDC_ISSUER: "https://authentik.example.com"
   OIDC_CLIENT_ID: "your-client-id"
   OIDC_CLIENT_SECRET: "your-client-secret"
   OIDC_REDIRECT_URL: "https://blackbox.example.com/api/auth/oidc/callback"
@@ -330,6 +303,39 @@ blackbox.example.com {
     reverse_proxy localhost:8080
 }
 ```
+
+---
+
+## Architecture
+
+Blackbox is split into two components designed to run across multiple nodes.
+
+```
+┌─────────────────────────────────────────────┐
+│               Blackbox Server               │
+│  ┌──────────┐  ┌──────────┐  ┌───────────┐  │
+│  │ React UI │  │ REST API │  │  SQLite   │  │
+│  │(embedded)│  │ + Auth   │  │  /data/   │  │
+│  └──────────┘  └──────────┘  └───────────┘  │
+│         ▲              ▲              ▲     │
+└─────────┼──────────────┼──────────────┼─────┘
+          │              │              │
+    Browser           Agents        Webhooks
+                         │
+         ┌───────────────┼───────────────┐
+         │               │               │
+  ┌──────┴─────┐  ┌──────┴─────┐  ┌──────┴─────┐
+  │  Agent     │  │  Agent     │  │  Agent     │
+  │  node-01   │  │  node-02   │  │  node-03   │
+  │            │  │            │  │            │
+  │ Docker sock│  │ Docker sock│  │ Watch paths│
+  └────────────┘  └────────────┘  └────────────┘
+```
+
+| Component | Role |
+|-----------|------|
+| **Server** | Central brain. Hosts the UI, stores the database, receives events from agents, and handles webhook ingestion. |
+| **Agent** | Lightweight binary deployed on each node. Watches Docker and config files, pushes events to the server. |
 
 ---
 

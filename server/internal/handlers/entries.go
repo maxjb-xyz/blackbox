@@ -6,11 +6,18 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"blackbox/shared/types"
 	"github.com/go-chi/chi/v5"
 	"gorm.io/gorm"
 )
+
+type entryCursor struct {
+	Timestamp time.Time
+	ID        string
+}
 
 func ListEntries(database *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -27,9 +34,19 @@ func ListEntries(database *gorm.DB) http.HandlerFunc {
 			}
 		}
 
-		tx := database.Model(&types.Entry{}).Order("id DESC").Limit(limit + 1)
+		tx := database.Model(&types.Entry{}).Order("timestamp DESC").Order("id DESC").Limit(limit + 1)
 		if cursor != "" {
-			tx = tx.Where("id < ?", cursor)
+			parsedCursor, err := parseEntryCursor(cursor)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "invalid cursor")
+				return
+			}
+			tx = tx.Where(
+				"timestamp < ? OR (timestamp = ? AND id < ?)",
+				parsedCursor.Timestamp,
+				parsedCursor.Timestamp,
+				parsedCursor.ID,
+			)
 		}
 		if node != "" {
 			tx = tx.Where("node_name = ?", node)
@@ -59,8 +76,8 @@ func ListEntries(database *gorm.DB) http.HandlerFunc {
 
 		resp := response{Entries: entries}
 		if len(entries) > limit {
-			resp.NextCursor = entries[limit].ID
 			resp.Entries = entries[:limit]
+			resp.NextCursor = encodeEntryCursor(resp.Entries[len(resp.Entries)-1])
 		}
 		if resp.Entries == nil {
 			resp.Entries = []types.Entry{}
@@ -71,6 +88,25 @@ func ListEntries(database *gorm.DB) http.HandlerFunc {
 			log.Printf("ListEntries encode: %v", err)
 		}
 	}
+}
+
+func encodeEntryCursor(entry types.Entry) string {
+	return entry.Timestamp.UTC().Format(time.RFC3339Nano) + "|" + entry.ID
+}
+
+func parseEntryCursor(cursor string) (entryCursor, error) {
+	ts, id, ok := strings.Cut(cursor, "|")
+	if !ok || id == "" {
+		return entryCursor{}, errors.New("cursor missing delimiter")
+	}
+	parsedTime, err := time.Parse(time.RFC3339Nano, ts)
+	if err != nil {
+		return entryCursor{}, err
+	}
+	return entryCursor{
+		Timestamp: parsedTime.UTC(),
+		ID:        id,
+	}, nil
 }
 
 func GetEntry(database *gorm.DB) http.HandlerFunc {

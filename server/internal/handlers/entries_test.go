@@ -37,17 +37,17 @@ func TestListEntries_Empty(t *testing.T) {
 func TestListEntries_Pagination(t *testing.T) {
 	database := newTestDB(t)
 
+	base := time.Date(2026, 4, 4, 20, 0, 0, 0, time.UTC)
 	for i := 0; i < 5; i++ {
 		entry := types.Entry{
-			ID:        ulid.Make().String(),
-			Timestamp: time.Now().UTC().Add(time.Duration(i) * time.Second),
+			ID:        fmt.Sprintf("01TESTULIDENTRY%d", i),
+			Timestamp: base.Add(time.Duration(i) * time.Second),
 			NodeName:  "homelab-01",
 			Source:    "docker",
 			Event:     "start",
 			Content:   fmt.Sprintf("entry %d", i),
 		}
 		require.NoError(t, database.Create(&entry).Error)
-		time.Sleep(time.Millisecond)
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/entries?limit=3", nil)
@@ -64,6 +64,25 @@ func TestListEntries_Pagination(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
 	require.Len(t, resp.Entries, 3)
 	assert.NotEmpty(t, resp.NextCursor)
+	assert.Equal(t, "entry 4", resp.Entries[0].Content)
+	assert.Equal(t, "entry 3", resp.Entries[1].Content)
+	assert.Equal(t, "entry 2", resp.Entries[2].Content)
+
+	req = httptest.NewRequest(http.MethodGet, "/api/entries?limit=3&cursor="+resp.NextCursor, nil)
+	rr = httptest.NewRecorder()
+
+	handlers.ListEntries(database)(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	var resp2 struct {
+		Entries    []types.Entry `json:"entries"`
+		NextCursor string        `json:"next_cursor"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp2))
+	require.Len(t, resp2.Entries, 2)
+	assert.Equal(t, "entry 1", resp2.Entries[0].Content)
+	assert.Equal(t, "entry 0", resp2.Entries[1].Content)
+	assert.Empty(t, resp2.NextCursor)
 }
 
 func TestListEntries_FilterByNode(t *testing.T) {
@@ -135,6 +154,52 @@ func TestListEntries_ShowsHeartbeatsWhenNotFiltered(t *testing.T) {
 	}
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
 	assert.Len(t, resp.Entries, 2)
+}
+
+func TestListEntries_OrdersByTimestampThenID(t *testing.T) {
+	database := newTestDB(t)
+
+	require.NoError(t, database.Create(&types.Entry{
+		ID:        "02",
+		Timestamp: time.Date(2026, 4, 4, 19, 0, 0, 0, time.UTC),
+		NodeName:  "n1",
+		Source:    "docker",
+		Event:     "stop",
+		Content:   "older timestamp, newer id",
+	}).Error)
+	require.NoError(t, database.Create(&types.Entry{
+		ID:        "01",
+		Timestamp: time.Date(2026, 4, 4, 19, 0, 5, 0, time.UTC),
+		NodeName:  "n1",
+		Source:    "docker",
+		Event:     "start",
+		Content:   "newer timestamp, older id",
+	}).Error)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/entries", nil)
+	w := httptest.NewRecorder()
+
+	handlers.ListEntries(database)(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp struct {
+		Entries []types.Entry `json:"entries"`
+	}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	require.Len(t, resp.Entries, 2)
+	assert.Equal(t, "01", resp.Entries[0].ID)
+	assert.Equal(t, "02", resp.Entries[1].ID)
+}
+
+func TestListEntries_InvalidCursor(t *testing.T) {
+	database := newTestDB(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/entries?cursor=not-a-cursor", nil)
+	w := httptest.NewRecorder()
+
+	handlers.ListEntries(database)(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
 func TestGetEntry_NotFound(t *testing.T) {

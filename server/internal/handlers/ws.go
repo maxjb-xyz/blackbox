@@ -7,10 +7,17 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strings"
+	"time"
 
 	"blackbox/server/internal/auth"
 	"blackbox/server/internal/hub"
 	"github.com/coder/websocket"
+)
+
+const (
+	websocketWriteTimeout = 10 * time.Second
+	websocketPingInterval = 30 * time.Second
 )
 
 func WebSocketHandler(h *hub.Hub) http.HandlerFunc {
@@ -29,14 +36,23 @@ func WebSocketHandler(h *hub.Hub) http.HandlerFunc {
 			log.Printf("ws: accept error: %v", err)
 			return
 		}
+		closeAttempted := false
 		defer func() {
+			if closeAttempted {
+				return
+			}
 			if err := conn.CloseNow(); err != nil {
+				if isExpectedWebSocketError(err) {
+					return
+				}
 				log.Printf("ws: close-now error: %v", err)
 			}
 		}()
 
 		// CloseRead drains incoming frames and cancels ctx when the peer closes.
 		ctx := conn.CloseRead(context.Background())
+		pingTicker := time.NewTicker(websocketPingInterval)
+		defer pingTicker.Stop()
 
 		remoteAddr := remoteIP(r.RemoteAddr)
 		_, ch, disconnect, unsub, err := h.Subscribe(claims.UserID, remoteAddr)
@@ -49,8 +65,11 @@ func WebSocketHandler(h *hub.Hub) http.HandlerFunc {
 			case errors.Is(err, hub.ErrTooManyIPConnections):
 				reason = "too many websocket connections from ip"
 			}
+			closeAttempted = true
 			if closeErr := conn.Close(status, reason); closeErr != nil {
-				log.Printf("ws: close error: %v", closeErr)
+				if !isExpectedWebSocketError(closeErr) {
+					log.Printf("ws: close error: %v", closeErr)
+				}
 			}
 			return
 		}
@@ -59,10 +78,23 @@ func WebSocketHandler(h *hub.Hub) http.HandlerFunc {
 		for {
 			select {
 			case <-ctx.Done():
+				closeAttempted = true
 				if err := conn.Close(websocket.StatusNormalClosure, ""); err != nil {
-					log.Printf("ws: close error: %v", err)
+					if !isExpectedWebSocketError(err) {
+						log.Printf("ws: close error: %v", err)
+					}
 				}
 				return
+			case <-pingTicker.C:
+				pingCtx, cancel := context.WithTimeout(context.Background(), websocketWriteTimeout)
+				err := conn.Ping(pingCtx)
+				cancel()
+				if err != nil {
+					if !isExpectedWebSocketError(err) {
+						log.Printf("ws: ping error: %v", err)
+					}
+					return
+				}
 			case reason, ok := <-disconnect:
 				if !ok {
 					return
@@ -70,21 +102,46 @@ func WebSocketHandler(h *hub.Hub) http.HandlerFunc {
 				if reason == "" {
 					reason = "session invalidated"
 				}
+				closeAttempted = true
 				if err := conn.Close(websocket.StatusPolicyViolation, reason); err != nil {
-					log.Printf("ws: close error: %v", err)
+					if !isExpectedWebSocketError(err) {
+						log.Printf("ws: close error: %v", err)
+					}
 				}
 				return
 			case msg, ok := <-ch:
 				if !ok {
 					return
 				}
-				if err := conn.Write(ctx, websocket.MessageText, msg); err != nil {
-					log.Printf("ws: write error: %v", err)
+				writeCtx, cancel := context.WithTimeout(context.Background(), websocketWriteTimeout)
+				err := conn.Write(writeCtx, websocket.MessageText, msg)
+				cancel()
+				if err != nil {
+					if !isExpectedWebSocketError(err) {
+						log.Printf("ws: write error: %v", err)
+					}
 					return
 				}
 			}
 		}
 	}
+}
+
+func isExpectedWebSocketError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, net.ErrClosed) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var closeErr websocket.CloseError
+	if errors.As(err, &closeErr) {
+		switch closeErr.Code {
+		case websocket.StatusNormalClosure, websocket.StatusGoingAway, websocket.StatusNoStatusRcvd:
+			return true
+		}
+	}
+	return strings.Contains(err.Error(), "use of closed network connection")
 }
 
 func remoteIP(remoteAddr string) string {
