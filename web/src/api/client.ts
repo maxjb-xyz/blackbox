@@ -56,6 +56,14 @@ export interface EntryNotesPage {
   next_offset?: number
 }
 
+export interface AdminUser {
+  id: string
+  username: string
+  is_admin: boolean
+  token_version: number
+  created_at: string
+}
+
 function apiFetch(input: RequestInfo | URL, init?: RequestInit) {
   return fetch(input, { credentials: 'same-origin', ...init })
 }
@@ -167,4 +175,36 @@ export async function deleteNote(noteId: string): Promise<void> {
     method: 'DELETE',
   })
   if (!res.ok) throw new Error('Failed to delete note')
+}
+
+export async function listAdminUsers(): Promise<AdminUser[]> {
+  const res = await apiFetch('/api/admin/users')
+  if (!res.ok) throw new Error('Failed to list users')
+  return res.json()
+}
+
+export async function updateAdminUser(id: string, isAdmin: boolean): Promise<AdminUser> {
+  const res = await apiFetch(`/api/admin/users/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ is_admin: isAdmin }),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error((data as { error?: string }).error ?? 'Failed to update user')
+  }
+  return res.json()
+}
+
+export async function forceLogoutUser(id: string): Promise<void> {
+  const res = await apiFetch(`/api/admin/users/${id}/force-logout`, { method: 'POST' })
+  if (!res.ok) throw new Error('Failed to force logout user')
+}
+
+export async function deleteAdminUser(id: string): Promise<void> {
+  const res = await apiFetch(`/api/admin/users/${id}`, { method: 'DELETE' })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error((data as { error?: string }).error ?? 'Failed to delete user')
+  }
 }
