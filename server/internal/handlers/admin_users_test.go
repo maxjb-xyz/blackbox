@@ -7,9 +7,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"blackbox/server/internal/auth"
 	"blackbox/server/internal/handlers"
+	"blackbox/server/internal/hub"
 	"blackbox/server/internal/models"
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
@@ -60,12 +62,13 @@ func TestUpdateAdminUser_ToggleAdmin(t *testing.T) {
 	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
 
 	w := httptest.NewRecorder()
-	handlers.UpdateAdminUser(database)(w, req)
+	handlers.UpdateAdminUser(database, nil)(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	var user models.User
 	require.NoError(t, database.First(&user, "id = ?", "user1").Error)
 	assert.True(t, user.IsAdmin)
+	assert.Equal(t, 1, user.TokenVersion)
 }
 
 func TestUpdateAdminUser_CannotDemoteSelf(t *testing.T) {
@@ -82,7 +85,7 @@ func TestUpdateAdminUser_CannotDemoteSelf(t *testing.T) {
 	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
 
 	w := httptest.NewRecorder()
-	handlers.UpdateAdminUser(database)(w, req)
+	handlers.UpdateAdminUser(database, nil)(w, req)
 
 	assert.Equal(t, http.StatusForbidden, w.Code)
 }
@@ -101,9 +104,39 @@ func TestUpdateAdminUser_RequiresExplicitIsAdmin(t *testing.T) {
 	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
 
 	w := httptest.NewRecorder()
-	handlers.UpdateAdminUser(database)(w, req)
+	handlers.UpdateAdminUser(database, nil)(w, req)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestUpdateAdminUser_InvalidatesActiveSessionsOnRoleChange(t *testing.T) {
+	database := newTestDB(t)
+	require.NoError(t, database.Create(&models.User{ID: "admin1", Username: "admin", IsAdmin: true}).Error)
+	require.NoError(t, database.Create(&models.User{ID: "user1", Username: "alice", IsAdmin: false, TokenVersion: 7}).Error)
+
+	eventHub := hub.New()
+	_, _, disconnect, unsub, err := eventHub.Subscribe("user1", "10.0.0.1")
+	require.NoError(t, err)
+	defer unsub()
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/admin/users/user1", bytes.NewBufferString(`{"is_admin": true}`))
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(adminUserContext("admin1"))
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", "user1")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	w := httptest.NewRecorder()
+	handlers.UpdateAdminUser(database, eventHub)(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	select {
+	case reason := <-disconnect:
+		assert.Equal(t, "session invalidated", reason)
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("role change did not invalidate active sessions")
+	}
 }
 
 func TestForceLogoutUser_IncrementsTokenVersion(t *testing.T) {
@@ -119,7 +152,7 @@ func TestForceLogoutUser_IncrementsTokenVersion(t *testing.T) {
 	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
 
 	w := httptest.NewRecorder()
-	handlers.ForceLogoutUser(database)(w, req)
+	handlers.ForceLogoutUser(database, nil)(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	var user models.User
@@ -140,7 +173,7 @@ func TestDeleteAdminUser_DeletesUser(t *testing.T) {
 	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
 
 	w := httptest.NewRecorder()
-	handlers.DeleteAdminUser(database)(w, req)
+	handlers.DeleteAdminUser(database, nil)(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	var count int64
@@ -160,7 +193,7 @@ func TestDeleteAdminUser_CannotDeleteSelf(t *testing.T) {
 	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
 
 	w := httptest.NewRecorder()
-	handlers.DeleteAdminUser(database)(w, req)
+	handlers.DeleteAdminUser(database, nil)(w, req)
 
 	assert.Equal(t, http.StatusForbidden, w.Code)
 }

@@ -3,17 +3,17 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
+	"net"
 	"net/http"
 
 	"blackbox/server/internal/auth"
 	"blackbox/server/internal/hub"
-	"blackbox/server/internal/models"
 	"github.com/coder/websocket"
-	"gorm.io/gorm"
 )
 
-func WebSocketHandler(database *gorm.DB, h *hub.Hub) http.HandlerFunc {
+func WebSocketHandler(h *hub.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		claims, ok := auth.ClaimsFromContext(r.Context())
 		if !ok {
@@ -35,10 +35,25 @@ func WebSocketHandler(database *gorm.DB, h *hub.Hub) http.HandlerFunc {
 			}
 		}()
 
-		// CloseRead pumps incoming frames (required by nhooyr) and cancels ctx on close.
+		// CloseRead drains incoming frames and cancels ctx when the peer closes.
 		ctx := conn.CloseRead(context.Background())
 
-		_, ch, unsub := h.Subscribe()
+		remoteAddr := remoteIP(r.RemoteAddr)
+		_, ch, disconnect, unsub, err := h.Subscribe(claims.UserID, remoteAddr)
+		if err != nil {
+			status := websocket.StatusPolicyViolation
+			reason := "websocket connection rejected"
+			switch {
+			case errors.Is(err, hub.ErrTooManyUserConnections):
+				reason = "too many websocket connections for user"
+			case errors.Is(err, hub.ErrTooManyIPConnections):
+				reason = "too many websocket connections from ip"
+			}
+			if closeErr := conn.Close(status, reason); closeErr != nil {
+				log.Printf("ws: close error: %v", closeErr)
+			}
+			return
+		}
 		defer unsub()
 
 		for {
@@ -48,14 +63,19 @@ func WebSocketHandler(database *gorm.DB, h *hub.Hub) http.HandlerFunc {
 					log.Printf("ws: close error: %v", err)
 				}
 				return
-			case msg, ok := <-ch:
+			case reason, ok := <-disconnect:
 				if !ok {
 					return
 				}
-				if !tokenVersionMatches(ctx, database, claims.UserID, claims.TokenVersion) {
-					if err := conn.Close(websocket.StatusPolicyViolation, "session invalidated"); err != nil {
-						log.Printf("ws: close error: %v", err)
-					}
+				if reason == "" {
+					reason = "session invalidated"
+				}
+				if err := conn.Close(websocket.StatusPolicyViolation, reason); err != nil {
+					log.Printf("ws: close error: %v", err)
+				}
+				return
+			case msg, ok := <-ch:
+				if !ok {
 					return
 				}
 				if err := conn.Write(ctx, websocket.MessageText, msg); err != nil {
@@ -67,13 +87,12 @@ func WebSocketHandler(database *gorm.DB, h *hub.Hub) http.HandlerFunc {
 	}
 }
 
-func tokenVersionMatches(ctx context.Context, database *gorm.DB, userID string, expected int) bool {
-	var user models.User
-	if err := database.WithContext(ctx).Select("token_version").First(&user, "id = ?", userID).Error; err != nil {
-		log.Printf("ws: token version lookup failed for user %s: %v", userID, err)
-		return false
+func remoteIP(remoteAddr string) string {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err == nil {
+		return host
 	}
-	return user.TokenVersion == expected
+	return remoteAddr
 }
 
 // WSMessage is the envelope for all WebSocket broadcasts.

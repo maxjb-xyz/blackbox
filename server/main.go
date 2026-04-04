@@ -135,7 +135,7 @@ func main() {
 		r.Get("/api/services/aliases", handlers.ListServiceAliases(database))
 		r.Post("/api/services/aliases", handlers.CreateServiceAlias(database))
 		r.Delete("/api/services/aliases/{alias}", handlers.DeleteServiceAlias(database))
-		r.Get("/api/ws", handlers.WebSocketHandler(database, eventHub))
+		r.Get("/api/ws", handlers.WebSocketHandler(eventHub))
 	})
 
 	r.Group(func(r chi.Router) {
@@ -143,9 +143,9 @@ func main() {
 		r.Use(middleware.TokenVersionCheck(database))
 		r.Use(middleware.RequireAdmin())
 		r.Get("/api/admin/users", handlers.ListAdminUsers(database))
-		r.Patch("/api/admin/users/{id}", handlers.UpdateAdminUser(database))
-		r.Post("/api/admin/users/{id}/force-logout", handlers.ForceLogoutUser(database))
-		r.Delete("/api/admin/users/{id}", handlers.DeleteAdminUser(database))
+		r.Patch("/api/admin/users/{id}", handlers.UpdateAdminUser(database, eventHub))
+		r.Post("/api/admin/users/{id}/force-logout", handlers.ForceLogoutUser(database, eventHub))
+		r.Delete("/api/admin/users/{id}", handlers.DeleteAdminUser(database, eventHub))
 		r.Get("/api/admin/config", handlers.AdminConfig(webhookSecret))
 	})
 

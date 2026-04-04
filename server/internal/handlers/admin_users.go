@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"blackbox/server/internal/auth"
+	"blackbox/server/internal/hub"
 	"blackbox/server/internal/models"
 	"github.com/go-chi/chi/v5"
 	"gorm.io/gorm"
@@ -49,7 +50,7 @@ func ListAdminUsers(database *gorm.DB) http.HandlerFunc {
 	}
 }
 
-func UpdateAdminUser(database *gorm.DB) http.HandlerFunc {
+func UpdateAdminUser(database *gorm.DB, h *hub.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		callerClaims, _ := auth.ClaimsFromContext(r.Context())
 		targetID := chi.URLParam(r, "id")
@@ -72,20 +73,40 @@ func UpdateAdminUser(database *gorm.DB) http.HandlerFunc {
 		}
 
 		var user models.User
-		if err := database.First(&user, "id = ?", targetID).Error; err != nil {
+		roleChanged := false
+		if err := database.Transaction(func(tx *gorm.DB) error {
+			if err := tx.First(&user, "id = ?", targetID).Error; err != nil {
+				return err
+			}
+
+			roleChanged = user.IsAdmin != *req.IsAdmin
+			updates := map[string]interface{}{
+				"is_admin": *req.IsAdmin,
+			}
+			if roleChanged {
+				updates["token_version"] = gorm.Expr("token_version + 1")
+			}
+			if err := tx.Model(&user).Updates(updates).Error; err != nil {
+				return err
+			}
+
+			user.IsAdmin = *req.IsAdmin
+			if roleChanged {
+				user.TokenVersion++
+			}
+			return nil
+		}); err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				writeError(w, http.StatusNotFound, "user not found")
 				return
 			}
-			writeError(w, http.StatusInternalServerError, "failed to fetch user")
-			return
-		}
-
-		if err := database.Model(&user).Update("is_admin", *req.IsAdmin).Error; err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to update user")
 			return
 		}
-		user.IsAdmin = *req.IsAdmin
+
+		if roleChanged && h != nil {
+			h.InvalidateUser(targetID)
+		}
 
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(toAdminUserResponse(user)); err != nil {
@@ -94,7 +115,7 @@ func UpdateAdminUser(database *gorm.DB) http.HandlerFunc {
 	}
 }
 
-func ForceLogoutUser(database *gorm.DB) http.HandlerFunc {
+func ForceLogoutUser(database *gorm.DB, h *hub.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		targetID := chi.URLParam(r, "id")
 
@@ -112,13 +133,16 @@ func ForceLogoutUser(database *gorm.DB) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "failed to invalidate sessions")
 			return
 		}
+		if h != nil {
+			h.InvalidateUser(targetID)
+		}
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 	}
 }
 
-func DeleteAdminUser(database *gorm.DB) http.HandlerFunc {
+func DeleteAdminUser(database *gorm.DB, h *hub.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		callerClaims, _ := auth.ClaimsFromContext(r.Context())
 		targetID := chi.URLParam(r, "id")
@@ -136,6 +160,9 @@ func DeleteAdminUser(database *gorm.DB) http.HandlerFunc {
 		if result.RowsAffected == 0 {
 			writeError(w, http.StatusNotFound, "user not found")
 			return
+		}
+		if h != nil {
+			h.InvalidateUser(targetID)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
