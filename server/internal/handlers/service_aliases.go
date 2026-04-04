@@ -37,7 +37,7 @@ func ListServiceAliases(database *gorm.DB) http.HandlerFunc {
 func CreateServiceAlias(database *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req createServiceAliasRequest
-		if !decodeWebhookBody(w, r, 1<<20, &req) {
+		if !decodeJSONBody(w, r, 1<<20, &req) {
 			return
 		}
 

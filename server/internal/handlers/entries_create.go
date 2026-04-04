@@ -23,7 +23,7 @@ type createEntryRequest struct {
 func CreateEntry(database *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req createEntryRequest
-		if !decodeWebhookBody(w, r, 1<<20, &req) {
+		if !decodeJSONBody(w, r, 1<<20, &req) {
 			return
 		}
 		req.Title = strings.TrimSpace(req.Title)

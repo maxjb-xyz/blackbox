@@ -80,6 +80,7 @@ func TestAgentPush_ThrottlesLastSeenUpdates(t *testing.T) {
 		Timestamp: time.Now().UTC(),
 		NodeName:  "homelab-01",
 		Source:    "docker",
+		Service:   "nginx",
 		Event:     "stop",
 		Content:   "container nginx stopped",
 	}
@@ -139,6 +140,7 @@ func TestAgentPush_DockerStartRemainsThrottled(t *testing.T) {
 		Timestamp: time.Now().UTC(),
 		NodeName:  "homelab-01",
 		Source:    "docker",
+		Service:   "nginx",
 		Event:     "start",
 		Content:   "container nginx started",
 	}
