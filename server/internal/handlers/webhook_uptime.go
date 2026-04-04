@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"blackbox/server/internal/correlation"
+	"blackbox/server/internal/hub"
 	"blackbox/server/internal/services"
 	"blackbox/shared/types"
 	"github.com/oklog/ulid/v2"
@@ -27,7 +28,7 @@ type uptimePayload struct {
 	} `json:"monitor"`
 }
 
-func WebhookUptime(database *gorm.DB) http.HandlerFunc {
+func WebhookUptime(database *gorm.DB, h *hub.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var payload uptimePayload
 		if !decodeJSONBody(w, r, 1<<20, &payload) {
@@ -126,6 +127,11 @@ func WebhookUptime(database *gorm.DB) http.HandlerFunc {
 		if err := database.Create(&entry).Error; err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to save entry")
 			return
+		}
+		if h != nil {
+			if msg := MarshalWSMessage("entry", entry); msg != nil {
+				h.Broadcast(msg)
+			}
 		}
 
 		w.WriteHeader(http.StatusCreated)

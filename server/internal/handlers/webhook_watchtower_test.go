@@ -21,7 +21,7 @@ func TestWebhookWatchtower_SavesEntry(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	handlers.WebhookWatchtower(database)(w, req)
+	handlers.WebhookWatchtower(database, nil)(w, req)
 
 	assert.Equal(t, http.StatusCreated, w.Code)
 
@@ -50,7 +50,7 @@ func TestWebhookWatchtower_NormalizesServiceAlias(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	handlers.WebhookWatchtower(database)(w, req)
+	handlers.WebhookWatchtower(database, nil)(w, req)
 
 	require.Equal(t, http.StatusCreated, w.Code)
 
@@ -66,7 +66,7 @@ func TestWebhookWatchtower_RejectsMalformedJSON(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	handlers.WebhookWatchtower(database)(w, req)
+	handlers.WebhookWatchtower(database, nil)(w, req)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 

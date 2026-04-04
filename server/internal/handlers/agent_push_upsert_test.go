@@ -27,7 +27,7 @@ func TestAgentPush_CreatesNode(t *testing.T) {
 		Metadata:  `{"agent_version":"v0.2.1","ip_address":"10.0.0.5","os_info":"Ubuntu 24.04 LTS"}`,
 	}
 	req, rr, authMiddleware := authenticatedAgentRequest(t, entry, "homelab-01")
-	authMiddleware(handlers.AgentPush(database)).ServeHTTP(rr, req)
+	authMiddleware(handlers.AgentPush(database, nil)).ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
 
@@ -54,7 +54,7 @@ func TestAgentPush_HeartbeatUpdatesNodeMetadata(t *testing.T) {
 		Metadata:  meta,
 	}
 	req, rr, authMiddleware := authenticatedAgentRequest(t, entry, "homelab-01")
-	authMiddleware(handlers.AgentPush(database)).ServeHTTP(rr, req)
+	authMiddleware(handlers.AgentPush(database, nil)).ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
 
@@ -85,7 +85,7 @@ func TestAgentPush_ThrottlesLastSeenUpdates(t *testing.T) {
 		Content:   "container nginx stopped",
 	}
 	req, rr, authMiddleware := authenticatedAgentRequest(t, entry, "homelab-01")
-	authMiddleware(handlers.AgentPush(database)).ServeHTTP(rr, req)
+	authMiddleware(handlers.AgentPush(database, nil)).ServeHTTP(rr, req)
 	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
 
 	var node models.Node
@@ -113,7 +113,7 @@ func TestAgentPush_StartUpdatesMetadataForExistingNode(t *testing.T) {
 		Metadata:  `{"agent_version":"v0.3.0","ip_address":"10.0.0.8","os_info":"Debian 13"}`,
 	}
 	req, rr, authMiddleware := authenticatedAgentRequest(t, entry, "homelab-01")
-	authMiddleware(handlers.AgentPush(database)).ServeHTTP(rr, req)
+	authMiddleware(handlers.AgentPush(database, nil)).ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
 
@@ -145,7 +145,7 @@ func TestAgentPush_DockerStartRemainsThrottled(t *testing.T) {
 		Content:   "container nginx started",
 	}
 	req, rr, authMiddleware := authenticatedAgentRequest(t, entry, "homelab-01")
-	authMiddleware(handlers.AgentPush(database)).ServeHTTP(rr, req)
+	authMiddleware(handlers.AgentPush(database, nil)).ServeHTTP(rr, req)
 	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
 
 	var node models.Node
@@ -166,7 +166,7 @@ func TestAgentPush_RejectsNodeMismatch(t *testing.T) {
 	}
 
 	req, rr, authMiddleware := authenticatedAgentRequest(t, entry, "real-node")
-	authMiddleware(handlers.AgentPush(database)).ServeHTTP(rr, req)
+	authMiddleware(handlers.AgentPush(database, nil)).ServeHTTP(rr, req)
 
 	assert.Equal(t, http.StatusForbidden, rr.Code)
 	var count int64

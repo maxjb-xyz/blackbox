@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"blackbox/server/internal/hub"
 	"blackbox/server/internal/middleware"
 	"blackbox/server/internal/models"
 	"blackbox/server/internal/services"
@@ -17,7 +18,7 @@ import (
 
 const maxAgentEntryBodyBytes = 64 << 10
 
-func AgentPush(database *gorm.DB) http.HandlerFunc {
+func AgentPush(database *gorm.DB, h *hub.Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		nodeName, ok := middleware.AgentNodeFromContext(r.Context())
 		if !ok {
@@ -52,7 +53,13 @@ func AgentPush(database *gorm.DB) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "failed to save entry")
 			return
 		}
+		if h != nil {
+			if msg := MarshalWSMessage("entry", entry); msg != nil {
+				h.Broadcast(msg)
+			}
+		}
 		upsertNode(database, entry)
+		broadcastNodeStatus(database, h)
 		w.WriteHeader(http.StatusCreated)
 	}
 }
@@ -136,5 +143,29 @@ func applyHeartbeatMeta(node *models.Node, metadata string) {
 	}
 	if meta.OsInfo != "" {
 		node.OsInfo = meta.OsInfo
+	}
+}
+
+func broadcastNodeStatus(database *gorm.DB, h *hub.Hub) {
+	if h == nil {
+		return
+	}
+	var nodes []models.Node
+	if err := database.Find(&nodes).Error; err != nil {
+		return
+	}
+	online := 0
+	threshold := time.Now().Add(-7 * time.Minute)
+	for _, n := range nodes {
+		if n.LastSeen.After(threshold) {
+			online++
+		}
+	}
+	type nodeStatus struct {
+		Online int `json:"online"`
+		Total  int `json:"total"`
+	}
+	if msg := MarshalWSMessage("node_status", nodeStatus{Online: online, Total: len(nodes)}); msg != nil {
+		h.Broadcast(msg)
 	}
 }
