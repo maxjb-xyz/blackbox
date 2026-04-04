@@ -6,6 +6,7 @@ export interface SessionUser {
   user_id: string
   username: string
   is_admin: boolean
+  email: string
 }
 
 export interface HealthStatus {
@@ -68,6 +69,18 @@ function apiFetch(input: RequestInfo | URL, init?: RequestInit) {
   return fetch(input, { credentials: 'same-origin', ...init })
 }
 
+async function readErrorMessage(res: Response, fallback: string) {
+  const text = await res.text().catch(() => '')
+  if (!text) return fallback
+  try {
+    const data = JSON.parse(text) as { error?: string }
+    if (typeof data.error === 'string' && data.error) return data.error
+  } catch {
+    return text
+  }
+  return text
+}
+
 export async function checkSetupStatus(): Promise<SetupStatus> {
   const res = await apiFetch('/api/setup/status')
   if (!res.ok) throw new Error('Failed to check setup status')
@@ -80,16 +93,13 @@ export async function checkHealth(): Promise<HealthStatus> {
   return res.json()
 }
 
-export async function bootstrap(username: string, password: string): Promise<SessionUser> {
+export async function bootstrap(username: string, email: string, password: string): Promise<SessionUser> {
   const res = await apiFetch('/api/auth/bootstrap', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ username, email, password }),
   })
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}))
-    throw new Error((data as { error?: string }).error ?? 'Bootstrap failed')
-  }
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Bootstrap failed'))
   const data = (await res.json()) as { user: SessionUser }
   return data.user
 }
@@ -100,12 +110,36 @@ export async function login(username: string, password: string): Promise<Session
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password }),
   })
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}))
-    throw new Error((data as { error?: string }).error ?? 'Login failed')
-  }
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Login failed'))
   const data = (await res.json()) as { user: SessionUser }
   return data.user
+}
+
+export async function register(
+  username: string,
+  email: string,
+  password: string,
+  inviteCode: string,
+): Promise<SessionUser> {
+  const res = await apiFetch('/api/auth/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, email, password, invite_code: inviteCode }),
+  })
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Registration failed'))
+  const data = (await res.json()) as { user: SessionUser }
+  return data.user
+}
+
+export interface PublicOIDCProvider {
+  id: string
+  name: string
+}
+
+export async function fetchOIDCProviders(): Promise<{ providers: PublicOIDCProvider[] }> {
+  const res = await apiFetch('/api/auth/oidc/providers')
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to fetch OIDC providers'))
+  return res.json()
 }
 
 export async function fetchCurrentUser(): Promise<SessionUser> {
@@ -131,6 +165,7 @@ export async function fetchEntries(params: {
   limit?: number
   node?: string
   source?: string
+  service?: string
   q?: string
   hideHeartbeat?: boolean
 }): Promise<EntriesPage> {
@@ -139,11 +174,18 @@ export async function fetchEntries(params: {
   if (params.limit) url.searchParams.set('limit', String(params.limit))
   if (params.node) url.searchParams.set('node', params.node)
   if (params.source) url.searchParams.set('source', params.source)
+  if (params.service) url.searchParams.set('service', params.service)
   if (params.q) url.searchParams.set('q', params.q)
   if (params.hideHeartbeat) url.searchParams.set('hide_heartbeat', 'true')
 
   const res = await apiFetch(url.toString())
   if (!res.ok) throw new Error('Failed to fetch entries')
+  return res.json()
+}
+
+export async function fetchEntryServices(): Promise<{ services: string[] }> {
+  const res = await apiFetch('/api/entries/services')
+  if (!res.ok) throw new Error('Failed to fetch entry services')
   return res.json()
 }
 
@@ -203,14 +245,80 @@ export async function forceLogoutUser(id: string): Promise<void> {
 
 export async function deleteAdminUser(id: string): Promise<void> {
   const res = await apiFetch(`/api/admin/users/${id}`, { method: 'DELETE' })
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}))
-    throw new Error((data as { error?: string }).error ?? 'Failed to delete user')
-  }
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to delete user'))
 }
 
 export async function fetchAdminConfig(): Promise<{ webhook_secret: string }> {
   const res = await apiFetch('/api/admin/config')
   if (!res.ok) throw new Error('Failed to fetch admin config')
   return res.json()
+}
+
+export async function revokeInvite(id: string): Promise<void> {
+  const res = await apiFetch(`/api/auth/invite/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to revoke invite'))
+}
+
+export interface OIDCProviderConfig {
+  id: string
+  name: string
+  issuer: string
+  client_id: string
+  client_secret: string
+  redirect_url: string
+  enabled: boolean
+  created_at: string
+}
+
+export async function listAdminOIDCProviders(): Promise<OIDCProviderConfig[]> {
+  const res = await apiFetch('/api/admin/oidc/providers')
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to list OIDC providers'))
+  return res.json()
+}
+
+export async function createAdminOIDCProvider(
+  data: Omit<OIDCProviderConfig, 'id' | 'created_at'>,
+): Promise<OIDCProviderConfig> {
+  const res = await apiFetch('/api/admin/oidc/providers', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to create OIDC provider'))
+  return res.json()
+}
+
+export async function updateAdminOIDCProvider(
+  id: string,
+  data: Partial<Omit<OIDCProviderConfig, 'id' | 'created_at'>>,
+): Promise<OIDCProviderConfig> {
+  const res = await apiFetch(`/api/admin/oidc/providers/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to update OIDC provider'))
+  return res.json()
+}
+
+export async function deleteAdminOIDCProvider(id: string): Promise<void> {
+  const res = await apiFetch(`/api/admin/oidc/providers/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to delete OIDC provider'))
+}
+
+export async function getOIDCPolicy(): Promise<{ policy: string }> {
+  const res = await apiFetch('/api/admin/oidc/policy')
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to fetch OIDC policy'))
+  return res.json()
+}
+
+export async function setOIDCPolicy(policy: string): Promise<void> {
+  const res = await apiFetch('/api/admin/oidc/policy', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ policy }),
+  })
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to update OIDC policy'))
 }

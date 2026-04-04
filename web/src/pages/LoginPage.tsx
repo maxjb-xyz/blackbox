@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { AlertCircle, Terminal } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { checkHealth, login } from '../api/client'
+import { fetchOIDCProviders, login, type PublicOIDCProvider } from '../api/client'
 import { useSession } from '../session'
 
 function sanitizeRedirectTo(value: string | null) {
@@ -19,12 +19,12 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [oidcEnabled, setOidcEnabled] = useState(false)
+  const [oidcProviders, setOidcProviders] = useState<PublicOIDCProvider[]>([])
 
   useEffect(() => {
-    checkHealth()
-      .then(health => setOidcEnabled(health.oidc_enabled))
-      .catch(err => console.error('Health check failed', err))
+    fetchOIDCProviders()
+      .then(data => setOidcProviders(data.providers))
+      .catch(err => console.error('OIDC provider fetch failed', err))
   }, [])
 
   const redirectTo = sanitizeRedirectTo(searchParams.get('redirect_to'))
@@ -164,32 +164,37 @@ export default function LoginPage() {
               fontWeight: 'bold',
               letterSpacing: '0.1em',
               cursor: loading ? 'not-allowed' : 'pointer',
-              marginBottom: oidcEnabled ? 8 : 0,
+              marginBottom: oidcProviders.length > 0 ? 8 : 0,
             }}
           >
             {loading ? 'LOGGING IN...' : 'LOGIN'}
           </button>
 
-          {oidcEnabled && (
-            <a
-              href="/api/auth/oidc/login"
-              style={{
-                display: 'block',
-                width: '100%',
-                textAlign: 'center',
-                background: 'transparent',
-                border: '1px solid var(--border)',
-                color: 'var(--muted)',
-                padding: '10px',
-                fontFamily: 'inherit',
-                fontSize: '12px',
-                letterSpacing: '0.1em',
-                textDecoration: 'none',
-                boxSizing: 'border-box',
-              }}
-            >
-              LOGIN WITH SSO
-            </a>
+          {oidcProviders.length > 0 && (
+            <div style={{ display: 'grid', gap: 8 }}>
+              {oidcProviders.map(provider => (
+                <a
+                  key={provider.id}
+                  href={`/api/auth/oidc/${encodeURIComponent(provider.id)}/login`}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    textAlign: 'center',
+                    background: 'transparent',
+                    border: '1px solid var(--border)',
+                    color: 'var(--muted)',
+                    padding: '10px',
+                    fontFamily: 'inherit',
+                    fontSize: '12px',
+                    letterSpacing: '0.1em',
+                    textDecoration: 'none',
+                    boxSizing: 'border-box',
+                  }}
+                >
+                  {`SIGN IN WITH ${provider.name.toUpperCase()}`}
+                </a>
+              ))}
+            </div>
           )}
         </form>
       </div>

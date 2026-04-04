@@ -12,6 +12,7 @@ export default function SetupPage({ onBootstrapped }: SetupPageProps) {
   const navigate = useNavigate()
   const { refreshSession } = useSession()
   const [username, setUsername] = useState('')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -30,7 +31,7 @@ export default function SetupPage({ onBootstrapped }: SetupPageProps) {
     setError(null)
     setLoading(true)
     try {
-      await bootstrap(username, password)
+      await bootstrap(username, email, password)
       let user = null
       try {
         user = await refreshSession()
@@ -104,6 +105,28 @@ export default function SetupPage({ onBootstrapped }: SetupPageProps) {
               onChange={e => setUsername(e.target.value)}
               required
               autoFocus
+              style={{
+                width: '100%',
+                background: 'var(--surface)',
+                border: '1px solid var(--border)',
+                color: 'var(--text)',
+                padding: '8px 10px',
+                fontFamily: 'inherit',
+                fontSize: '13px',
+                outline: 'none',
+              }}
+            />
+          </div>
+
+          <div style={{ marginBottom: '1rem' }}>
+            <label style={{ display: 'block', color: 'var(--muted)', fontSize: '11px', marginBottom: '4px', letterSpacing: '0.05em' }}>
+              EMAIL
+            </label>
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              required
               style={{
                 width: '100%',
                 background: 'var(--surface)',

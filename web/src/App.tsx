@@ -7,6 +7,7 @@ import AdminPage from './pages/AdminPage'
 import DiagnosticsPage from './pages/DiagnosticsPage'
 import LoginPage from './pages/LoginPage'
 import NodesPage from './pages/NodesPage'
+import RegisterPage from './pages/RegisterPage'
 import SetupPage from './pages/SetupPage'
 import TimelinePage from './pages/TimelinePage'
 import WebhooksPage from './pages/WebhooksPage'
@@ -118,6 +119,7 @@ function AppRoutes() {
     <Routes>
       <Route path="/setup" element={<Navigate to="/" replace />} />
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
       <Route path="/" element={<Shell />}>
         <Route index element={<Navigate to="/timeline" replace />} />
         <Route path="timeline" element={<TimelinePage />} />
