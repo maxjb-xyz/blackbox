@@ -14,7 +14,7 @@ import (
 
 func TestJWTAuth_ValidCookie(t *testing.T) {
 	secret := "test-secret"
-	token, err := auth.IssueJWT("user-1", "alice", false, secret, time.Hour)
+	token, err := auth.IssueJWT("user-1", "alice", false, 0, secret, time.Hour)
 	require.NoError(t, err)
 
 	reached := false
@@ -34,7 +34,7 @@ func TestJWTAuth_ValidCookie(t *testing.T) {
 
 func TestJWTAuth_RejectsBearerToken(t *testing.T) {
 	secret := "test-secret"
-	token, err := auth.IssueJWT("user-1", "alice", false, secret, time.Hour)
+	token, err := auth.IssueJWT("user-1", "alice", false, 0, secret, time.Hour)
 	require.NoError(t, err)
 
 	handler := middleware.JWTAuth(secret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

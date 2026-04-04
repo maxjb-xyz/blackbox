@@ -36,6 +36,7 @@ func Register(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 		}
 
 		userID := ulid.Make().String()
+		user := models.User{}
 		var token string
 
 		txErr := database.Transaction(func(tx *gorm.DB) error {
@@ -51,7 +52,7 @@ func Register(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 				return errInvalidInvite
 			}
 
-			user := models.User{
+			user = models.User{
 				ID:           userID,
 				Username:     req.Username,
 				PasswordHash: hash,
@@ -63,7 +64,7 @@ func Register(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 			}
 
 			var issueErr error
-			token, issueErr = auth.IssueJWT(userID, user.Username, false, jwtSecret, jwtTTL())
+			token, issueErr = auth.IssueJWT(userID, user.Username, false, user.TokenVersion, jwtSecret, jwtTTL())
 			return issueErr
 		})
 
@@ -82,9 +83,10 @@ func Register(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 		events.LogSystem(database, "auth", "user.register", "user "+req.Username+" registered via invite")
 
 		writeSessionResponse(w, &auth.Claims{
-			UserID:   userID,
-			Username: req.Username,
-			IsAdmin:  false,
+			UserID:       userID,
+			Username:     req.Username,
+			IsAdmin:      false,
+			TokenVersion: user.TokenVersion,
 		}, http.StatusCreated)
 	}
 }
