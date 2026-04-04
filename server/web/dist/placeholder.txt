@@ -1,0 +1,1 @@
+Frontend assets are generated. Run `cd web && npm run build:server` to stage a real build into this directory.

@@ -50,7 +50,8 @@ docker-compose.override.yml
 
 # Web build output (root Vite output — git-ignored)
 web/dist/
-# Committed placeholder so go:embed works locally without running Vite
+!server/web/
 !server/web/dist/
-!server/web/dist/index.html
+server/web/dist/*
+!server/web/dist/placeholder.txt
 

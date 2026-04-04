@@ -339,8 +339,8 @@ blackbox.example.com {
 git clone https://github.com/maxjb-xyz/blackbox.git
 cd blackbox
 
-# Build the frontend
-cd web && npm install && npm run build && cd ..
+# Build the frontend and stage it for the embedded server build
+cd web && npm install && npm run build:server && cd ..
 
 # Build the server (embeds the built frontend)
 cd server && go build -o blackbox-server ./... && cd ..

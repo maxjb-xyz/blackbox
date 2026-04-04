@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "stage:server": "node ./scripts/stage-server-dist.mjs",
+    "build:server": "npm run build && npm run stage:server",
     "lint": "eslint .",
     "preview": "vite preview"
   },
