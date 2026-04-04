@@ -33,6 +33,7 @@ func (h *Hub) Subscribe() (id string, ch <-chan []byte, unsub func()) {
 		h.mu.Lock()
 		delete(h.clients, id)
 		h.mu.Unlock()
+		close(c)
 	}
 }
 

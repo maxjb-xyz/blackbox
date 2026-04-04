@@ -9,10 +9,10 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/stretchr/testify v1.11.1
-	nhooyr.io/websocket v0.0.0
 	golang.org/x/crypto v0.49.0
 	golang.org/x/oauth2 v0.36.0
 	gorm.io/gorm v1.31.1
+	nhooyr.io/websocket v1.8.17
 )
 
 require (
@@ -35,4 +35,3 @@ require (
 	modernc.org/sqlite v1.23.1 // indirect
 )
 
-replace nhooyr.io/websocket => ./third_party/nhooyr.io/websocket

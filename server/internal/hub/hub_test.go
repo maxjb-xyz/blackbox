@@ -42,10 +42,13 @@ func TestHub_UnsubscribedClientReceivesNothing(t *testing.T) {
 	h.Broadcast([]byte(`{"type":"test"}`))
 
 	select {
-	case <-ch:
-		t.Fatal("unsubscribed channel should not receive")
+	case msg, ok := <-ch:
+		if ok {
+			t.Fatalf("unsubscribed channel received unexpected message: %s", msg)
+		}
+		// channel was closed by unsub — that's expected, not a broadcast
 	case <-time.After(50 * time.Millisecond):
-		// correct: nothing received
+		// also correct: close signal not yet observed
 	}
 }
 

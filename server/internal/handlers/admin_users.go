@@ -81,6 +81,7 @@ func UpdateAdminUser(database *gorm.DB) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "failed to update user")
 			return
 		}
+		user.IsAdmin = req.IsAdmin
 
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(toAdminUserResponse(user)); err != nil {
