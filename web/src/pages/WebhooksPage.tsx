@@ -53,10 +53,10 @@ function CopyRow({ label, path }: { label: string; path: string }) {
 export default function WebhooksPage() {
   return (
     <div style={{ padding: '0' }}>
-      <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', background: 'var(--surface)' }}>
+      <div style={{ padding: '18px 24px', borderBottom: '1px solid var(--border)', background: 'var(--surface)' }}>
         <span style={{ color: 'var(--muted)', fontSize: '11px', letterSpacing: '0.1em' }}>WEBHOOKS / ENDPOINTS</span>
       </div>
-      <div style={{ padding: '16px' }}>
+      <div style={{ padding: '24px', maxWidth: 960, margin: '0 auto' }}>
         <p style={{ color: 'var(--muted)', fontSize: '12px', marginBottom: 16 }}>
           Configure your webhook providers to POST to these endpoints. Set{' '}
           <code style={{ color: 'var(--accent)' }}>X-Webhook-Secret</code> header to the value of{' '}

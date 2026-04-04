@@ -45,7 +45,7 @@ export default function Sidebar() {
   }
 
   return (
-    <div className="flex min-h-screen w-[180px] flex-col border-r border-[var(--border)] bg-[#0B0B0B] font-mono">
+    <div className="flex min-h-screen w-[200px] flex-col border-r border-[var(--border)] bg-[#0B0B0B] font-mono">
       <div className="px-4 py-4 text-xs font-bold tracking-[0.15em] text-[var(--accent)]">
         BLACKBOX
       </div>

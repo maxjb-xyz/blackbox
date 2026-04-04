@@ -92,10 +92,10 @@ export default function AdminPage() {
 
   return (
     <div>
-      <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', background: 'var(--surface)' }}>
+      <div style={{ padding: '18px 24px', borderBottom: '1px solid var(--border)', background: 'var(--surface)' }}>
         <span style={{ color: 'var(--muted)', fontSize: '11px', letterSpacing: '0.1em' }}>ADMIN / INVITE CODES</span>
       </div>
-      <div style={{ padding: 16 }}>
+      <div style={{ padding: '24px', maxWidth: 960, margin: '0 auto' }}>
         <button
           onClick={() => void createInvite()}
           disabled={creating}

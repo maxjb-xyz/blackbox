@@ -56,18 +56,19 @@ export default function TimelinePage() {
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <div
-        style={{
-          display: 'flex',
-          gap: 12,
-          padding: '8px 16px',
-          borderBottom: '1px solid var(--border)',
-          background: 'var(--surface)',
-          alignItems: 'center',
-          flexShrink: 0,
-        }}
-      >
-        <span style={{ color: 'var(--muted)', fontSize: '11px', letterSpacing: '0.1em' }}>FILTER:</span>
+      <div style={{ maxWidth: 960, margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1 }}>
+        <div
+          style={{
+            display: 'flex',
+            gap: 12,
+            padding: '10px 24px',
+            borderBottom: '1px solid var(--border)',
+            background: 'var(--surface)',
+            alignItems: 'center',
+            flexShrink: 0,
+          }}
+        >
+          <span style={{ color: 'var(--muted)', fontSize: '11px', letterSpacing: '0.1em' }}>FILTER:</span>
 
         <select
           value={nodeFilter}
@@ -124,25 +125,26 @@ export default function TimelinePage() {
           }}
         />
 
-        {(nodeFilter || sourceFilter || qFilter) && (
-          <span
-            onClick={() => {
-              setSearchParams(prev => {
-                const next = new URLSearchParams(prev)
-                next.delete('node')
-                next.delete('source')
-                next.delete('q')
-                return next
-              })
-            }}
-            style={{ color: 'var(--muted)', fontSize: '11px', cursor: 'pointer', letterSpacing: '0.05em' }}
-          >
-            CLEAR
-          </span>
-        )}
-      </div>
+          {(nodeFilter || sourceFilter || qFilter) && (
+            <span
+              onClick={() => {
+                setSearchParams(prev => {
+                  const next = new URLSearchParams(prev)
+                  next.delete('node')
+                  next.delete('source')
+                  next.delete('q')
+                  return next
+                })
+              }}
+              style={{ color: 'var(--muted)', fontSize: '11px', cursor: 'pointer', letterSpacing: '0.05em' }}
+            >
+              CLEAR
+            </span>
+          )}
+        </div>
 
-      <TimelineFeed key={`${nodeFilter}:${sourceFilter}:${qFilter}`} nodeFilter={nodeFilter} sourceFilter={sourceFilter} qFilter={qFilter} />
+        <TimelineFeed key={`${nodeFilter}:${sourceFilter}:${qFilter}`} nodeFilter={nodeFilter} sourceFilter={sourceFilter} qFilter={qFilter} />
+      </div>
     </div>
   )
 }
@@ -323,7 +325,7 @@ function TimelineFeed({ nodeFilter, sourceFilter, qFilter }: TimelineFeedProps) 
           display: 'grid',
           gridTemplateColumns: '20px 130px 100px 70px 100px 70px 1fr',
           gap: '0 8px',
-          padding: '4px 16px',
+          padding: '10px 24px',
           borderBottom: '1px solid var(--border)',
           background: 'var(--surface)',
           color: 'var(--muted)',
@@ -366,15 +368,15 @@ function TimelineFeed({ nodeFilter, sourceFilter, qFilter }: TimelineFeedProps) 
         <div ref={sentinelRef} style={{ height: 1 }} />
 
         {loading && (
-          <div style={{ padding: '8px 16px', color: 'var(--muted)', fontSize: '12px' }}>loading...</div>
+          <div style={{ padding: '10px 24px', color: 'var(--muted)', fontSize: '12px' }}>loading...</div>
         )}
         {done && !loading && entries.length > 0 && (
-          <div style={{ padding: '8px 16px', color: 'var(--muted)', fontSize: '12px', textAlign: 'center' }}>
+          <div style={{ padding: '10px 24px', color: 'var(--muted)', fontSize: '12px', textAlign: 'center' }}>
             - end of timeline -
           </div>
         )}
         {done && entries.length === 0 && (
-          <div style={{ padding: '24px 16px', color: 'var(--muted)', fontSize: '12px', textAlign: 'center' }}>
+          <div style={{ padding: '24px', color: 'var(--muted)', fontSize: '12px', textAlign: 'center' }}>
             no entries found
           </div>
         )}
@@ -447,7 +449,7 @@ function TimelineRow({
     display: 'grid',
     gridTemplateColumns: '20px 130px 100px 70px 100px 70px 1fr',
     gap: '0 8px',
-    padding: '4px 16px',
+    padding: '10px 24px',
     cursor: 'pointer',
     background: isExpanded ? 'var(--surface)' : 'transparent',
     fontSize: '12px',

@@ -44,7 +44,7 @@ export default function DiagnosticsPage() {
     <div>
       <div
         style={{
-          padding: '12px 16px',
+          padding: '18px 24px',
           borderBottom: '1px solid var(--border)',
           background: 'var(--surface)',
           display: 'flex',
@@ -71,7 +71,7 @@ export default function DiagnosticsPage() {
           REFRESH
         </button>
       </div>
-      <div style={{ padding: 16 }}>
+      <div style={{ padding: '24px', maxWidth: 960, margin: '0 auto' }}>
         {healthError && (
           <div style={{ color: 'var(--danger)', fontSize: '12px', marginBottom: 12 }}>
             {healthError}
