@@ -32,6 +32,7 @@ export function NodePulseProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<Error | null>(null)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const pollingRef = useRef(false)
+  const queuedRef = useRef(false)
   const mountedRef = useRef(true)
 
   useEffect(() => {
@@ -40,7 +41,12 @@ export function NodePulseProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const poll = useCallback(async () => {
-    if (pollingRef.current || !mountedRef.current) return
+    if (!mountedRef.current) return
+    if (pollingRef.current) {
+      queuedRef.current = true
+      return
+    }
+
     pollingRef.current = true
     if (mountedRef.current) setLoading(true)
     try {
@@ -55,6 +61,10 @@ export function NodePulseProvider({ children }: { children: React.ReactNode }) {
     } finally {
       pollingRef.current = false
       if (mountedRef.current) setLoading(false)
+      if (queuedRef.current) {
+        queuedRef.current = false
+        void poll()
+      }
     }
   }, [])
 

@@ -17,14 +17,14 @@ const SOURCE_TINT: Record<string, string> = {
 
 function eventBorderColor(event: string): string {
   if (event === 'die' || event === 'down') return '#FF4444'
-  if (event === 'start' || event === 'up') return 'var(--accent)'
+  if (event === 'start' || event === 'up') return 'var(--success)'
   if (event === 'update') return '#FF9900'
   return 'var(--border)'
 }
 
 function eventTextColor(event: string): string {
   if (event === 'die' || event === 'down') return '#FF4444'
-  if (event === 'start' || event === 'up') return 'var(--accent)'
+  if (event === 'start' || event === 'up') return 'var(--success)'
   return 'var(--text)'
 }
 
@@ -67,6 +67,18 @@ interface TooltipState {
   text: string
   x: number
   y: number
+}
+
+function matchesEntryFilters(entry: Entry, nodeFilter: string, sourceFilter: string, qFilter: string, hideHeartbeat: boolean): boolean {
+  if (hideHeartbeat && entry.source === 'agent' && entry.event === 'heartbeat') return false
+  if (nodeFilter && entry.node_name !== nodeFilter) return false
+  if (sourceFilter && entry.source !== sourceFilter) return false
+  if (qFilter) {
+    const q = qFilter.toLowerCase()
+    const haystacks = [entry.content, entry.service].filter(Boolean).map(value => value.toLowerCase())
+    if (!haystacks.some(value => value.includes(q))) return false
+  }
+  return true
 }
 
 export default function TimelinePage() {
@@ -333,10 +345,10 @@ function TimelineFeed({ nodeFilter, sourceFilter, qFilter, hideHeartbeat, viewMo
     if (!lastMessage || lastMessage.type !== 'entry') return
     const newEntry = lastMessage.data as Entry
     if (renderedIdsRef.current.has(newEntry.id)) return
-    if (hideHeartbeat && newEntry.source === 'agent' && newEntry.event === 'heartbeat') return
+    if (!matchesEntryFilters(newEntry, nodeFilter, sourceFilter, qFilter, hideHeartbeat)) return
     renderedIdsRef.current.add(newEntry.id)
     setEntries(prev => [newEntry, ...prev])
-  }, [lastMessage, hideHeartbeat])
+  }, [hideHeartbeat, lastMessage, nodeFilter, qFilter, sourceFilter])
 
   function handleRowClick(entry: Entry) {
     if (expandedId === entry.id) {
@@ -640,12 +652,20 @@ function ExpandedDetails({ entry }: { entry: Entry }) {
 
 function TimelineCard({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip, onTooltipClear }: EntryProps) {
   const possibleCause = entry.correlated_id ? parsePossibleCause(entry.metadata) : null
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return
+    e.preventDefault()
+    onClick()
+  }
 
   return (
     <motion.div
       layout
       data-row
+      role="button"
+      tabIndex={isDimmed ? -1 : 0}
       onClick={onClick}
+      onKeyDown={handleKeyDown}
       onMouseEnter={
         possibleCause
           ? (e: React.MouseEvent<HTMLDivElement>) => {
@@ -714,6 +734,11 @@ function TimelineCard({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip
 
 function TimelineRow({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip, onTooltipClear }: EntryProps) {
   const possibleCause = entry.correlated_id ? parsePossibleCause(entry.metadata) : null
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return
+    e.preventDefault()
+    onClick()
+  }
 
   const rowClassName = ['timeline-row', isDimmed ? 'dimmed' : '', isGhost ? 'ghost-card' : '']
     .filter(Boolean).join(' ')
@@ -723,6 +748,8 @@ function TimelineRow({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip,
       layout
       data-row
       className={rowClassName}
+      role="button"
+      tabIndex={isDimmed ? -1 : 0}
       style={{
         display: 'grid',
         gridTemplateColumns: '20px 130px 100px 70px 100px 90px 1fr',
@@ -735,6 +762,7 @@ function TimelineRow({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip,
         userSelect: 'none',
       }}
       onClick={onClick}
+      onKeyDown={handleKeyDown}
       onMouseEnter={
         possibleCause
           ? (e: React.MouseEvent<HTMLDivElement>) => {

@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"errors"
 	"net/http"
 
 	"blackbox/server/internal/auth"
@@ -19,8 +20,12 @@ func TokenVersionCheck(database *gorm.DB) func(http.Handler) http.Handler {
 				return
 			}
 			var user models.User
-			if err := database.First(&user, "id = ?", claims.UserID).Error; err != nil {
-				writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+			if err := database.WithContext(r.Context()).First(&user, "id = ?", claims.UserID).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+					return
+				}
+				writeJSONError(w, http.StatusInternalServerError, "internal server error")
 				return
 			}
 			if user.TokenVersion != claims.TokenVersion {

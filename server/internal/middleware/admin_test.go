@@ -12,6 +12,8 @@ import (
 )
 
 func TestRequireAdmin_GrantsAdmin(t *testing.T) {
+	t.Parallel()
+
 	reached := false
 	handler := middleware.RequireAdmin()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reached = true
@@ -27,6 +29,8 @@ func TestRequireAdmin_GrantsAdmin(t *testing.T) {
 }
 
 func TestRequireAdmin_BlocksNonAdmin(t *testing.T) {
+	t.Parallel()
+
 	handler := middleware.RequireAdmin()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("should not reach handler")
 	}))
@@ -42,6 +46,8 @@ func TestRequireAdmin_BlocksNonAdmin(t *testing.T) {
 }
 
 func TestRequireAdmin_BlocksNoClaims(t *testing.T) {
+	t.Parallel()
+
 	handler := middleware.RequireAdmin()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("should not reach handler")
 	}))

@@ -19,6 +19,7 @@ func TestIssueAndVerifyJWT_RoundTrip(t *testing.T) {
 	assert.Equal(t, "user-123", claims.UserID)
 	assert.Equal(t, "alice", claims.Username)
 	assert.True(t, claims.IsAdmin)
+	assert.Equal(t, 0, claims.TokenVersion)
 }
 
 func TestVerifyJWT_WrongSecret(t *testing.T) {

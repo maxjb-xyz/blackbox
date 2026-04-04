@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import type { CSSProperties } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useSession } from '../session'
 import {
@@ -31,6 +32,13 @@ async function readErrorMessage(res: Response, fallback: string) {
 }
 
 type Tab = 'invites' | 'users'
+
+function formatInviteTimestamp(value: string): string {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '-'
+  return date.toISOString().substring(0, 16).replace('T', ' ')
+}
 
 export default function AdminPage() {
   const { user } = useSession()
@@ -152,7 +160,7 @@ function InvitesTab() {
                   {invite.used ? 'USED' : 'AVAILABLE'}
                 </td>
                 <td style={{ padding: '6px 0 6px 8px', color: 'var(--muted)' }}>
-                  {invite.created_at ? new Date(invite.created_at).toISOString().substring(0, 16).replace('T', ' ') : '-'}
+                  {formatInviteTimestamp(invite.created_at)}
                 </td>
               </tr>
             ))}
@@ -208,6 +216,7 @@ function UsersTab({ currentUserId }: { currentUserId: string }) {
   }
 
   async function handleDelete(u: AdminUser) {
+    if (actionLoading !== null) return
     setActionLoading(u.id + '-delete')
     try {
       await deleteAdminUser(u.id)
@@ -264,10 +273,14 @@ function UsersTab({ currentUserId }: { currentUserId: string }) {
                     {confirmDeleteId === u.id ? (
                       <>
                         <span style={{ color: 'var(--danger)', fontSize: '11px' }}>CONFIRM?</span>
-                        <button onClick={() => void handleDelete(u)} style={{ ...actionBtnStyle, color: 'var(--danger)', borderColor: 'var(--danger)' }}>
+                        <button
+                          onClick={() => void handleDelete(u)}
+                          disabled={actionLoading !== null}
+                          style={{ ...actionBtnStyle, color: 'var(--danger)', borderColor: 'var(--danger)' }}
+                        >
                           YES
                         </button>
-                        <button onClick={() => setConfirmDeleteId(null)} style={actionBtnStyle}>NO</button>
+                        <button onClick={() => setConfirmDeleteId(null)} disabled={actionLoading !== null} style={actionBtnStyle}>NO</button>
                       </>
                     ) : (
                       <button
@@ -289,7 +302,7 @@ function UsersTab({ currentUserId }: { currentUserId: string }) {
   )
 }
 
-const actionBtnStyle: React.CSSProperties = {
+const actionBtnStyle: CSSProperties = {
   background: 'none',
   border: '1px solid var(--border)',
   color: 'var(--muted)',

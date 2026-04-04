@@ -100,10 +100,10 @@ func TestListEntries_FilterByNode(t *testing.T) {
 	assert.Equal(t, "node-a", resp.Entries[0].NodeName)
 }
 
-func TestListEntries_HidesHeartbeatsByDefault(t *testing.T) {
+func TestListEntries_HidesHeartbeatsWithHideHeartbeatTrue(t *testing.T) {
 	database := newTestDB(t)
-	database.Create(&types.Entry{ID: "01", Source: "agent", Event: "heartbeat", NodeName: "n1", Content: "hb"})
-	database.Create(&types.Entry{ID: "02", Source: "docker", Event: "start", NodeName: "n1", Content: "svc start"})
+	require.NoError(t, database.Create(&types.Entry{ID: "01", Source: "agent", Event: "heartbeat", NodeName: "n1", Content: "hb"}).Error)
+	require.NoError(t, database.Create(&types.Entry{ID: "02", Source: "docker", Event: "start", NodeName: "n1", Content: "svc start"}).Error)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/entries?hide_heartbeat=true", nil)
 	w := httptest.NewRecorder()
@@ -121,8 +121,8 @@ func TestListEntries_HidesHeartbeatsByDefault(t *testing.T) {
 
 func TestListEntries_ShowsHeartbeatsWhenNotFiltered(t *testing.T) {
 	database := newTestDB(t)
-	database.Create(&types.Entry{ID: "01", Source: "agent", Event: "heartbeat", NodeName: "n1", Content: "hb"})
-	database.Create(&types.Entry{ID: "02", Source: "docker", Event: "start", NodeName: "n1", Content: "svc start"})
+	require.NoError(t, database.Create(&types.Entry{ID: "01", Source: "agent", Event: "heartbeat", NodeName: "n1", Content: "hb"}).Error)
+	require.NoError(t, database.Create(&types.Entry{ID: "02", Source: "docker", Event: "start", NodeName: "n1", Content: "svc start"}).Error)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/entries", nil)
 	w := httptest.NewRecorder()

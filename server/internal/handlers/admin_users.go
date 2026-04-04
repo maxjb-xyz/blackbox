@@ -55,14 +55,18 @@ func UpdateAdminUser(database *gorm.DB) http.HandlerFunc {
 		targetID := chi.URLParam(r, "id")
 
 		var req struct {
-			IsAdmin bool `json:"is_admin"`
+			IsAdmin *bool `json:"is_admin"`
 		}
 		if !decodeJSONBody(w, r, 8<<10, &req) {
 			return
 		}
+		if req.IsAdmin == nil {
+			writeError(w, http.StatusBadRequest, "missing is_admin")
+			return
+		}
 
 		// Cannot demote self
-		if targetID == callerClaims.UserID && !req.IsAdmin {
+		if targetID == callerClaims.UserID && !*req.IsAdmin {
 			writeError(w, http.StatusForbidden, "cannot demote yourself")
 			return
 		}
@@ -77,11 +81,11 @@ func UpdateAdminUser(database *gorm.DB) http.HandlerFunc {
 			return
 		}
 
-		if err := database.Model(&user).Update("is_admin", req.IsAdmin).Error; err != nil {
+		if err := database.Model(&user).Update("is_admin", *req.IsAdmin).Error; err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to update user")
 			return
 		}
-		user.IsAdmin = req.IsAdmin
+		user.IsAdmin = *req.IsAdmin
 
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(toAdminUserResponse(user)); err != nil {

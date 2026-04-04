@@ -26,7 +26,6 @@ export function useWebSocket(url: string): UseWebSocketResult {
   const backoffRef = useRef(BACKOFF_INITIAL)
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const mountedRef = useRef(true)
-  const manualReconnectRef = useRef(false)
 
   const connect = useCallback(() => {
     if (!mountedRef.current) return
@@ -44,7 +43,6 @@ export function useWebSocket(url: string): UseWebSocketResult {
       setStatus('connected')
       setLastConnectedAt(new Date())
       backoffRef.current = BACKOFF_INITIAL
-      manualReconnectRef.current = false
     }
 
     ws.onmessage = (event: MessageEvent<string>) => {
@@ -61,12 +59,10 @@ export function useWebSocket(url: string): UseWebSocketResult {
       if (!mountedRef.current) return
       wsRef.current = null
       setStatus('disconnected')
-      if (!manualReconnectRef.current) {
-        retryTimerRef.current = setTimeout(() => {
-          backoffRef.current = Math.min(backoffRef.current * 2, BACKOFF_MAX)
-          connect()
-        }, backoffRef.current)
-      }
+      retryTimerRef.current = setTimeout(() => {
+        backoffRef.current = Math.min(backoffRef.current * 2, BACKOFF_MAX)
+        connect()
+      }, backoffRef.current)
     }
 
     ws.onerror = () => {
@@ -80,7 +76,6 @@ export function useWebSocket(url: string): UseWebSocketResult {
       retryTimerRef.current = null
     }
     backoffRef.current = BACKOFF_INITIAL
-    manualReconnectRef.current = true
     connect()
   }, [connect])
 

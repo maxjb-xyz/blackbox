@@ -17,10 +17,10 @@ type rateLimitBucket struct {
 }
 
 type rateLimiter struct {
-	window  time.Duration
-	limit   int
-	mu      sync.Mutex
-	buckets map[string]rateLimitBucket
+	window   time.Duration
+	limit    int
+	mu       sync.Mutex
+	buckets  map[string]rateLimitBucket
 	requests uint64
 }
 

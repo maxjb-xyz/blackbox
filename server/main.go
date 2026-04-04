@@ -135,7 +135,7 @@ func main() {
 		r.Get("/api/services/aliases", handlers.ListServiceAliases(database))
 		r.Post("/api/services/aliases", handlers.CreateServiceAlias(database))
 		r.Delete("/api/services/aliases/{alias}", handlers.DeleteServiceAlias(database))
-		r.Get("/api/ws", handlers.WebSocketHandler(eventHub))
+		r.Get("/api/ws", handlers.WebSocketHandler(database, eventHub))
 	})
 
 	r.Group(func(r chi.Router) {

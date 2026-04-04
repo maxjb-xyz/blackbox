@@ -50,11 +50,11 @@ export default function NodesPage() {
                   <td>
                     <span
                       className="nodes-status-dot"
-                      style={{ color: node.status === 'online' ? 'var(--accent)' : 'var(--danger)' }}
+                      style={{ color: node.status === 'online' ? 'var(--success)' : 'var(--danger)' }}
                       role="img"
                       aria-label={node.status}
                     >
-                      o
+                      ●
                     </span>
                   </td>
                   <td className="nodes-cell-truncate" style={{ color: 'var(--text)' }}>

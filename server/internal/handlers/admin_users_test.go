@@ -87,6 +87,25 @@ func TestUpdateAdminUser_CannotDemoteSelf(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, w.Code)
 }
 
+func TestUpdateAdminUser_RequiresExplicitIsAdmin(t *testing.T) {
+	database := newTestDB(t)
+	require.NoError(t, database.Create(&models.User{ID: "admin1", Username: "admin", IsAdmin: true}).Error)
+	require.NoError(t, database.Create(&models.User{ID: "user1", Username: "alice", IsAdmin: false}).Error)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/admin/users/user1", bytes.NewBufferString(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(adminUserContext("admin1"))
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", "user1")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	w := httptest.NewRecorder()
+	handlers.UpdateAdminUser(database)(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
 func TestForceLogoutUser_IncrementsTokenVersion(t *testing.T) {
 	database := newTestDB(t)
 	database.Create(&models.User{ID: "admin1", Username: "admin", IsAdmin: true, TokenVersion: 0})

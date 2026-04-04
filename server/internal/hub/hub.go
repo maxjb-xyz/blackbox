@@ -24,16 +24,19 @@ func New() *Hub {
 func (h *Hub) Subscribe() (id string, ch <-chan []byte, unsub func()) {
 	id = ulid.Make().String()
 	c := make(chan []byte, clientBufferSize)
+	var once sync.Once
 
 	h.mu.Lock()
 	h.clients[id] = c
 	h.mu.Unlock()
 
 	return id, c, func() {
-		h.mu.Lock()
-		delete(h.clients, id)
-		h.mu.Unlock()
-		close(c)
+		once.Do(func() {
+			h.mu.Lock()
+			delete(h.clients, id)
+			h.mu.Unlock()
+			close(c)
+		})
 	}
 }
 

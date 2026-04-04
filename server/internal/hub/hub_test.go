@@ -75,3 +75,11 @@ func TestHub_SlowClientDoesNotBlockBroadcast(t *testing.T) {
 		t.Fatal("Broadcast blocked on slow client")
 	}
 }
+
+func TestHub_UnsubscribeIsIdempotent(t *testing.T) {
+	h := hub.New()
+
+	_, _, unsub := h.Subscribe()
+	unsub()
+	unsub()
+}

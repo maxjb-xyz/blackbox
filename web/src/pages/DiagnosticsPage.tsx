@@ -35,18 +35,18 @@ export default function DiagnosticsPage() {
   }, [])
 
   function statusColor(status: string) {
-    if (status === 'ok' || status === 'online') return 'var(--accent)'
+    if (status === 'ok' || status === 'online') return 'var(--success)'
     if (status === 'disabled') return 'var(--muted)'
     return '#FF4444'
   }
 
   return (
-    <div>
+    <div style={{ minHeight: '100%', background: '#0B0B0B', fontFamily: 'JetBrains Mono, Fira Code, Cascadia Code, ui-monospace, monospace' }}>
       <div
         style={{
-          padding: '18px 24px',
+          padding: '8px 10px',
           borderBottom: '1px solid var(--border)',
-          background: 'var(--surface)',
+          background: '#0B0B0B',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -62,7 +62,7 @@ export default function DiagnosticsPage() {
             border: '1px solid var(--border)',
             color: 'var(--muted)',
             padding: '2px 8px',
-            fontFamily: 'inherit',
+            fontFamily: 'JetBrains Mono, Fira Code, Cascadia Code, ui-monospace, monospace',
             fontSize: '11px',
             cursor: 'pointer',
             letterSpacing: '0.05em',
@@ -71,7 +71,7 @@ export default function DiagnosticsPage() {
           REFRESH
         </button>
       </div>
-      <div style={{ padding: '24px', maxWidth: 960, margin: '0 auto' }}>
+      <div style={{ padding: '10px 16px', maxWidth: 960, margin: '0 auto', background: '#0B0B0B' }}>
         {healthError && (
           <div style={{ color: 'var(--danger)', fontSize: '12px', marginBottom: 12 }}>
             {healthError}
@@ -87,8 +87,8 @@ export default function DiagnosticsPage() {
             ].map(row => {
               const ok = row.value === 'ok'
               return (
-                <div key={row.label} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '12px' }}>
-                  {ok ? <CheckCircle size={12} style={{ color: 'var(--accent)' }} /> : <XCircle size={12} style={{ color: statusColor(row.value) }} />}
+                <div key={row.label} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '12px', fontFamily: 'JetBrains Mono, Fira Code, Cascadia Code, ui-monospace, monospace' }}>
+                  {ok ? <CheckCircle size={12} style={{ color: 'var(--success)' }} /> : <XCircle size={12} style={{ color: statusColor(row.value) }} />}
                   <span style={{ color: 'var(--muted)', width: 100 }}>{row.label}</span>
                   <span style={{ color: statusColor(row.value) }}>{row.value.toUpperCase()}</span>
                 </div>

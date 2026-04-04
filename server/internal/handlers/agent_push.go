@@ -58,8 +58,9 @@ func AgentPush(database *gorm.DB, h *hub.Hub) http.HandlerFunc {
 				h.Broadcast(msg)
 			}
 		}
-		upsertNode(database, entry)
-		broadcastNodeStatus(database, h)
+		if upsertNode(database, entry) {
+			broadcastNodeStatus(database, h)
+		}
 		w.WriteHeader(http.StatusCreated)
 	}
 }
@@ -68,9 +69,9 @@ func isAgentMetaEvent(entry types.Entry) bool {
 	return entry.Source == "agent" && (entry.Event == "heartbeat" || entry.Event == "start")
 }
 
-func upsertNode(database *gorm.DB, entry types.Entry) {
+func upsertNode(database *gorm.DB, entry types.Entry) bool {
 	if entry.NodeName == "" {
-		return
+		return false
 	}
 
 	now := time.Now().UTC()
@@ -92,17 +93,18 @@ func upsertNode(database *gorm.DB, entry types.Entry) {
 		}
 		if err := database.Create(&newNode).Error; err != nil {
 			log.Printf("upsertNode create error (node=%s): %v", entry.NodeName, err)
+			return false
 		}
-		return
+		return true
 	}
 
 	if result.Error != nil {
 		log.Printf("upsertNode lookup error (node=%s): %v", entry.NodeName, result.Error)
-		return
+		return false
 	}
 
 	if !isMetaEvent && now.Sub(node.LastSeen) < 30*time.Second {
-		return
+		return false
 	}
 
 	updates := map[string]interface{}{"last_seen": now}
@@ -123,7 +125,9 @@ func upsertNode(database *gorm.DB, entry types.Entry) {
 
 	if err := database.Model(&node).Updates(updates).Error; err != nil {
 		log.Printf("upsertNode update error (node=%s): %v", entry.NodeName, err)
+		return false
 	}
+	return true
 }
 
 func applyHeartbeatMeta(node *models.Node, metadata string) {
