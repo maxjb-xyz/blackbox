@@ -30,9 +30,16 @@ RUN cd server && \
     -ldflags="-s -w -X main.Version=${VERSION} -X main.Commit=${COMMIT}" \
     -o /blackbox-server .
 
+# Prepare the persistent data directory with the same UID/GID as the
+# distroless nonroot user so fresh named volumes inherit writable ownership.
+RUN mkdir -p /data && \
+    chown 65532:65532 /data && \
+    chmod 0750 /data
+
 # ─── Stage 3: Minimal runtime image ──────────────────────────────────────────
 FROM gcr.io/distroless/static:nonroot
 COPY --from=go-builder /blackbox-server /blackbox-server
+COPY --from=go-builder --chown=65532:65532 /data /data
 VOLUME /data
 EXPOSE 8080
 ENTRYPOINT ["/blackbox-server"]

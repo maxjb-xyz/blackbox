@@ -3,6 +3,8 @@ package db
 import (
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -21,6 +23,8 @@ func Init(path string) (*gorm.DB, error) {
 	dsn := path
 	if path == ":memory:" {
 		dsn = fmt.Sprintf("file:blackbox-%d-%d?mode=memory&cache=shared", time.Now().UnixNano(), memoryDBCounter.Add(1))
+	} else if err := ensureWritablePath(path); err != nil {
+		return nil, err
 	}
 	database, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
 		Logger:         logger.Default.LogMode(logger.Silent),
@@ -100,6 +104,49 @@ func normalizePreservedAliases(aliases []models.ServiceAlias) []models.ServiceAl
 	}
 
 	return normalized
+}
+
+func ensureWritablePath(path string) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return fmt.Errorf("database directory %s is not writable by uid=%d gid=%d: %w", dir, os.Getuid(), os.Getgid(), err)
+	}
+
+	probe, err := os.CreateTemp(dir, ".blackbox-write-test-*")
+	if err != nil {
+		return fmt.Errorf("database directory %s is not writable by uid=%d gid=%d: %w", dir, os.Getuid(), os.Getgid(), err)
+	}
+	probeName := probe.Name()
+	if err := probe.Close(); err != nil {
+		_ = os.Remove(probeName)
+		return fmt.Errorf("database directory %s is not writable by uid=%d gid=%d: %w", dir, os.Getuid(), os.Getgid(), err)
+	}
+	if err := os.Remove(probeName); err != nil {
+		return fmt.Errorf("database directory %s is not writable by uid=%d gid=%d: %w", dir, os.Getuid(), os.Getgid(), err)
+	}
+
+	if _, err := os.Stat(path); err == nil {
+		file, err := os.OpenFile(path, os.O_RDWR, 0)
+		if err != nil {
+			return fmt.Errorf("database file %s is not writable by uid=%d gid=%d: %w", path, os.Getuid(), os.Getgid(), err)
+		}
+		if err := file.Close(); err != nil {
+			return fmt.Errorf("database file %s is not writable by uid=%d gid=%d: %w", path, os.Getuid(), os.Getgid(), err)
+		}
+		return nil
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("database file %s could not be checked by uid=%d gid=%d: %w", path, os.Getuid(), os.Getgid(), err)
+	}
+
+	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return fmt.Errorf("database file %s could not be created by uid=%d gid=%d: %w", path, os.Getuid(), os.Getgid(), err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("database file %s could not be prepared by uid=%d gid=%d: %w", path, os.Getuid(), os.Getgid(), err)
+	}
+
+	return nil
 }
 
 func sweepExpiredOIDCStates(database *gorm.DB) {

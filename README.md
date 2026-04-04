@@ -103,7 +103,7 @@ Blackbox is split into two components designed to run across multiple nodes.
 ## Quick Start
 
 > This gets a single-node setup running in minutes. For multi-node, see [Multi-Node Deployment](#multi-node-deployment).
-> Warning: The compose examples below run both containers as `root` via `user: "0:0"` so they can write the database and access `/var/run/docker.sock`. Only use this if you understand and accept that security tradeoff.
+> The server image runs as distroless `nonroot` and can write a named volume mounted at `/data` without `user: "0:0"`. The agent example still uses `root` because read-only access to `/var/run/docker.sock` commonly requires it unless you map the host Docker socket group into the container.
 
 **1. Create a `docker-compose.yml`:**
 
@@ -111,7 +111,6 @@ Blackbox is split into two components designed to run across multiple nodes.
 services:
   blackbox-server:
     image: ghcr.io/maxjb-xyz/blackbox-server:latest
-    user: "0:0"
     container_name: blackbox-server
     restart: unless-stopped
     ports:
@@ -202,7 +201,7 @@ openssl rand -hex 32
 ## Multi-Node Deployment
 
 Deploy an agent on each machine you want to monitor. All agents point at the same central server.
-> Warning: The compose examples below run as `root` via `user: "0:0"` so the server can write `/data` and the agent can access `/var/run/docker.sock`.
+> The server should run with its default distroless `nonroot` user. The agent example keeps `user: "0:0"` because `/var/run/docker.sock` often requires elevated access unless you align the container group with the host Docker socket group.
 
 **Node 01 — Primary server (also runs an agent):**
 
@@ -210,7 +209,6 @@ Deploy an agent on each machine you want to monitor. All agents point at the sam
 services:
   blackbox-server:
     image: ghcr.io/maxjb-xyz/blackbox-server:latest
-    user: "0:0"
     restart: unless-stopped
     ports:
       - "8080:8080"
@@ -431,6 +429,8 @@ volumes:
   - blackbox-data:/data        # named volume (recommended)
   - /opt/appdata/blackbox:/data  # or host path
 ```
+
+If you bind-mount a host directory instead of a named volume, make sure it is writable by the server container's runtime user (`uid=65532`, `gid=65532`), for example `sudo chown 65532:65532 /opt/appdata/blackbox`.
 
 The database is automatically migrated on startup — no manual schema management required.
 

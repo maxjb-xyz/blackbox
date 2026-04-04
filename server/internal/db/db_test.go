@@ -2,6 +2,7 @@ package db_test
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -129,4 +130,33 @@ func TestInit_MigratesServiceAliases(t *testing.T) {
 	assert.Error(t, database.Create(&models.ServiceAlias{Canonical: "traefik", Alias: ""}).Error)
 	assert.Error(t, database.Create(&models.ServiceAlias{Canonical: "traefik", Alias: "   "}).Error)
 	assert.Error(t, database.Create(&models.ServiceAlias{Canonical: "traefik", Alias: "traefik-edge"}).Error)
+}
+
+func TestInit_CreatesMissingDatabasePath(t *testing.T) {
+	root := t.TempDir()
+	dbPath := filepath.Join(root, "nested", "blackbox.db")
+
+	database, err := db.Init(dbPath)
+	require.NoError(t, err)
+	assert.NotNil(t, database)
+
+	info, err := os.Stat(dbPath)
+	require.NoError(t, err)
+	assert.False(t, info.IsDir())
+}
+
+func TestInit_ReturnsHelpfulErrorForReadOnlyDirectory(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root can bypass directory permissions")
+	}
+
+	root := t.TempDir()
+	locked := filepath.Join(root, "locked")
+	require.NoError(t, os.Mkdir(locked, 0o555))
+
+	_, err := db.Init(filepath.Join(locked, "blackbox.db"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "database directory")
+	assert.Contains(t, err.Error(), "uid=")
+	assert.Contains(t, err.Error(), "gid=")
 }
