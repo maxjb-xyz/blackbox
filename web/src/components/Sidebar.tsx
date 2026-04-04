@@ -1,5 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useNodePulse } from './NodePulse'
+import { useWebSocketContext } from './WebSocketProvider'
 import { useSession } from '../session'
 
 const NAV_ITEMS = [
@@ -16,6 +17,7 @@ const ADMIN_ITEMS = [
 
 export default function Sidebar() {
   const { onlineCount, totalCount, loading, error, lastUpdated } = useNodePulse()
+  const { status, lastConnectedAt, reconnect } = useWebSocketContext()
   const navigate = useNavigate()
   const { user, logout } = useSession()
   const username = user?.username ?? ''
@@ -46,8 +48,26 @@ export default function Sidebar() {
 
   return (
     <div className="flex min-h-screen w-[200px] flex-col border-r border-[var(--border)] bg-[#0B0B0B] font-mono">
-      <div className="px-4 py-4 text-xs font-bold tracking-[0.15em] text-[var(--accent)]">
-        BLACKBOX
+      <div className="flex items-center gap-2 px-4 py-4">
+        <span className="text-xs font-bold tracking-[0.15em] text-[var(--accent)]">BLACKBOX</span>
+        <span
+          title={
+            status === 'connected'
+              ? `connected - last msg: ${lastConnectedAt ? lastConnectedAt.toLocaleTimeString() : 'none'}`
+              : status === 'connecting'
+                ? 'connecting...'
+                : 'disconnected - click to reconnect'
+          }
+          onClick={status === 'disconnected' ? reconnect : undefined}
+          style={{
+            color: status === 'connected' ? '#00CC44' : status === 'connecting' ? '#FF9900' : '#FF3333',
+            fontSize: 10,
+            cursor: status === 'disconnected' ? 'pointer' : 'default',
+            lineHeight: 1,
+          }}
+        >
+          ●
+        </span>
       </div>
 
       <div className="border-t border-[var(--border)]" />
