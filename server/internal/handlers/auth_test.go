@@ -36,7 +36,7 @@ func sessionClaimsFromResponse(t *testing.T, w *httptest.ResponseRecorder, secre
 func TestBootstrap_CreatesAdminAndSetsSessionCookie(t *testing.T) {
 	database := newTestDB(t)
 
-	body := `{"username":"admin","password":"SuperSecret1!"}`
+	body := `{"username":"admin","password":"SuperSecret1!","email":"admin@example.com"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/bootstrap", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -48,10 +48,12 @@ func TestBootstrap_CreatesAdminAndSetsSessionCookie(t *testing.T) {
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
 	claims := sessionClaimsFromResponse(t, w, "jwt-test-secret")
 	assert.Equal(t, "admin", claims.Username)
+	assert.Equal(t, "admin@example.com", claims.Email)
 
 	var user models.User
 	require.NoError(t, database.First(&user, "username = ?", "admin").Error)
 	assert.True(t, user.IsAdmin)
+	assert.Equal(t, "admin@example.com", user.Email)
 }
 
 func TestBootstrap_RejectsIfAlreadyBootstrapped(t *testing.T) {
@@ -103,7 +105,7 @@ func TestBootstrap_ConcurrentRequestsOnlyOneSucceeds(t *testing.T) {
 
 func TestLogin_ValidCredentials(t *testing.T) {
 	database := newTestDB(t)
-	body := `{"username":"admin","password":"MyPassword1!"}`
+	body := `{"username":"admin","password":"MyPassword1!","email":"admin@example.com"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/bootstrap", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	handlers.Bootstrap(database, "jwt-test-secret")(httptest.NewRecorder(), req)
@@ -120,6 +122,7 @@ func TestLogin_ValidCredentials(t *testing.T) {
 	require.NoError(t, json.NewDecoder(w2.Body).Decode(&resp))
 	claims := sessionClaimsFromResponse(t, w2, "jwt-test-secret")
 	assert.Equal(t, "admin", claims.Username)
+	assert.Equal(t, "admin@example.com", claims.Email)
 }
 
 func TestLogin_WrongPassword(t *testing.T) {
@@ -144,6 +147,7 @@ func TestCurrentUser_ReturnsSessionUser(t *testing.T) {
 	req = req.WithContext(context.WithValue(req.Context(), auth.ClaimsKey, &auth.Claims{
 		UserID:   "user-1",
 		Username: "alice",
+		Email:    "alice@example.com",
 		IsAdmin:  true,
 	}))
 	w := httptest.NewRecorder()
@@ -154,11 +158,13 @@ func TestCurrentUser_ReturnsSessionUser(t *testing.T) {
 	var resp struct {
 		User struct {
 			Username string `json:"username"`
+			Email    string `json:"email"`
 			IsAdmin  bool   `json:"is_admin"`
 		} `json:"user"`
 	}
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
 	assert.Equal(t, "alice", resp.User.Username)
+	assert.Equal(t, "alice@example.com", resp.User.Email)
 	assert.True(t, resp.User.IsAdmin)
 }
 

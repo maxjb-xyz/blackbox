@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"blackbox/server/internal/auth"
 	"blackbox/server/internal/models"
 	"gorm.io/gorm"
 )
@@ -17,7 +18,7 @@ func SetupStatus(database *gorm.DB) http.HandlerFunc {
 	}
 }
 
-func HealthCheck(database *gorm.DB, oidcEnabled bool, oidcReady bool) http.HandlerFunc {
+func HealthCheck(database *gorm.DB, registry *auth.OIDCRegistry) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		dbStatus := "ok"
 		if err := database.Exec("SELECT 1").Error; err != nil {
@@ -25,11 +26,18 @@ func HealthCheck(database *gorm.DB, oidcEnabled bool, oidcReady bool) http.Handl
 		}
 
 		oidcStatus := "disabled"
-		if oidcEnabled {
-			if oidcReady {
-				oidcStatus = "ok"
-			} else {
-				oidcStatus = "unavailable"
+		oidcEnabled := false
+		var providers []models.OIDCProviderConfig
+		if err := database.Where("enabled = ?", true).Find(&providers).Error; err == nil && len(providers) > 0 {
+			oidcEnabled = true
+			oidcStatus = "unavailable"
+			if registry != nil {
+				for _, provider := range providers {
+					if registry.Get(provider.ID) != nil {
+						oidcStatus = "ok"
+						break
+					}
+				}
 			}
 		}
 

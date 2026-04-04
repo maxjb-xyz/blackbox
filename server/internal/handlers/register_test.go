@@ -24,7 +24,7 @@ func TestRegister_ValidInvite(t *testing.T) {
 		CreatedAt: time.Now(),
 	})
 
-	body := `{"username":"alice","password":"Hunter2!secure","invite_code":"validinvitecode01234567890123456789012345678901234567890123456789"}`
+	body := `{"username":"alice","password":"Hunter2!secure","email":"alice@example.com","invite_code":"validinvitecode01234567890123456789012345678901234567890123456789"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -39,8 +39,10 @@ func TestRegister_ValidInvite(t *testing.T) {
 	require.True(t, ok)
 	require.NotNil(t, user)
 	assert.Equal(t, "alice", user["username"])
+	assert.Equal(t, "alice@example.com", user["email"])
 	claims := sessionClaimsFromResponse(t, w, "jwt-test-secret")
 	assert.Equal(t, "alice", claims.Username)
+	assert.Equal(t, "alice@example.com", claims.Email)
 
 	var invite models.InviteCode
 	require.NoError(t, database.First(&invite, "code = ?", "validinvitecode01234567890123456789012345678901234567890123456789").Error)
