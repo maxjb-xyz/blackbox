@@ -19,6 +19,8 @@ import (
 
 var memoryDBCounter atomic.Uint64
 
+const legacyEntriesTimestampIndex = "idx_entries_timestamp"
+
 func Init(path string) (*gorm.DB, error) {
 	dsn := path
 	if path == ":memory:" {
@@ -60,6 +62,9 @@ func Init(path string) (*gorm.DB, error) {
 		&models.EntryNote{},
 		&models.ServiceAlias{},
 	); err != nil {
+		return nil, err
+	}
+	if err := ensureEntryIndexes(database); err != nil {
 		return nil, err
 	}
 	if err := database.Exec("DELETE FROM service_aliases WHERE TRIM(canonical) = '' OR canonical IS NULL OR TRIM(alias) = '' OR alias IS NULL").Error; err != nil {
@@ -104,6 +109,20 @@ func normalizePreservedAliases(aliases []models.ServiceAlias) []models.ServiceAl
 	}
 
 	return normalized
+}
+
+func ensureEntryIndexes(database *gorm.DB) error {
+	if !database.Migrator().HasIndex(&types.Entry{}, "idx_entries_timestamp_id") {
+		if err := database.Migrator().CreateIndex(&types.Entry{}, "idx_entries_timestamp_id"); err != nil {
+			return err
+		}
+	}
+	if database.Migrator().HasIndex(&types.Entry{}, legacyEntriesTimestampIndex) {
+		if err := database.Migrator().DropIndex(&types.Entry{}, legacyEntriesTimestampIndex); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func ensureWritablePath(path string) error {

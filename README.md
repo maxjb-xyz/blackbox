@@ -32,8 +32,6 @@ When your homelab breaks, Blackbox tells you what happened. You just write why.
 
 ---
 
----
-
 ## Quick Start
 
 > This gets a single-node setup running in minutes. For multi-node, see [Multi-Node Deployment](#multi-node-deployment).
@@ -55,6 +53,8 @@ services:
       JWT_SECRET: "change-me-to-a-long-random-string"
       AGENT_TOKENS: "my-homelab=change-me-to-a-secret-agent-token"
       WEBHOOK_SECRET: "change-me-to-a-webhook-secret"
+    networks:
+      - blackbox
 
   blackbox-agent:
     image: ghcr.io/maxjb-xyz/blackbox-agent:latest
@@ -69,9 +69,15 @@ services:
       AGENT_TOKEN: "change-me-to-a-secret-agent-token"
       NODE_NAME: "my-homelab"
       WATCH_PATHS: "/watch/etc"
+    networks:
+      - blackbox
 
 volumes:
   blackbox-data:
+
+networks:
+  blackbox:
+    driver: bridge
 ```
 
 **2. Start it:**
