@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"blackbox/server/internal/middleware"
 	"blackbox/server/internal/models"
 	"blackbox/server/internal/services"
 	"blackbox/shared/types"
@@ -14,17 +15,29 @@ import (
 	"gorm.io/gorm"
 )
 
+const maxAgentEntryBodyBytes = 64 << 10
+
 func AgentPush(database *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		nodeName, ok := middleware.AgentNodeFromContext(r.Context())
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
 		var entry types.Entry
-		if err := json.NewDecoder(r.Body).Decode(&entry); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid request body")
+		if !decodeJSONBody(w, r, maxAgentEntryBodyBytes, &entry) {
 			return
 		}
 		if entry.ID == "" {
 			writeError(w, http.StatusBadRequest, "entry id is required")
 			return
 		}
+		if entry.NodeName != "" && entry.NodeName != nodeName {
+			writeError(w, http.StatusForbidden, "agent node mismatch")
+			return
+		}
+		entry.NodeName = nodeName
 		serviceName, err := services.NormalizeService(database, entry.Service)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to normalize service")

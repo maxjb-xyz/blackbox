@@ -47,6 +47,7 @@ func Init(path string) (*gorm.DB, error) {
 		preservedAliases = normalizePreservedAliases(preservedAliases)
 	}
 	if err := database.AutoMigrate(
+		&models.SetupState{},
 		&models.User{},
 		&models.InviteCode{},
 		&models.OIDCState{},

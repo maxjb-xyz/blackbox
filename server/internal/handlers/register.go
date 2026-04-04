@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"time"
@@ -22,7 +21,10 @@ func Register(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 			Password   string `json:"password"`
 			InviteCode string `json:"invite_code"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Username == "" || req.Password == "" || req.InviteCode == "" {
+		if !decodeJSONBody(w, r, maxCredentialBodyBytes, &req) {
+			return
+		}
+		if req.Username == "" || req.Password == "" || req.InviteCode == "" {
 			writeError(w, http.StatusBadRequest, "username, password, and invite_code required")
 			return
 		}
@@ -75,10 +77,14 @@ func Register(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 			return
 		}
 
+		setSessionCookie(w, r, token, jwtTTL())
+
 		events.LogSystem(database, "auth", "user.register", "user "+req.Username+" registered via invite")
 
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(map[string]string{"token": token})
+		writeSessionResponse(w, &auth.Claims{
+			UserID:   userID,
+			Username: req.Username,
+			IsAdmin:  false,
+		}, http.StatusCreated)
 	}
 }

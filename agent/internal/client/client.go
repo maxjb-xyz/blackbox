@@ -16,6 +16,7 @@ import (
 type Client struct {
 	serverURL string
 	token     string
+	nodeName  string
 	http      *http.Client
 }
 
@@ -29,10 +30,11 @@ func (e *PermanentError) Error() string {
 	return fmt.Sprintf("server returned %d: %s", e.StatusCode, e.Message)
 }
 
-func New(serverURL, token string) *Client {
+func New(serverURL, token, nodeName string) *Client {
 	return &Client{
 		serverURL: serverURL,
 		token:     token,
+		nodeName:  nodeName,
 		http:      &http.Client{Timeout: 10 * time.Second},
 	}
 }
@@ -48,7 +50,8 @@ func (c *Client) Send(ctx context.Context, entry types.Entry) error {
 		return fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Lablog-Agent-Key", c.token)
+	req.Header.Set("X-Blackbox-Agent-Key", c.token)
+	req.Header.Set("X-Blackbox-Node-Name", c.nodeName)
 	req = req.WithContext(ctx)
 
 	resp, err := c.http.Do(req)

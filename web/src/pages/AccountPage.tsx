@@ -1,13 +1,15 @@
 import { useNavigate } from 'react-router-dom'
-import { getTokenUsername } from '../utils/auth'
+import { useSession } from '../session'
 
 export default function AccountPage() {
   const navigate = useNavigate()
-  const username = getTokenUsername('')
+  const { user, logout } = useSession()
+  const username = user?.username ?? ''
 
   function handleLogout() {
-    localStorage.removeItem('token')
-    navigate('/login', { replace: true })
+    void logout().finally(() => {
+      navigate('/login', { replace: true })
+    })
   }
 
   return (

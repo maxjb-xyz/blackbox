@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Terminal, AlertCircle, CheckCircle, XCircle, Loader } from 'lucide-react'
 import { bootstrap, checkHealth, type HealthStatus } from '../api/client'
+import { useSession } from '../session'
 
 interface SetupPageProps {
   onBootstrapped?: () => void
@@ -9,6 +10,7 @@ interface SetupPageProps {
 
 export default function SetupPage({ onBootstrapped }: SetupPageProps) {
   const navigate = useNavigate()
+  const { refreshSession } = useSession()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -28,8 +30,8 @@ export default function SetupPage({ onBootstrapped }: SetupPageProps) {
     setError(null)
     setLoading(true)
     try {
-      const token = await bootstrap(username, password)
-      localStorage.setItem('token', token)
+      await bootstrap(username, password)
+      await refreshSession()
       onBootstrapped?.()
       navigate('/')
     } catch (err) {

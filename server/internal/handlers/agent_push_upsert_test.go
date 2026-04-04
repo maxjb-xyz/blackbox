@@ -1,10 +1,7 @@
 package handlers_test
 
 import (
-	"bytes"
-	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -29,13 +26,8 @@ func TestAgentPush_CreatesNode(t *testing.T) {
 		Content:   "container nginx started",
 		Metadata:  `{"agent_version":"v0.2.1","ip_address":"10.0.0.5","os_info":"Ubuntu 24.04 LTS"}`,
 	}
-	body, err := json.Marshal(entry)
-	require.NoError(t, err)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/agent/push", bytes.NewReader(body))
-	rr := httptest.NewRecorder()
-
-	handlers.AgentPush(database)(rr, req)
+	req, rr, authMiddleware := authenticatedAgentRequest(t, entry, "homelab-01")
+	authMiddleware(handlers.AgentPush(database)).ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
 
@@ -61,13 +53,8 @@ func TestAgentPush_HeartbeatUpdatesNodeMetadata(t *testing.T) {
 		Content:   "Blackbox Agent heartbeat",
 		Metadata:  meta,
 	}
-	body, err := json.Marshal(entry)
-	require.NoError(t, err)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/agent/push", bytes.NewReader(body))
-	rr := httptest.NewRecorder()
-
-	handlers.AgentPush(database)(rr, req)
+	req, rr, authMiddleware := authenticatedAgentRequest(t, entry, "homelab-01")
+	authMiddleware(handlers.AgentPush(database)).ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
 
@@ -96,13 +83,8 @@ func TestAgentPush_ThrottlesLastSeenUpdates(t *testing.T) {
 		Event:     "stop",
 		Content:   "container nginx stopped",
 	}
-	body, err := json.Marshal(entry)
-	require.NoError(t, err)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/agent/push", bytes.NewReader(body))
-	rr := httptest.NewRecorder()
-
-	handlers.AgentPush(database)(rr, req)
+	req, rr, authMiddleware := authenticatedAgentRequest(t, entry, "homelab-01")
+	authMiddleware(handlers.AgentPush(database)).ServeHTTP(rr, req)
 
 	var node models.Node
 	require.NoError(t, database.Where("name = ?", "homelab-01").First(&node).Error)
@@ -128,13 +110,8 @@ func TestAgentPush_StartUpdatesMetadataForExistingNode(t *testing.T) {
 		Content:   "Blackbox Agent started",
 		Metadata:  `{"agent_version":"v0.3.0","ip_address":"10.0.0.8","os_info":"Debian 13"}`,
 	}
-	body, err := json.Marshal(entry)
-	require.NoError(t, err)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/agent/push", bytes.NewReader(body))
-	rr := httptest.NewRecorder()
-
-	handlers.AgentPush(database)(rr, req)
+	req, rr, authMiddleware := authenticatedAgentRequest(t, entry, "homelab-01")
+	authMiddleware(handlers.AgentPush(database)).ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
 
@@ -164,15 +141,31 @@ func TestAgentPush_DockerStartRemainsThrottled(t *testing.T) {
 		Event:     "start",
 		Content:   "container nginx started",
 	}
-	body, err := json.Marshal(entry)
-	require.NoError(t, err)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/agent/push", bytes.NewReader(body))
-	rr := httptest.NewRecorder()
-
-	handlers.AgentPush(database)(rr, req)
+	req, rr, authMiddleware := authenticatedAgentRequest(t, entry, "homelab-01")
+	authMiddleware(handlers.AgentPush(database)).ServeHTTP(rr, req)
 
 	var node models.Node
 	require.NoError(t, database.Where("name = ?", "homelab-01").First(&node).Error)
 	assert.True(t, node.LastSeen.Equal(baseTime), "expected docker start to be throttled; baseTime=%v got=%v", baseTime, node.LastSeen)
+}
+
+func TestAgentPush_RejectsNodeMismatch(t *testing.T) {
+	database := newTestDB(t)
+
+	entry := types.Entry{
+		ID:        ulid.Make().String(),
+		Timestamp: time.Now().UTC(),
+		NodeName:  "forged-node",
+		Source:    "agent",
+		Event:     "heartbeat",
+		Content:   "Blackbox Agent heartbeat",
+	}
+
+	req, rr, authMiddleware := authenticatedAgentRequest(t, entry, "real-node")
+	authMiddleware(handlers.AgentPush(database)).ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusForbidden, rr.Code)
+	var count int64
+	require.NoError(t, database.Model(&models.Node{}).Count(&count).Error)
+	assert.Zero(t, count)
 }

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
-import { authHeaders } from '../api/client'
-import { getTokenIsAdmin } from '../utils/auth'
+import { useSession } from '../session'
 
 interface InviteCode {
   code: string
@@ -38,7 +37,8 @@ async function readErrorMessage(res: Response, fallback: string) {
 }
 
 export default function AdminPage() {
-  const isAdmin = getTokenIsAdmin()
+  const { user } = useSession()
+  const isAdmin = user?.is_admin === true
   const [invites, setInvites] = useState<InviteCode[]>([])
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
@@ -49,7 +49,7 @@ export default function AdminPage() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/auth/invite', { headers: authHeaders() })
+      const res = await fetch('/api/auth/invite', { credentials: 'same-origin' })
       if (!res.ok) {
         setError(await readErrorMessage(res, 'Failed to load invites'))
         return
@@ -68,7 +68,7 @@ export default function AdminPage() {
     setCreating(true)
     setError(null)
     try {
-      const res = await fetch('/api/auth/invite', { method: 'POST', headers: authHeaders() })
+      const res = await fetch('/api/auth/invite', { method: 'POST', credentials: 'same-origin' })
       if (!res.ok) {
         setError(await readErrorMessage(res, 'Failed to create invite'))
         return

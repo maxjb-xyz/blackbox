@@ -32,6 +32,22 @@ func TestJWTAuth_ValidToken(t *testing.T) {
 	assert.True(t, reached)
 }
 
+func TestJWTAuth_ValidCookie(t *testing.T) {
+	secret := "test-secret"
+	token, err := auth.IssueJWT("user-1", "alice", false, secret, time.Hour)
+	require.NoError(t, err)
+
+	reached := false
+	handler := middleware.JWTAuth(secret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: token})
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+	assert.True(t, reached)
+}
+
 func TestJWTAuth_MissingToken(t *testing.T) {
 	handler := middleware.JWTAuth("secret")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("should not reach handler")

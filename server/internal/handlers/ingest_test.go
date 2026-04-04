@@ -1,10 +1,7 @@
 package handlers_test
 
 import (
-	"bytes"
-	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -27,12 +24,8 @@ func TestAgentPush_SavesEntry(t *testing.T) {
 		Event:     "start",
 		Content:   "Container nginx started",
 	}
-	body, _ := json.Marshal(entry)
-	req := httptest.NewRequest(http.MethodPost, "/api/agent/push", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	handlers.AgentPush(database)(w, req)
+	req, w, authMiddleware := authenticatedAgentRequest(t, entry, "homelab-01")
+	authMiddleware(handlers.AgentPush(database)).ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusCreated, w.Code)
 
@@ -46,12 +39,8 @@ func TestAgentPush_RejectsMissingID(t *testing.T) {
 	database := newTestDB(t)
 
 	entry := types.Entry{NodeName: "node1", Source: "docker"}
-	body, _ := json.Marshal(entry)
-	req := httptest.NewRequest(http.MethodPost, "/api/agent/push", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	handlers.AgentPush(database)(w, req)
+	req, w, authMiddleware := authenticatedAgentRequest(t, entry, "node1")
+	authMiddleware(handlers.AgentPush(database)).ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }

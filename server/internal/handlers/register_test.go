@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"blackbox/server/internal/auth"
 	"blackbox/server/internal/handlers"
 	"blackbox/server/internal/models"
 	"github.com/stretchr/testify/assert"
@@ -33,11 +32,9 @@ func TestRegister_ValidInvite(t *testing.T) {
 	handlers.Register(database, "jwt-test-secret")(w, req)
 
 	assert.Equal(t, http.StatusCreated, w.Code)
-	var resp map[string]string
+	var resp map[string]map[string]interface{}
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
-	assert.NotEmpty(t, resp["token"])
-	claims, err := auth.VerifyJWT(resp["token"], "jwt-test-secret")
-	require.NoError(t, err)
+	claims := sessionClaimsFromResponse(t, w, "jwt-test-secret")
 	assert.Equal(t, "alice", claims.Username)
 
 	var invite models.InviteCode

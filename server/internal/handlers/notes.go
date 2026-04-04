@@ -22,6 +22,7 @@ const (
 	maxNoteLength    = 2000
 	defaultNotesPage = 50
 	maxNotesPage     = 100
+	maxNoteBodyBytes = 16 << 10
 )
 
 func CreateNote(database *gorm.DB) http.HandlerFunc {
@@ -46,8 +47,7 @@ func CreateNote(database *gorm.DB) http.HandlerFunc {
 		var body struct {
 			Content string `json:"content"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid request body")
+		if !decodeJSONBody(w, r, maxNoteBodyBytes, &body) {
 			return
 		}
 		content := strings.TrimSpace(body.Content)

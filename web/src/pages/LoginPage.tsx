@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { AlertCircle, Terminal } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { checkHealth, login } from '../api/client'
+import { useSession } from '../session'
 
 function sanitizeRedirectTo(value: string | null) {
   if (!value) return '/timeline'
@@ -13,6 +14,7 @@ function sanitizeRedirectTo(value: string | null) {
 export default function LoginPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
+  const { refreshSession } = useSession()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -32,8 +34,8 @@ export default function LoginPage() {
     setError(null)
     setLoading(true)
     try {
-      const token = await login(username, password)
-      localStorage.setItem('token', token)
+      await login(username, password)
+      await refreshSession()
       navigate(redirectTo, { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed')

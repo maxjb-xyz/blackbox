@@ -1,6 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useNodePulse } from './NodePulse'
-import { getTokenIsAdmin, getTokenUsername } from '../utils/auth'
+import { useSession } from '../session'
 
 const NAV_ITEMS = [
   { label: 'TIMELINE', to: '/timeline' },
@@ -17,8 +17,9 @@ const ADMIN_ITEMS = [
 export default function Sidebar() {
   const { onlineCount, totalCount, loading, error, lastUpdated } = useNodePulse()
   const navigate = useNavigate()
-  const username = getTokenUsername('')
-  const isAdmin = getTokenIsAdmin()
+  const { user, logout } = useSession()
+  const username = user?.username ?? ''
+  const isAdmin = user?.is_admin === true
 
   function navClassName(isActive: boolean) {
     return [
@@ -84,8 +85,9 @@ export default function Sidebar() {
         <button
           type="button"
           onClick={() => {
-            localStorage.removeItem('token')
-            navigate('/login')
+            void logout().finally(() => {
+              navigate('/login')
+            })
           }}
           className="block w-full cursor-pointer border-none bg-transparent px-0 py-0 text-left text-xs leading-[1.4] tracking-wider text-[var(--muted)]"
           title="Logout"

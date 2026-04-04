@@ -30,7 +30,7 @@ type uptimePayload struct {
 func WebhookUptime(database *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var payload uptimePayload
-		if !decodeWebhookBody(w, r, 1<<20, &payload) {
+		if !decodeJSONBody(w, r, 1<<20, &payload) {
 			return
 		}
 		if payload.Monitor.Name == "" {

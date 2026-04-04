@@ -21,7 +21,7 @@ type watchtowerPayload struct {
 func WebhookWatchtower(database *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var payload watchtowerPayload
-		if !decodeWebhookBody(w, r, 1<<20, &payload) {
+		if !decodeJSONBody(w, r, 1<<20, &payload) {
 			return
 		}
 

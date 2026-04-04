@@ -12,12 +12,21 @@ import (
 func JWTAuth(secret string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			tokenString := ""
 			header := r.Header.Get("Authorization")
-			if !strings.HasPrefix(header, "Bearer ") {
-				writeJSONError(w, http.StatusUnauthorized, "missing authorization header")
+			if strings.HasPrefix(header, "Bearer ") {
+				tokenString = strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
+			}
+			if tokenString == "" {
+				cookie, err := r.Cookie(auth.SessionCookieName)
+				if err == nil {
+					tokenString = cookie.Value
+				}
+			}
+			if tokenString == "" {
+				writeJSONError(w, http.StatusUnauthorized, "missing authorization token")
 				return
 			}
-			tokenString := strings.TrimPrefix(header, "Bearer ")
 			claims, err := auth.VerifyJWT(tokenString, secret)
 			if err != nil {
 				writeJSONError(w, http.StatusUnauthorized, "invalid token")

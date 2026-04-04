@@ -52,7 +52,7 @@ func main() {
 	watchPaths := splitEnv("WATCH_PATHS")
 	watchIgnore := splitEnv("WATCH_IGNORE")
 
-	c := client.New(serverURL, agentToken)
+	c := client.New(serverURL, agentToken, nodeName)
 	s := sender.New(c)
 	out := s.Chan()
 

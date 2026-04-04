@@ -35,9 +35,9 @@ func main() {
 		log.Fatal("JWT_SECRET environment variable is required")
 	}
 
-	agentToken := os.Getenv("AGENT_TOKEN")
-	if agentToken == "" {
-		log.Fatal("AGENT_TOKEN environment variable is required")
+	agentConfig, err := middleware.NewAgentAuthConfig(os.Getenv("AGENT_TOKENS"))
+	if err != nil {
+		log.Fatalf("AGENT_TOKENS configuration error: %v", err)
 	}
 
 	webhookSecret := os.Getenv("WEBHOOK_SECRET")
@@ -45,7 +45,7 @@ func main() {
 		log.Fatal("WEBHOOK_SECRET environment variable is required")
 	}
 
-	dbPath := getEnv("DB_PATH", "/data/lablog.db")
+	dbPath := getEnv("DB_PATH", "/data/blackbox.db")
 	database, err := db.Init(dbPath)
 	if err != nil {
 		log.Fatalf("database init failed: %v", err)
@@ -89,14 +89,22 @@ func main() {
 	}
 
 	r := chi.NewRouter()
+	r.Use(middleware.SecurityHeaders())
 
 	r.Get("/api/setup/status", handlers.SetupStatus(database))
 	r.Get("/api/setup/health", func(w http.ResponseWriter, req *http.Request) {
 		handlers.HealthCheck(database, oidcEnabled, oidcProvider() != nil)(w, req)
 	})
-	r.Post("/api/auth/bootstrap", handlers.Bootstrap(database, jwtSecret))
-	r.Post("/api/auth/login", handlers.Login(database, jwtSecret))
-	r.Post("/api/auth/register", handlers.Register(database, jwtSecret))
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.RateLimit(10*time.Minute, 3))
+		r.Post("/api/auth/bootstrap", handlers.Bootstrap(database, jwtSecret))
+	})
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.RateLimit(time.Minute, 10))
+		r.Post("/api/auth/login", handlers.Login(database, jwtSecret))
+		r.Post("/api/auth/register", handlers.Register(database, jwtSecret))
+	})
+	r.Post("/api/auth/logout", handlers.Logout())
 
 	if oidcEnabled {
 		r.Get("/api/auth/oidc/login", func(w http.ResponseWriter, req *http.Request) {
@@ -109,6 +117,7 @@ func main() {
 
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.JWTAuth(jwtSecret))
+		r.Get("/api/auth/me", handlers.CurrentUser())
 		r.Post("/api/auth/invite", handlers.CreateInvite(database))
 		r.Get("/api/auth/invite", handlers.ListInvites(database))
 		r.Get("/api/nodes", handlers.ListNodes(database))
@@ -124,7 +133,7 @@ func main() {
 	})
 
 	r.Group(func(r chi.Router) {
-		r.Use(middleware.AgentAuth(agentToken))
+		r.Use(middleware.AgentAuth(agentConfig))
 		r.Post("/api/agent/push", handlers.AgentPush(database))
 	})
 

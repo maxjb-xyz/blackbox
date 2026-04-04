@@ -10,6 +10,7 @@ import NodesPage from './pages/NodesPage'
 import SetupPage from './pages/SetupPage'
 import TimelinePage from './pages/TimelinePage'
 import WebhooksPage from './pages/WebhooksPage'
+import { SessionProvider } from './session'
 
 function AppRoutes() {
   const [bootstrapped, setBootstrapped] = useState<boolean | null>(null)
@@ -134,7 +135,9 @@ function AppRoutes() {
 export default function App() {
   return (
     <BrowserRouter>
-      <AppRoutes />
+      <SessionProvider>
+        <AppRoutes />
+      </SessionProvider>
     </BrowserRouter>
   )
 }

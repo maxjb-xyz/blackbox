@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"os"
 	"time"
@@ -16,7 +15,14 @@ import (
 	gooidc "github.com/coreos/go-oidc/v3/oidc"
 	"github.com/oklog/ulid/v2"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+const (
+	maxCredentialBodyBytes = 8 << 10
+)
+
+var errAlreadyBootstrapped = errors.New("already bootstrapped")
 
 func jwtTTL() time.Duration {
 	if v := os.Getenv("JWT_TTL"); v != "" {
@@ -29,18 +35,14 @@ func jwtTTL() time.Duration {
 
 func Bootstrap(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var count int64
-		database.Model(&models.User{}).Count(&count)
-		if count > 0 {
-			writeError(w, http.StatusConflict, "already bootstrapped")
-			return
-		}
-
 		var req struct {
 			Username string `json:"username"`
 			Password string `json:"password"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Username == "" || req.Password == "" {
+		if !decodeJSONBody(w, r, maxCredentialBodyBytes, &req) {
+			return
+		}
+		if req.Username == "" || req.Password == "" {
 			writeError(w, http.StatusBadRequest, "username and password required")
 			return
 		}
@@ -57,22 +59,51 @@ func Bootstrap(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 			PasswordHash: hash,
 			IsAdmin:      true,
 		}
-		if err := database.Create(&user).Error; err != nil {
+		var token string
+
+		txErr := database.Transaction(func(tx *gorm.DB) error {
+			result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.SetupState{Key: "bootstrap"})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return errAlreadyBootstrapped
+			}
+
+			var count int64
+			if err := tx.Model(&models.User{}).Count(&count).Error; err != nil {
+				return err
+			}
+			if count > 0 {
+				return errAlreadyBootstrapped
+			}
+
+			if err := tx.Create(&user).Error; err != nil {
+				return err
+			}
+
+			var issueErr error
+			token, issueErr = auth.IssueJWT(user.ID, user.Username, user.IsAdmin, jwtSecret, jwtTTL())
+			return issueErr
+		})
+		if txErr == errAlreadyBootstrapped {
+			writeError(w, http.StatusConflict, "already bootstrapped")
+			return
+		}
+		if txErr != nil {
 			writeError(w, http.StatusInternalServerError, "failed to create user")
 			return
 		}
 
-		token, err := auth.IssueJWT(user.ID, user.Username, user.IsAdmin, jwtSecret, jwtTTL())
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to issue token")
-			return
-		}
+		setSessionCookie(w, r, token, jwtTTL())
 
 		events.LogSystem(database, "auth", "admin.bootstrap", "admin user "+req.Username+" created")
 
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(map[string]string{"token": token})
+		writeSessionResponse(w, &auth.Claims{
+			UserID:   user.ID,
+			Username: user.Username,
+			IsAdmin:  user.IsAdmin,
+		}, http.StatusCreated)
 	}
 }
 
@@ -82,8 +113,7 @@ func Login(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 			Username string `json:"username"`
 			Password string `json:"password"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid request body")
+		if !decodeJSONBody(w, r, maxCredentialBodyBytes, &req) {
 			return
 		}
 
@@ -106,10 +136,15 @@ func Login(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 			return
 		}
 
+		setSessionCookie(w, r, token, jwtTTL())
+
 		events.LogSystem(database, "auth", "user.login", "user "+req.Username+" logged in")
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"token": token})
+		writeSessionResponse(w, &auth.Claims{
+			UserID:   user.ID,
+			Username: user.Username,
+			IsAdmin:  user.IsAdmin,
+		}, http.StatusOK)
 	}
 }
 
@@ -145,14 +180,18 @@ func OIDCLogin(database *gorm.DB, oidcProvider *auth.OIDCProvider) http.HandlerF
 			return
 		}
 
-		http.SetCookie(w, &http.Cookie{
+		stateCookie := &http.Cookie{
 			Name:     "oidc_state",
 			Value:    state,
 			HttpOnly: true,
 			SameSite: http.SameSiteLaxMode,
 			MaxAge:   600,
 			Path:     "/",
-		})
+		}
+		if isSecureRequest(r) {
+			stateCookie.Secure = true
+		}
+		http.SetCookie(w, stateCookie)
 
 		http.Redirect(w, r, oidcProvider.Config.AuthCodeURL(state, gooidc.Nonce(nonce)), http.StatusFound)
 	}
@@ -240,41 +279,47 @@ func OIDCCallback(database *gorm.DB, oidcProvider *auth.OIDCProvider, jwtSecret 
 			return
 		}
 
+		setSessionCookie(w, r, token, jwtTTL())
+		http.SetCookie(w, &http.Cookie{
+			Name:     "oidc_state",
+			Value:    "",
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+			Path:     "/",
+			MaxAge:   -1,
+			Expires:  time.Unix(0, 0),
+			Secure:   isSecureRequest(r),
+		})
+
 		events.LogSystem(database, "auth", "user.login.oidc", "user "+claims.Sub+" logged in via OIDC")
 
+		http.Redirect(w, r, "/timeline", http.StatusFound)
+	}
+}
+
+func CurrentUser() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := auth.ClaimsFromContext(r.Context())
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		writeSessionResponse(w, claims, http.StatusOK)
+	}
+}
+
+func Logout() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		clearSessionCookie(w, r)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"token": token})
+		w.Header().Set("Cache-Control", "no-store")
+		_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 	}
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(map[string]string{"error": msg})
-}
-
-// decodeWebhookBody decodes a webhook request body with size limits and proper error handling.
-// Returns true on success, false on failure (after writing error response).
-func decodeWebhookBody(w http.ResponseWriter, r *http.Request, maxBytes int64, v interface{}) bool {
-	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
-
-	decoder := json.NewDecoder(r.Body)
-	err := decoder.Decode(v)
-	if err != nil {
-		var maxErr *http.MaxBytesError
-		if errors.As(err, &maxErr) {
-			writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
-			return false
-		}
-		writeError(w, http.StatusBadRequest, "invalid request body")
-		return false
-	}
-
-	var extra interface{}
-	if decoder.Decode(&extra) != io.EOF {
-		writeError(w, http.StatusBadRequest, "request body must only contain a single JSON value")
-		return false
-	}
-
-	return true
 }

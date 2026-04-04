@@ -9,7 +9,7 @@
 
 ## Technical Standards
 - **Backend:** Go (standard net/http or Fiber). 
-- **Database:** SQLite for portability. Store in `/data/lablog.db`.
+- **Database:** SQLite for portability. Store in `/data/blackbox.db`.
 - **Ingestion:** 
     - Docker: Watch `/var/run/docker.sock` for container events.
     - Files: Use `fsnotify` for config directory watching.
