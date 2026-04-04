@@ -13,7 +13,7 @@ func TestNewOIDCProvider_FailsWithBadIssuer(t *testing.T) {
 		"https://does-not-exist.invalid",
 		"client-id",
 		"client-secret",
-		"http://localhost:8080/api/auth/oidc/callback",
+		"http://localhost:8080/api/auth/oidc/provider-1/callback",
 	)
 	assert.Error(t, err)
 	assert.Nil(t, provider)

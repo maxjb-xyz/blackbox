@@ -5,6 +5,7 @@ import "time"
 type User struct {
 	ID           string `gorm:"primaryKey"`
 	Username     string `gorm:"uniqueIndex"`
+	Email        string `gorm:"index"`
 	PasswordHash string
 	IsAdmin      bool
 	OIDCSubject  string `gorm:"index"`

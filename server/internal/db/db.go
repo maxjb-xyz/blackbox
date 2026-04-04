@@ -57,6 +57,8 @@ func Init(path string) (*gorm.DB, error) {
 		&models.User{},
 		&models.InviteCode{},
 		&models.OIDCState{},
+		&models.OIDCProviderConfig{},
+		&models.AppSetting{},
 		&types.Entry{},
 		&models.Node{},
 		&models.EntryNote{},
