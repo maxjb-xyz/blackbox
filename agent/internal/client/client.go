@@ -60,7 +60,9 @@ func (c *Client) Send(ctx context.Context, entry types.Entry) error {
 	if err != nil {
 		return fmt.Errorf("send entry: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		bodyBytes, readErr := io.ReadAll(io.LimitReader(resp.Body, 256))

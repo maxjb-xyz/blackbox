@@ -164,7 +164,9 @@ func getServerReachableIP(serverURL string) (string, error) {
 			return "", fmt.Errorf("dial %s: %w", target, err)
 		}
 	}
-	defer conn.Close()
+	defer func() {
+		_ = conn.Close()
+	}()
 
 	addr, ok := conn.LocalAddr().(*net.UDPAddr)
 	if ok && addr.IP != nil {

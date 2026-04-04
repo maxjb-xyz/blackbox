@@ -110,7 +110,9 @@ func rootFor(path string, roots []string) string {
 }
 
 func runWatcher(ctx context.Context, nodeName string, rootPaths []string, ignorePatterns []string, w *fsnotify.Watcher, out chan<- types.Entry) {
-	defer w.Close()
+	defer func() {
+		_ = w.Close()
+	}()
 
 	var mu sync.Mutex
 	timers := make(map[string]*time.Timer)

@@ -52,7 +52,9 @@ func watch(ctx context.Context, nodeName string, out chan<- types.Entry, collaps
 	if err != nil {
 		return fmt.Errorf("create docker client: %w", err)
 	}
-	defer cli.Close()
+	defer func() {
+		_ = cli.Close()
+	}()
 
 	f := filters.NewArgs()
 	f.Add("type", "container")
