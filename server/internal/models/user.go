@@ -8,5 +8,6 @@ type User struct {
 	PasswordHash string
 	IsAdmin      bool
 	OIDCSubject  string    `gorm:"index"`
+	TokenVersion int       `gorm:"not null;default:0"`
 	CreatedAt    time.Time
 }
