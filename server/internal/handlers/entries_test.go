@@ -100,6 +100,43 @@ func TestListEntries_FilterByNode(t *testing.T) {
 	assert.Equal(t, "node-a", resp.Entries[0].NodeName)
 }
 
+func TestListEntries_HidesHeartbeatsByDefault(t *testing.T) {
+	database := newTestDB(t)
+	database.Create(&types.Entry{ID: "01", Source: "agent", Event: "heartbeat", NodeName: "n1", Content: "hb"})
+	database.Create(&types.Entry{ID: "02", Source: "docker", Event: "start", NodeName: "n1", Content: "svc start"})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/entries?hide_heartbeat=true", nil)
+	w := httptest.NewRecorder()
+
+	handlers.ListEntries(database)(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp struct {
+		Entries []types.Entry `json:"entries"`
+	}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	assert.Len(t, resp.Entries, 1)
+	assert.Equal(t, "02", resp.Entries[0].ID)
+}
+
+func TestListEntries_ShowsHeartbeatsWhenNotFiltered(t *testing.T) {
+	database := newTestDB(t)
+	database.Create(&types.Entry{ID: "01", Source: "agent", Event: "heartbeat", NodeName: "n1", Content: "hb"})
+	database.Create(&types.Entry{ID: "02", Source: "docker", Event: "start", NodeName: "n1", Content: "svc start"})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/entries", nil)
+	w := httptest.NewRecorder()
+
+	handlers.ListEntries(database)(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp struct {
+		Entries []types.Entry `json:"entries"`
+	}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	assert.Len(t, resp.Entries, 2)
+}
+
 func TestGetEntry_NotFound(t *testing.T) {
 	database := newTestDB(t)
 
