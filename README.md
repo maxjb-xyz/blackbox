@@ -32,72 +32,6 @@ When your homelab breaks, Blackbox tells you what happened. You just write why.
 
 ---
 
-## Architecture
-
-Blackbox is split into two components designed to run across multiple nodes.
-
-```
-┌─────────────────────────────────────────────┐
-│               Blackbox Server               │
-│  ┌──────────┐  ┌──────────┐  ┌───────────┐  │
-│  │ React UI │  │ REST API │  │  SQLite   │  │
-│  │(embedded)│  │ + Auth   │  │  /data/   │  │
-│  └──────────┘  └──────────┘  └───────────┘  │
-│         ▲              ▲              ▲     │
-└─────────┼──────────────┼──────────────┼─────┘
-          │              │              │
-    Browser           Agents        Webhooks
-                         │
-         ┌───────────────┼───────────────┐
-         │               │               │
-  ┌──────┴─────┐  ┌──────┴─────┐  ┌──────┴─────┐
-  │  Agent     │  │  Agent     │  │  Agent     │
-  │  node-01   │  │  node-02   │  │  node-03   │
-  │            │  │            │  │            │
-  │ Docker sock│  │ Docker sock│  │ Watch paths│
-  └────────────┘  └────────────┘  └────────────┘
-```
-
-| Component | Role |
-|-----------|------|
-| **Server** | Central brain. Hosts the UI, stores the database, receives events from agents, and handles webhook ingestion. |
-| **Agent** | Lightweight binary deployed on each node. Watches Docker and config files, pushes events to the server. |
-
----
-
-## Features
-
-### Event Ingestion
-- **Docker events** — Automatic detection of container start, stop, die, create, pull, and delete events. Per-node, with a 3-second debounce to collapse rapid restarts.
-- **Config file watching** — inotify-based watching of `.yaml`, `.yml`, `.conf`, `.env`, `.json`, and `.ini` files via configurable `WATCH_PATHS`.
-- **Uptime Kuma webhooks** — Ingest Down/Up state changes. Down events trigger automatic correlation: Blackbox queries the 120-second window before the incident for likely causes.
-- **Watchtower webhooks** — Ingest container image update events with version metadata.
-- **Manual entries** — Post arbitrary events from the UI or via the API.
-
-### Timeline
-- Chronological, paginated event feed across all nodes
-- Filter by node, event source, or full-text search (content + service name)
-- ULID-based IDs for guaranteed sort-order correctness
-- Annotate any event with notes — with user attribution
-
-### Node Management
-- Nodes auto-register on first agent heartbeat
-- Per-node metadata: agent version, IP address, OS, last-seen timestamp
-- Live node pulse indicator in the sidebar
-
-### Authentication
-- Local username/password with Argon2id hashing
-- JWT session cookies (configurable TTL, default 24h)
-- OIDC (OpenID Connect) support for Authentik, Authelia, Keycloak, etc.
-- Admin bootstrap wizard on first launch
-- Invite-code-based user registration
-
-### Security
-- Distroless container images (no shell, non-root user)
-- Constant-time token comparison for all shared secrets
-- Rate limiting on auth endpoints
-- Security headers middleware
-
 ---
 
 ## Quick Start
@@ -147,6 +81,41 @@ docker compose up -d
 ```
 
 **3. Open `http://your-server:8080` and complete the setup wizard.**
+
+---
+
+## Features
+
+### Event Ingestion
+- **Docker events** — Automatic detection of container start, stop, die, create, pull, and delete events. Per-node, with a 3-second debounce to collapse rapid restarts.
+- **Config file watching** — inotify-based watching of `.yaml`, `.yml`, `.conf`, `.env`, `.json`, and `.ini` files via configurable `WATCH_PATHS`.
+- **Uptime Kuma webhooks** — Ingest Down/Up state changes. Down events trigger automatic correlation: Blackbox queries the 120-second window before the incident for likely causes.
+- **Watchtower webhooks** — Ingest container image update events with version metadata.
+- **Manual entries** — Post arbitrary events from the UI or via the API.
+
+### Timeline
+- Chronological, paginated event feed across all nodes
+- Filter by node, event source, or full-text search (content + service name)
+- ULID-based IDs for guaranteed sort-order correctness
+- Annotate any event with notes — with user attribution
+
+### Node Management
+- Nodes auto-register on first agent heartbeat
+- Per-node metadata: agent version, IP address, OS, last-seen timestamp
+- Live node pulse indicator in the sidebar
+
+### Authentication
+- Local username/password with Argon2id hashing
+- JWT session cookies (configurable TTL, default 24h)
+- OIDC (OpenID Connect) support for Authentik, Authelia, Keycloak, etc.
+- Admin bootstrap wizard on first launch
+- Invite-code-based user registration
+
+### Security
+- Distroless container images (no shell, non-root user)
+- Constant-time token comparison for all shared secrets
+- Rate limiting on auth endpoints
+- Security headers middleware
 
 ---
 
@@ -294,7 +263,7 @@ Blackbox supports any OIDC-compliant provider (Authentik, Authelia, Keycloak, et
 ```yaml
 environment:
   OIDC_ENABLED: "true"
-  OIDC_ISSUER: "https://authentik.example.com/application/o/blackbox/"
+  OIDC_ISSUER: "https://authentik.example.com"
   OIDC_CLIENT_ID: "your-client-id"
   OIDC_CLIENT_SECRET: "your-client-secret"
   OIDC_REDIRECT_URL: "https://blackbox.example.com/api/auth/oidc/callback"
@@ -330,6 +299,39 @@ blackbox.example.com {
     reverse_proxy localhost:8080
 }
 ```
+
+---
+
+## Architecture
+
+Blackbox is split into two components designed to run across multiple nodes.
+
+```
+┌─────────────────────────────────────────────┐
+│               Blackbox Server               │
+│  ┌──────────┐  ┌──────────┐  ┌───────────┐  │
+│  │ React UI │  │ REST API │  │  SQLite   │  │
+│  │(embedded)│  │ + Auth   │  │  /data/   │  │
+│  └──────────┘  └──────────┘  └───────────┘  │
+│         ▲              ▲              ▲     │
+└─────────┼──────────────┼──────────────┼─────┘
+          │              │              │
+    Browser           Agents        Webhooks
+                         │
+         ┌───────────────┼───────────────┐
+         │               │               │
+  ┌──────┴─────┐  ┌──────┴─────┐  ┌──────┴─────┐
+  │  Agent     │  │  Agent     │  │  Agent     │
+  │  node-01   │  │  node-02   │  │  node-03   │
+  │            │  │            │  │            │
+  │ Docker sock│  │ Docker sock│  │ Watch paths│
+  └────────────┘  └────────────┘  └────────────┘
+```
+
+| Component | Role |
+|-----------|------|
+| **Server** | Central brain. Hosts the UI, stores the database, receives events from agents, and handles webhook ingestion. |
+| **Agent** | Lightweight binary deployed on each node. Watches Docker and config files, pushes events to the server. |
 
 ---
 
