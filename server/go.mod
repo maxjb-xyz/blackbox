@@ -3,6 +3,7 @@ module blackbox/server
 go 1.26
 
 require (
+	github.com/coder/websocket v1.8.14
 	github.com/coreos/go-oidc/v3 v3.17.0
 	github.com/glebarez/sqlite v1.11.0
 	github.com/go-chi/chi/v5 v5.2.5
@@ -12,7 +13,6 @@ require (
 	golang.org/x/crypto v0.49.0
 	golang.org/x/oauth2 v0.36.0
 	gorm.io/gorm v1.31.1
-	nhooyr.io/websocket v1.8.17
 )
 
 require (
@@ -34,4 +34,3 @@ require (
 	modernc.org/memory v1.5.0 // indirect
 	modernc.org/sqlite v1.23.1 // indirect
 )
-

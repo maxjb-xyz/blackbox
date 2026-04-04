@@ -7,7 +7,7 @@ import (
 	"net/http"
 
 	"blackbox/server/internal/hub"
-	"nhooyr.io/websocket"
+	"github.com/coder/websocket"
 )
 
 func WebSocketHandler(h *hub.Hub) http.HandlerFunc {
@@ -20,7 +20,11 @@ func WebSocketHandler(h *hub.Hub) http.HandlerFunc {
 			log.Printf("ws: accept error: %v", err)
 			return
 		}
-		defer conn.CloseNow()
+		defer func() {
+			if err := conn.CloseNow(); err != nil {
+				log.Printf("ws: close-now error: %v", err)
+			}
+		}()
 
 		// CloseRead pumps incoming frames (required by nhooyr) and cancels ctx on close.
 		ctx := conn.CloseRead(context.Background())
@@ -31,7 +35,9 @@ func WebSocketHandler(h *hub.Hub) http.HandlerFunc {
 		for {
 			select {
 			case <-ctx.Done():
-				conn.Close(websocket.StatusNormalClosure, "")
+				if err := conn.Close(websocket.StatusNormalClosure, ""); err != nil {
+					log.Printf("ws: close error: %v", err)
+				}
 				return
 			case msg, ok := <-ch:
 				if !ok {
