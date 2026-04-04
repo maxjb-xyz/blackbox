@@ -18,8 +18,10 @@ import (
 func TestInit_CreatesTablesAndMigrates(t *testing.T) {
 	tmp, err := os.CreateTemp("", "blackbox-test-*.db")
 	require.NoError(t, err)
-	tmp.Close()
-	defer os.Remove(tmp.Name())
+	require.NoError(t, tmp.Close())
+	t.Cleanup(func() {
+		require.NoError(t, os.Remove(tmp.Name()))
+	})
 
 	database, err := db.Init(tmp.Name())
 	require.NoError(t, err)
@@ -40,8 +42,10 @@ func TestInit_CreatesTablesAndMigrates(t *testing.T) {
 func TestInit_MigratesInviteCodeAndOIDCState(t *testing.T) {
 	tmp, err := os.CreateTemp("", "blackbox-test-*.db")
 	require.NoError(t, err)
-	tmp.Close()
-	defer os.Remove(tmp.Name())
+	require.NoError(t, tmp.Close())
+	t.Cleanup(func() {
+		require.NoError(t, os.Remove(tmp.Name()))
+	})
 
 	database, err := db.Init(tmp.Name())
 	require.NoError(t, err)
@@ -68,8 +72,10 @@ func TestInit_MigratesInviteCodeAndOIDCState(t *testing.T) {
 func TestInit_MigratesServiceAliases(t *testing.T) {
 	tmp, err := os.CreateTemp("", "blackbox-test-*.db")
 	require.NoError(t, err)
-	tmp.Close()
-	defer os.Remove(tmp.Name())
+	require.NoError(t, tmp.Close())
+	t.Cleanup(func() {
+		require.NoError(t, os.Remove(tmp.Name()))
+	})
 
 	legacyDB, err := gorm.Open(sqlite.Open(tmp.Name()), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),

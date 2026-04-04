@@ -61,7 +61,7 @@ func CreateInvite(database *gorm.DB) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(map[string]string{
+		_ = json.NewEncoder(w).Encode(map[string]string{
 			"code":       code,
 			"expires_at": expiresAt.UTC().Format(time.RFC3339),
 		})
@@ -83,6 +83,6 @@ func ListInvites(database *gorm.DB) http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(invites)
+		_ = json.NewEncoder(w).Encode(invites)
 	}
 }

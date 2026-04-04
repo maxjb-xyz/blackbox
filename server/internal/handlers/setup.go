@@ -13,7 +13,7 @@ func SetupStatus(database *gorm.DB) http.HandlerFunc {
 		var count int64
 		database.Model(&models.User{}).Count(&count)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]bool{"bootstrapped": count > 0})
+		_ = json.NewEncoder(w).Encode(map[string]bool{"bootstrapped": count > 0})
 	}
 }
 
@@ -34,7 +34,7 @@ func HealthCheck(database *gorm.DB, oidcEnabled bool, oidcReady bool) http.Handl
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"database":     dbStatus,
 			"oidc":         oidcStatus,
 			"oidc_enabled": oidcEnabled,
