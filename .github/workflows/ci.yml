@@ -48,21 +48,21 @@ jobs:
             shared/go.sum
 
       - name: golangci-lint (server)
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          version: v2.11.3
           working-directory: server
 
       - name: golangci-lint (agent)
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          version: v2.11.3
           working-directory: agent
 
       - name: golangci-lint (shared)
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          version: v2.11.3
           working-directory: shared
 
   frontend-build:
