@@ -124,6 +124,7 @@ export async function fetchEntries(params: {
   node?: string
   source?: string
   q?: string
+  hideHeartbeat?: boolean
 }): Promise<EntriesPage> {
   const url = new URL('/api/entries', window.location.origin)
   if (params.cursor) url.searchParams.set('cursor', params.cursor)
@@ -131,6 +132,7 @@ export async function fetchEntries(params: {
   if (params.node) url.searchParams.set('node', params.node)
   if (params.source) url.searchParams.set('source', params.source)
   if (params.q) url.searchParams.set('q', params.q)
+  if (params.hideHeartbeat) url.searchParams.set('hide_heartbeat', 'true')
 
   const res = await apiFetch(url.toString())
   if (!res.ok) throw new Error('Failed to fetch entries')
