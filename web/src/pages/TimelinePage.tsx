@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { createNote, fetchEntries, fetchEntry, fetchNotes } from '../api/client'
 import type { Entry, EntryNote } from '../api/client'
 import { useNodePulse } from '../components/NodePulse'
+import { useWebSocketContext } from '../components/WebSocketProvider'
 
 const SOURCE_OPTIONS = ['', 'docker', 'files', 'agent', 'webhook']
 
@@ -245,6 +246,7 @@ interface TimelineFeedProps {
 }
 
 function TimelineFeed({ nodeFilter, sourceFilter, qFilter, hideHeartbeat, viewMode }: TimelineFeedProps) {
+  const { lastMessage } = useWebSocketContext()
   const [entries, setEntries] = useState<Entry[]>([])
   const [nextCursor, setNextCursor] = useState<string | undefined>()
   const [loading, setLoading] = useState(true)
@@ -326,6 +328,15 @@ function TimelineFeed({ nodeFilter, sourceFilter, qFilter, hideHeartbeat, viewMo
     if (loading || done || !nextCursor || !sentinelVisible) return
     void loadPage(nextCursor)
   }, [done, loading, nextCursor, nodeFilter, qFilter, sentinelVisible, sourceFilter])
+
+  useEffect(() => {
+    if (!lastMessage || lastMessage.type !== 'entry') return
+    const newEntry = lastMessage.data as Entry
+    if (renderedIdsRef.current.has(newEntry.id)) return
+    if (hideHeartbeat && newEntry.source === 'agent' && newEntry.event === 'heartbeat') return
+    renderedIdsRef.current.add(newEntry.id)
+    setEntries(prev => [newEntry, ...prev])
+  }, [lastMessage, hideHeartbeat])
 
   function handleRowClick(entry: Entry) {
     if (expandedId === entry.id) {
