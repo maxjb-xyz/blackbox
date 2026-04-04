@@ -38,7 +38,7 @@ Blackbox is split into two components designed to run across multiple nodes.
 
 ```
 ┌─────────────────────────────────────────────┐
-│                 Blackbox Server             │
+│               Blackbox Server               │
 │  ┌──────────┐  ┌──────────┐  ┌───────────┐  │
 │  │ React UI │  │ REST API │  │  SQLite   │  │
 │  │(embedded)│  │ + Auth   │  │  /data/   │  │
