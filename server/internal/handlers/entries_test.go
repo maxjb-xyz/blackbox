@@ -131,7 +131,8 @@ func TestListEntries_HidesHeartbeatsWithHideHeartbeatTrue(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	var resp struct {
-		Entries []types.Entry `json:"entries"`
+		Entries    []types.Entry `json:"entries"`
+		NextCursor string        `json:"next_cursor"`
 	}
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
 	assert.Len(t, resp.Entries, 1)
@@ -150,7 +151,8 @@ func TestListEntries_ShowsHeartbeatsWhenNotFiltered(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	var resp struct {
-		Entries []types.Entry `json:"entries"`
+		Entries    []types.Entry `json:"entries"`
+		NextCursor string        `json:"next_cursor"`
 	}
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
 	assert.Len(t, resp.Entries, 2)
@@ -158,37 +160,72 @@ func TestListEntries_ShowsHeartbeatsWhenNotFiltered(t *testing.T) {
 
 func TestListEntries_OrdersByTimestampThenID(t *testing.T) {
 	database := newTestDB(t)
+	base := time.Date(2026, 4, 4, 19, 0, 0, 0, time.UTC)
 
 	require.NoError(t, database.Create(&types.Entry{
-		ID:        "02",
-		Timestamp: time.Date(2026, 4, 4, 19, 0, 0, 0, time.UTC),
+		ID:        "04",
+		Timestamp: base.Add(time.Second),
+		NodeName:  "n1",
+		Source:    "docker",
+		Event:     "restart",
+		Content:   "newer timestamp",
+	}).Error)
+	require.NoError(t, database.Create(&types.Entry{
+		ID:        "03",
+		Timestamp: base,
 		NodeName:  "n1",
 		Source:    "docker",
 		Event:     "stop",
-		Content:   "older timestamp, newer id",
+		Content:   "same timestamp highest id",
 	}).Error)
 	require.NoError(t, database.Create(&types.Entry{
-		ID:        "01",
-		Timestamp: time.Date(2026, 4, 4, 19, 0, 5, 0, time.UTC),
+		ID:        "02",
+		Timestamp: base,
 		NodeName:  "n1",
 		Source:    "docker",
 		Event:     "start",
-		Content:   "newer timestamp, older id",
+		Content:   "same timestamp middle id",
+	}).Error)
+	require.NoError(t, database.Create(&types.Entry{
+		ID:        "01",
+		Timestamp: base,
+		NodeName:  "n1",
+		Source:    "docker",
+		Event:     "create",
+		Content:   "same timestamp lowest id",
 	}).Error)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/entries", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/entries?limit=2", nil)
 	w := httptest.NewRecorder()
 
 	handlers.ListEntries(database)(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	var resp struct {
-		Entries []types.Entry `json:"entries"`
+		Entries    []types.Entry `json:"entries"`
+		NextCursor string        `json:"next_cursor"`
 	}
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
 	require.Len(t, resp.Entries, 2)
-	assert.Equal(t, "01", resp.Entries[0].ID)
-	assert.Equal(t, "02", resp.Entries[1].ID)
+	assert.Equal(t, "04", resp.Entries[0].ID)
+	assert.Equal(t, "03", resp.Entries[1].ID)
+	require.NotEmpty(t, resp.NextCursor)
+
+	req = httptest.NewRequest(http.MethodGet, "/api/entries?limit=2&cursor="+resp.NextCursor, nil)
+	w = httptest.NewRecorder()
+
+	handlers.ListEntries(database)(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp2 struct {
+		Entries    []types.Entry `json:"entries"`
+		NextCursor string        `json:"next_cursor"`
+	}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp2))
+	require.Len(t, resp2.Entries, 2)
+	assert.Equal(t, "02", resp2.Entries[0].ID)
+	assert.Equal(t, "01", resp2.Entries[1].ID)
+	assert.Empty(t, resp2.NextCursor)
 }
 
 func TestListEntries_InvalidCursor(t *testing.T) {

@@ -62,6 +62,9 @@ func Init(path string) (*gorm.DB, error) {
 	); err != nil {
 		return nil, err
 	}
+	if err := ensureEntryIndexes(database); err != nil {
+		return nil, err
+	}
 	if err := database.Exec("DELETE FROM service_aliases WHERE TRIM(canonical) = '' OR canonical IS NULL OR TRIM(alias) = '' OR alias IS NULL").Error; err != nil {
 		return nil, err
 	}
@@ -104,6 +107,13 @@ func normalizePreservedAliases(aliases []models.ServiceAlias) []models.ServiceAl
 	}
 
 	return normalized
+}
+
+func ensureEntryIndexes(database *gorm.DB) error {
+	if database.Migrator().HasIndex(&types.Entry{}, "idx_entries_timestamp_id") {
+		return nil
+	}
+	return database.Migrator().CreateIndex(&types.Entry{}, "idx_entries_timestamp_id")
 }
 
 func ensureWritablePath(path string) error {

@@ -16,6 +16,11 @@ import (
 	"gorm.io/gorm/logger"
 )
 
+type sqliteIndexInfoRow struct {
+	Seqno int    `gorm:"column:seqno"`
+	Name  string `gorm:"column:name"`
+}
+
 func TestInit_CreatesTablesAndMigrates(t *testing.T) {
 	tmp, err := os.CreateTemp("", "blackbox-test-*.db")
 	require.NoError(t, err)
@@ -38,6 +43,26 @@ func TestInit_CreatesTablesAndMigrates(t *testing.T) {
 
 	entry := types.Entry{ID: "01TESTENTRY", NodeName: "node1", Source: "manual", Event: "test"}
 	assert.NoError(t, database.Create(&entry).Error)
+}
+
+func TestInit_CreatesCompositeEntryCursorIndex(t *testing.T) {
+	tmp, err := os.CreateTemp("", "blackbox-test-*.db")
+	require.NoError(t, err)
+	require.NoError(t, tmp.Close())
+	t.Cleanup(func() {
+		require.NoError(t, os.Remove(tmp.Name()))
+	})
+
+	database, err := db.Init(tmp.Name())
+	require.NoError(t, err)
+
+	require.True(t, database.Migrator().HasIndex(&types.Entry{}, "idx_entries_timestamp_id"))
+
+	var columns []sqliteIndexInfoRow
+	require.NoError(t, database.Raw(`PRAGMA index_info('idx_entries_timestamp_id')`).Scan(&columns).Error)
+	require.Len(t, columns, 2)
+	assert.Equal(t, "timestamp", columns[0].Name)
+	assert.Equal(t, "id", columns[1].Name)
 }
 
 func TestInit_MigratesInviteCodeAndOIDCState(t *testing.T) {

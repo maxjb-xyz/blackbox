@@ -293,6 +293,16 @@ function TimelineFeed({ nodeFilter, sourceFilter, qFilter, hideHeartbeat, viewMo
   const ghostEntryRef = useRef<Entry | null>(null)
   const mountedRef = useRef(true)
 
+  const consumeMaterializedGhost = useEffectEvent((incoming: Entry[]) => {
+    const ghost = ghostEntryRef.current
+    if (!ghost) return false
+    if (!incoming.some(entry => entry.id === ghost.id)) return false
+    renderedIdsRef.current.delete(ghost.id)
+    ghostEntryRef.current = null
+    setGhostEntry(null)
+    return true
+  })
+
   const loadPage = useEffectEvent(async (cursor?: string) => {
     setLoading(true)
     try {
@@ -305,6 +315,8 @@ function TimelineFeed({ nodeFilter, sourceFilter, qFilter, hideHeartbeat, viewMo
         hideHeartbeat,
       })
       if (!mountedRef.current) return
+
+      consumeMaterializedGhost(page.entries)
 
       if (!cursor) {
         const mergedEntries = mergeEntries([], page.entries)
@@ -354,8 +366,14 @@ function TimelineFeed({ nodeFilter, sourceFilter, qFilter, hideHeartbeat, viewMo
   useEffect(() => {
     if (!lastMessage || lastMessage.type !== 'entry') return
     const newEntry = lastMessage.data as Entry
-    if (renderedIdsRef.current.has(newEntry.id)) return
+    const materializedGhost = ghostEntryRef.current?.id === newEntry.id
+    if (renderedIdsRef.current.has(newEntry.id) && !materializedGhost) return
     if (!matchesEntryFilters(newEntry, nodeFilter, sourceFilter, qFilter, hideHeartbeat)) return
+    if (materializedGhost) {
+      renderedIdsRef.current.delete(newEntry.id)
+      ghostEntryRef.current = null
+      setGhostEntry(null)
+    }
     setEntries(prev => {
       const mergedEntries = mergeEntries(prev, [newEntry])
       renderedIdsRef.current = new Set(mergedEntries.map(entry => entry.id))

@@ -65,11 +65,12 @@ func WebSocketHandler(h *hub.Hub) http.HandlerFunc {
 			case errors.Is(err, hub.ErrTooManyIPConnections):
 				reason = "too many websocket connections from ip"
 			}
-			closeAttempted = true
 			if closeErr := conn.Close(status, reason); closeErr != nil {
 				if !isExpectedWebSocketError(closeErr) {
 					log.Printf("ws: close error: %v", closeErr)
 				}
+			} else {
+				closeAttempted = true
 			}
 			return
 		}
@@ -78,11 +79,12 @@ func WebSocketHandler(h *hub.Hub) http.HandlerFunc {
 		for {
 			select {
 			case <-ctx.Done():
-				closeAttempted = true
 				if err := conn.Close(websocket.StatusNormalClosure, ""); err != nil {
 					if !isExpectedWebSocketError(err) {
 						log.Printf("ws: close error: %v", err)
 					}
+				} else {
+					closeAttempted = true
 				}
 				return
 			case <-pingTicker.C:
@@ -102,11 +104,12 @@ func WebSocketHandler(h *hub.Hub) http.HandlerFunc {
 				if reason == "" {
 					reason = "session invalidated"
 				}
-				closeAttempted = true
 				if err := conn.Close(websocket.StatusPolicyViolation, reason); err != nil {
 					if !isExpectedWebSocketError(err) {
 						log.Printf("ws: close error: %v", err)
 					}
+				} else {
+					closeAttempted = true
 				}
 				return
 			case msg, ok := <-ch:
