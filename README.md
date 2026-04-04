@@ -103,6 +103,7 @@ Blackbox is split into two components designed to run across multiple nodes.
 ## Quick Start
 
 > This gets a single-node setup running in minutes. For multi-node, see [Multi-Node Deployment](#multi-node-deployment).
+> Warning: The compose examples below run both containers as `root` via `user: "0:0"` so they can write the database and access `/var/run/docker.sock`. Only use this if you understand and accept that security tradeoff.
 
 **1. Create a `docker-compose.yml`:**
 
@@ -110,6 +111,7 @@ Blackbox is split into two components designed to run across multiple nodes.
 services:
   blackbox-server:
     image: ghcr.io/maxjb-xyz/blackbox-server:latest
+    user: "0:0"
     container_name: blackbox-server
     restart: unless-stopped
     ports:
@@ -123,6 +125,7 @@ services:
 
   blackbox-agent:
     image: ghcr.io/maxjb-xyz/blackbox-agent:latest
+    user: "0:0"
     container_name: blackbox-agent
     restart: unless-stopped
     volumes:
@@ -157,7 +160,7 @@ docker compose up -d
 | `JWT_SECRET` | Yes | — | Secret key for signing JWT session tokens. Use a long random string. |
 | `AGENT_TOKENS` | Yes | — | Comma or newline-separated `node-name=token` pairs. See [Agent Tokens](#agent-tokens). |
 | `WEBHOOK_SECRET` | Yes | — | Shared secret for validating webhook requests. |
-| `DB_PATH` | No | `/data/lablog.db` | Path to the SQLite database file. |
+| `DB_PATH` | No | `/data/blackbox.db` | Path to the SQLite database file. |
 | `LISTEN_ADDR` | No | `:8080` | TCP address the server binds to. |
 | `JWT_TTL` | No | `24h` | JWT cookie lifetime. Accepts Go duration strings (e.g., `12h`, `7d`). |
 | `OIDC_ENABLED` | No | `false` | Set to `true` to enable OpenID Connect login. |
@@ -199,6 +202,7 @@ openssl rand -hex 32
 ## Multi-Node Deployment
 
 Deploy an agent on each machine you want to monitor. All agents point at the same central server.
+> Warning: The compose examples below run as `root` via `user: "0:0"` so the server can write `/data` and the agent can access `/var/run/docker.sock`.
 
 **Node 01 — Primary server (also runs an agent):**
 
@@ -206,6 +210,7 @@ Deploy an agent on each machine you want to monitor. All agents point at the sam
 services:
   blackbox-server:
     image: ghcr.io/maxjb-xyz/blackbox-server:latest
+    user: "0:0"
     restart: unless-stopped
     ports:
       - "8080:8080"
@@ -218,6 +223,7 @@ services:
 
   blackbox-agent:
     image: ghcr.io/maxjb-xyz/blackbox-agent:latest
+    user: "0:0"
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -236,6 +242,7 @@ volumes:
 services:
   blackbox-agent:
     image: ghcr.io/maxjb-xyz/blackbox-agent:latest
+    user: "0:0"
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -417,7 +424,7 @@ All protected endpoints require an authenticated session cookie (obtained via lo
 
 ## Persistent Data
 
-The server stores all data in a single SQLite file at `/data/lablog.db` (configurable via `DB_PATH`). Mount a named volume or host path to persist it across container restarts.
+The server stores all data in a single SQLite file at `/data/blackbox.db` (configurable via `DB_PATH`). Mount a named volume or host path to persist it across container restarts.
 
 ```yaml
 volumes:
