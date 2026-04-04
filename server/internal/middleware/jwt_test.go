@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestJWTAuth_ValidToken(t *testing.T) {
+func TestJWTAuth_ValidCookie(t *testing.T) {
 	secret := "test-secret"
 	token, err := auth.IssueJWT("user-1", "alice", false, secret, time.Hour)
 	require.NoError(t, err)
@@ -27,25 +27,25 @@ func TestJWTAuth_ValidToken(t *testing.T) {
 	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: token})
 	handler.ServeHTTP(httptest.NewRecorder(), req)
 	assert.True(t, reached)
 }
 
-func TestJWTAuth_ValidCookie(t *testing.T) {
+func TestJWTAuth_RejectsBearerToken(t *testing.T) {
 	secret := "test-secret"
 	token, err := auth.IssueJWT("user-1", "alice", false, secret, time.Hour)
 	require.NoError(t, err)
 
-	reached := false
 	handler := middleware.JWTAuth(secret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		reached = true
+		t.Fatal("should not reach handler")
 	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: token})
-	handler.ServeHTTP(httptest.NewRecorder(), req)
-	assert.True(t, reached)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
 func TestJWTAuth_MissingToken(t *testing.T) {
@@ -63,7 +63,6 @@ func TestJWTAuth_InvalidToken(t *testing.T) {
 		t.Fatal("should not reach handler")
 	}))
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("Authorization", "Bearer not.a.token")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusUnauthorized, w.Code)

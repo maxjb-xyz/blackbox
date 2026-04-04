@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"strings"
 
 	"blackbox/server/internal/auth"
 )
@@ -13,15 +12,9 @@ func JWTAuth(secret string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			tokenString := ""
-			header := r.Header.Get("Authorization")
-			if strings.HasPrefix(header, "Bearer ") {
-				tokenString = strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
-			}
-			if tokenString == "" {
-				cookie, err := r.Cookie(auth.SessionCookieName)
-				if err == nil {
-					tokenString = cookie.Value
-				}
+			cookie, err := r.Cookie(auth.SessionCookieName)
+			if err == nil {
+				tokenString = cookie.Value
 			}
 			if tokenString == "" {
 				writeJSONError(w, http.StatusUnauthorized, "missing authorization token")

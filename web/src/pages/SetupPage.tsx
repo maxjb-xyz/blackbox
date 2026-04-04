@@ -31,7 +31,19 @@ export default function SetupPage({ onBootstrapped }: SetupPageProps) {
     setLoading(true)
     try {
       await bootstrap(username, password)
-      await refreshSession()
+      let user = null
+      try {
+        user = await refreshSession()
+      } catch (err) {
+        console.error('SetupPage: failed to refresh session after bootstrap', err)
+        setError('Account created, but session refresh failed. Please log in.')
+        return
+      }
+      if (!user) {
+        console.error('SetupPage: refreshSession returned no user after bootstrap')
+        setError('Account created, but session could not be loaded. Please log in.')
+        return
+      }
       onBootstrapped?.()
       navigate('/')
     } catch (err) {

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { fetchCurrentUser, logout as logoutRequest, type SessionUser } from './api/client'
 
 interface SessionContextValue {
@@ -14,7 +14,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<SessionUser | null>(null)
   const [loading, setLoading] = useState(true)
 
-  async function refreshSession() {
+  const refreshSession = useCallback(async () => {
     try {
       const nextUser = await fetchCurrentUser()
       setUser(nextUser)
@@ -25,35 +25,37 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
-  async function logout() {
+  const logout = useCallback(async () => {
     try {
       await logoutRequest()
     } finally {
       setUser(null)
       setLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     void refreshSession()
-  }, [])
+  }, [refreshSession])
+
+  const value = useMemo(
+    () => ({
+      user,
+      loading,
+      refreshSession,
+      logout,
+    }),
+    [user, loading, refreshSession, logout],
+  )
 
   return (
-    <SessionContext.Provider
-      value={{
-        user,
-        loading,
-        refreshSession,
-        logout,
-      }}
-    >
-      {children}
-    </SessionContext.Provider>
+    <SessionContext.Provider value={value}>{children}</SessionContext.Provider>
   )
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useSession() {
   const context = useContext(SessionContext)
   if (!context) {

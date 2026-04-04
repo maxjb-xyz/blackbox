@@ -85,6 +85,7 @@ func TestAgentPush_ThrottlesLastSeenUpdates(t *testing.T) {
 	}
 	req, rr, authMiddleware := authenticatedAgentRequest(t, entry, "homelab-01")
 	authMiddleware(handlers.AgentPush(database)).ServeHTTP(rr, req)
+	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
 
 	var node models.Node
 	require.NoError(t, database.Where("name = ?", "homelab-01").First(&node).Error)
@@ -143,6 +144,7 @@ func TestAgentPush_DockerStartRemainsThrottled(t *testing.T) {
 	}
 	req, rr, authMiddleware := authenticatedAgentRequest(t, entry, "homelab-01")
 	authMiddleware(handlers.AgentPush(database)).ServeHTTP(rr, req)
+	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
 
 	var node models.Node
 	require.NoError(t, database.Where("name = ?", "homelab-01").First(&node).Error)

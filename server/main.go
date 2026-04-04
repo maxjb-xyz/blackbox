@@ -45,7 +45,7 @@ func main() {
 		log.Fatal("WEBHOOK_SECRET environment variable is required")
 	}
 
-	dbPath := getEnv("DB_PATH", "/data/blackbox.db")
+	dbPath := getEnv("DB_PATH", "/data/lablog.db")
 	database, err := db.Init(dbPath)
 	if err != nil {
 		log.Fatalf("database init failed: %v", err)

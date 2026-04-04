@@ -34,6 +34,11 @@ func TestRegister_ValidInvite(t *testing.T) {
 	assert.Equal(t, http.StatusCreated, w.Code)
 	var resp map[string]map[string]interface{}
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	require.NotNil(t, resp)
+	user, ok := resp["user"]
+	require.True(t, ok)
+	require.NotNil(t, user)
+	assert.Equal(t, "alice", user["username"])
 	claims := sessionClaimsFromResponse(t, w, "jwt-test-secret")
 	assert.Equal(t, "alice", claims.Username)
 

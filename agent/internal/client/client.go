@@ -40,6 +40,8 @@ func New(serverURL, token, nodeName string) *Client {
 }
 
 func (c *Client) Send(ctx context.Context, entry types.Entry) error {
+	entry.NodeName = c.nodeName
+
 	body, err := json.Marshal(entry)
 	if err != nil {
 		return fmt.Errorf("marshal entry: %w", err)

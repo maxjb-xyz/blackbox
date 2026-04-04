@@ -25,7 +25,13 @@ func decodeJSONBody(w http.ResponseWriter, r *http.Request, maxBytes int64, v in
 	}
 
 	var extra interface{}
-	if decoder.Decode(&extra) != io.EOF {
+	err = decoder.Decode(&extra)
+	if err != io.EOF {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
+			return false
+		}
 		writeError(w, http.StatusBadRequest, "request body must only contain a single JSON value")
 		return false
 	}

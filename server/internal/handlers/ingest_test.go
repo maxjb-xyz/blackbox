@@ -61,12 +61,8 @@ func TestAgentPush_NormalizesServiceAlias(t *testing.T) {
 		Event:     "start",
 		Content:   "Container traefik-proxy started",
 	}
-	body, _ := json.Marshal(entry)
-	req := httptest.NewRequest(http.MethodPost, "/api/agent/push", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	handlers.AgentPush(database)(w, req)
+	req, w, authMiddleware := authenticatedAgentRequest(t, entry, "homelab-01")
+	authMiddleware(handlers.AgentPush(database)).ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusCreated, w.Code)
 
@@ -87,12 +83,8 @@ func TestAgentPush_RejectsBlankServiceAfterNormalization(t *testing.T) {
 		Event:     "start",
 		Content:   "Container started",
 	}
-	body, _ := json.Marshal(entry)
-	req := httptest.NewRequest(http.MethodPost, "/api/agent/push", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	handlers.AgentPush(database)(w, req)
+	req, w, authMiddleware := authenticatedAgentRequest(t, entry, "homelab-01")
+	authMiddleware(handlers.AgentPush(database)).ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 
@@ -113,12 +105,8 @@ func TestAgentPush_AllowsBlankServiceForAgentMetaEvents(t *testing.T) {
 		Event:     "heartbeat",
 		Content:   "Blackbox Agent heartbeat",
 	}
-	body, _ := json.Marshal(entry)
-	req := httptest.NewRequest(http.MethodPost, "/api/agent/push", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	handlers.AgentPush(database)(w, req)
+	req, w, authMiddleware := authenticatedAgentRequest(t, entry, "homelab-01")
+	authMiddleware(handlers.AgentPush(database)).ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusCreated, w.Code)
 

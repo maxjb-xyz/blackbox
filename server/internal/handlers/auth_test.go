@@ -76,8 +76,7 @@ func TestBootstrap_ConcurrentRequestsOnlyOneSucceeds(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 	for i, username := range []string{"admin-a", "admin-b"} {
-		i, username := i, username
-		go func() {
+		go func(i int, username string) {
 			defer wg.Done()
 			body := `{"username":"` + username + `","password":"SuperSecret1!"}`
 			req := httptest.NewRequest(http.MethodPost, "/api/auth/bootstrap", bytes.NewBufferString(body))
@@ -85,7 +84,7 @@ func TestBootstrap_ConcurrentRequestsOnlyOneSucceeds(t *testing.T) {
 			w := httptest.NewRecorder()
 			handler(w, req)
 			results[i] = w.Code
-		}()
+		}(i, username)
 	}
 	wg.Wait()
 
