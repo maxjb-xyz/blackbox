@@ -19,6 +19,8 @@ import (
 
 var memoryDBCounter atomic.Uint64
 
+const legacyEntriesTimestampIndex = "idx_entries_timestamp"
+
 func Init(path string) (*gorm.DB, error) {
 	dsn := path
 	if path == ":memory:" {
@@ -110,10 +112,17 @@ func normalizePreservedAliases(aliases []models.ServiceAlias) []models.ServiceAl
 }
 
 func ensureEntryIndexes(database *gorm.DB) error {
-	if database.Migrator().HasIndex(&types.Entry{}, "idx_entries_timestamp_id") {
-		return nil
+	if !database.Migrator().HasIndex(&types.Entry{}, "idx_entries_timestamp_id") {
+		if err := database.Migrator().CreateIndex(&types.Entry{}, "idx_entries_timestamp_id"); err != nil {
+			return err
+		}
 	}
-	return database.Migrator().CreateIndex(&types.Entry{}, "idx_entries_timestamp_id")
+	if database.Migrator().HasIndex(&types.Entry{}, legacyEntriesTimestampIndex) {
+		if err := database.Migrator().DropIndex(&types.Entry{}, legacyEntriesTimestampIndex); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func ensureWritablePath(path string) error {

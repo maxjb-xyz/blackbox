@@ -57,12 +57,52 @@ func TestInit_CreatesCompositeEntryCursorIndex(t *testing.T) {
 	require.NoError(t, err)
 
 	require.True(t, database.Migrator().HasIndex(&types.Entry{}, "idx_entries_timestamp_id"))
+	require.False(t, database.Migrator().HasIndex(&types.Entry{}, "idx_entries_timestamp"))
 
 	var columns []sqliteIndexInfoRow
 	require.NoError(t, database.Raw(`PRAGMA index_info('idx_entries_timestamp_id')`).Scan(&columns).Error)
 	require.Len(t, columns, 2)
 	assert.Equal(t, "timestamp", columns[0].Name)
 	assert.Equal(t, "id", columns[1].Name)
+}
+
+func TestInit_DropsLegacyTimestampOnlyEntryIndex(t *testing.T) {
+	tmp, err := os.CreateTemp("", "blackbox-test-*.db")
+	require.NoError(t, err)
+	require.NoError(t, tmp.Close())
+	t.Cleanup(func() {
+		require.NoError(t, os.Remove(tmp.Name()))
+	})
+
+	legacyDB, err := gorm.Open(sqlite.Open(tmp.Name()), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	require.NoError(t, err)
+	require.NoError(t, legacyDB.Exec(`
+		CREATE TABLE entries (
+			id TEXT PRIMARY KEY,
+			timestamp DATETIME,
+			node_name TEXT,
+			source TEXT,
+			service TEXT,
+			event TEXT,
+			content TEXT,
+			metadata TEXT,
+			correlated_id TEXT
+		)
+	`).Error)
+	require.NoError(t, legacyDB.Exec(`CREATE INDEX idx_entries_timestamp ON entries(timestamp)`).Error)
+	require.True(t, legacyDB.Migrator().HasIndex(&types.Entry{}, "idx_entries_timestamp"))
+
+	sqlDB, err := legacyDB.DB()
+	require.NoError(t, err)
+	require.NoError(t, sqlDB.Close())
+
+	database, err := db.Init(tmp.Name())
+	require.NoError(t, err)
+
+	require.True(t, database.Migrator().HasIndex(&types.Entry{}, "idx_entries_timestamp_id"))
+	require.False(t, database.Migrator().HasIndex(&types.Entry{}, "idx_entries_timestamp"))
 }
 
 func TestInit_MigratesInviteCodeAndOIDCState(t *testing.T) {
