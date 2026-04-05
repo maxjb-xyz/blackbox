@@ -41,7 +41,7 @@ func TestIssueAndVerifyJWT_OIDCLinked(t *testing.T) {
 	assert.Equal(t, 2, claims.TokenVersion)
 	require.NotNil(t, claims.ExpiresAt)
 	assert.WithinDuration(t, before.Add(time.Hour), claims.ExpiresAt.Time, time.Second)
-	assert.False(t, claims.ExpiresAt.Time.After(after.Add(time.Hour).Add(time.Second)))
+	assert.False(t, claims.ExpiresAt.After(after.Add(time.Hour).Add(time.Second)))
 }
 
 func TestVerifyJWT_WrongSecret(t *testing.T) {
