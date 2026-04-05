@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Activity,
   AlertTriangle,
@@ -38,6 +38,7 @@ export default function Sidebar() {
   const [openCount, setOpenCount] = useState(0)
   const [hasMoreOpen, setHasMoreOpen] = useState(false)
   const [hasConfirmed, setHasConfirmed] = useState(false)
+  const openIncidentSummaryReqIdRef = useRef(0)
 
   const username = user?.username ?? ''
   const isAdmin = user?.is_admin === true
@@ -77,8 +78,11 @@ export default function Sidebar() {
   }
 
   const refreshOpenIncidentSummary = useCallback(() => {
+    const requestId = openIncidentSummaryReqIdRef.current + 1
+    openIncidentSummaryReqIdRef.current = requestId
     fetchIncidents({ status: 'open', limit: 200 })
       .then(page => {
+        if (openIncidentSummaryReqIdRef.current !== requestId) return
         setOpenCount(page.incidents.length)
         setHasMoreOpen(page.has_more)
         setHasConfirmed(page.incidents.some(i => i.confidence === 'confirmed'))

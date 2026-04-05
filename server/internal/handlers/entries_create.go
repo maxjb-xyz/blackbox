@@ -84,15 +84,15 @@ func CreateEntry(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry) h
 			Content:   req.Title,
 			Metadata:  string(metaBytes),
 		}
-			if err := database.Create(&entry).Error; err != nil {
-				writeError(w, http.StatusInternalServerError, "failed to save entry")
-				return
+		if err := database.Create(&entry).Error; err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to save entry")
+			return
+		}
+		dispatchToIncidentChannel(incidentCh, entry)
+		if h != nil {
+			if msg := MarshalWSMessage("entry", entry); msg != nil {
+				h.Broadcast(msg)
 			}
-			dispatchToIncidentChannel(incidentCh, entry)
-			if h != nil {
-				if msg := MarshalWSMessage("entry", entry); msg != nil {
-					h.Broadcast(msg)
-				}
 		}
 
 		w.Header().Set("Content-Type", "application/json")

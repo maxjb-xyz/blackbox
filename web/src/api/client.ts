@@ -425,13 +425,13 @@ export async function fetchIncidents(params?: {
   if (params?.service) qs.set('service', params.service)
   if (params?.limit) qs.set('limit', String(params.limit))
   const url = '/api/incidents' + (qs.toString() ? '?' + qs.toString() : '')
-  const res = await fetch(url, { credentials: 'include' })
+  const res = await apiFetch(url)
   if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to fetch incidents'))
   return res.json() as Promise<IncidentsPage>
 }
 
 export async function fetchIncident(id: string): Promise<IncidentDetail> {
-  const res = await fetch(`/api/incidents/${id}`, { credentials: 'include' })
+  const res = await apiFetch(`/api/incidents/${id}`)
   if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to fetch incident'))
   return res.json() as Promise<IncidentDetail>
 }

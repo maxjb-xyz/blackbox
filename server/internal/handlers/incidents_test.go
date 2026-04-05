@@ -44,6 +44,48 @@ func TestListIncidents(t *testing.T) {
 	assert.Equal(t, inc.ID, resp.Incidents[0].ID)
 }
 
+func TestListIncidents_PaginatesWithHasMore(t *testing.T) {
+	database := newTestDB(t)
+
+	now := time.Now().UTC()
+	older := models.Incident{
+		ID:         ulid.Make().String(),
+		OpenedAt:   now,
+		Status:     "open",
+		Confidence: "confirmed",
+		Title:      "older incident",
+		Services:   `["nginx"]`,
+		NodeNames:  `["node-01"]`,
+		Metadata:   `{}`,
+	}
+	newer := models.Incident{
+		ID:         ulid.Make().String(),
+		OpenedAt:   now.Add(time.Second),
+		Status:     "open",
+		Confidence: "confirmed",
+		Title:      "newer incident",
+		Services:   `["traefik"]`,
+		NodeNames:  `["node-02"]`,
+		Metadata:   `{}`,
+	}
+	require.NoError(t, database.Create(&older).Error)
+	require.NoError(t, database.Create(&newer).Error)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/incidents?limit=1", nil)
+	rr := httptest.NewRecorder()
+	handlers.ListIncidents(database)(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	var resp struct {
+		Incidents []models.Incident `json:"incidents"`
+		HasMore   bool              `json:"has_more"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	assert.Len(t, resp.Incidents, 1)
+	assert.Equal(t, newer.ID, resp.Incidents[0].ID)
+	assert.True(t, resp.HasMore)
+}
+
 func TestGetIncident_NotFound(t *testing.T) {
 	database := newTestDB(t)
 

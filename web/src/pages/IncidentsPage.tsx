@@ -180,21 +180,25 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
               </div>
 
               {(() => {
-                const causeWithLog = detail.entries.find(({ link, entry }) => {
-                  if (link.role !== 'cause') return false
+                const causeWithLog = detail.entries.reduce<{
+                  entry: IncidentDetail['entries'][number]['entry']
+                  logLines: string[]
+                } | null>((match, { link, entry }) => {
+                  if (match || link.role !== 'cause') return match
                   try {
-                    const m = JSON.parse(entry.metadata) as Record<string, unknown>
-                    return Array.isArray(m.log_snippet) && (m.log_snippet as unknown[]).length > 0
+                    const metadata = JSON.parse(entry.metadata) as Record<string, unknown>
+                    const logLines = Array.isArray(metadata.log_snippet) ? metadata.log_snippet as string[] : []
+                    if (logLines.length === 0) return match
+                    return { entry, logLines }
                   } catch {
-                    return false
+                    return match
                   }
-                })
+                }, null)
                 if (!causeWithLog) return null
-                const logLines = (JSON.parse(causeWithLog.entry.metadata) as Record<string, unknown>).log_snippet as string[]
                 return (
                   <div style={{ marginBottom: 8 }}>
                     <div style={{ color: 'var(--muted)', marginBottom: 4, letterSpacing: '0.1em' }}>
-                      LOG SNIPPET ({causeWithLog.entry.node_name} · last {logLines.length} lines)
+                      LOG SNIPPET ({causeWithLog.entry.node_name} · last {causeWithLog.logLines.length} lines)
                     </div>
                     <div
                       style={{
@@ -207,7 +211,7 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
                         overflowY: 'auto',
                       }}
                     >
-                      {logLines.slice(-10).join('\n')}
+                      {causeWithLog.logLines.slice(-10).join('\n')}
                     </div>
                   </div>
                 )

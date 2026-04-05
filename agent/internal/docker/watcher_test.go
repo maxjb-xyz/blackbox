@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"testing"
 	"time"
@@ -400,9 +401,13 @@ func (f fakeDockerResolverClient) ContainerList(_ context.Context, _ dockerconta
 	return f.containers, f.containerErr
 }
 
-func (f fakeDockerResolverClient) ContainerLogs(_ context.Context, _ string, _ dockercontainer.LogsOptions) (io.ReadCloser, error) {
+func (f fakeDockerResolverClient) ContainerLogs(_ context.Context, _ string, opts dockercontainer.LogsOptions) (io.ReadCloser, error) {
 	if f.logErr != nil {
 		return nil, f.logErr
+	}
+	expectedTail := fmt.Sprintf("%d", logCaptureLines)
+	if !opts.ShowStdout || !opts.ShowStderr || opts.Tail != expectedTail {
+		return nil, assertiveResolverError("unexpected container log options")
 	}
 	if f.logData == nil {
 		return nil, nil

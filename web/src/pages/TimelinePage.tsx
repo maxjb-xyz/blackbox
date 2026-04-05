@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   createNote,
@@ -778,6 +778,7 @@ function TimelineFeed({
   const ghostEntryRef = useRef<Entry | null>(null)
   const mountedRef = useRef(true)
   const incidentDetailCacheRef = useRef<Map<string, Promise<IncidentDetail>>>(new Map())
+  const entryIncidentMapReqIdRef = useRef(0)
 
   const consumeMaterializedGhost = useEffectEvent((incoming: Entry[]) => {
     const ghost = ghostEntryRef.current
@@ -790,6 +791,8 @@ function TimelineFeed({
   })
 
   const loadIncidentMembership = useEffectEvent(async () => {
+    const requestId = entryIncidentMapReqIdRef.current + 1
+    entryIncidentMapReqIdRef.current = requestId
     try {
       const page = await fetchIncidents({ status: 'open', limit: 50 })
       const map: Record<string, { id: string; confidence: string }> = {}
@@ -805,9 +808,13 @@ function TimelineFeed({
           }
         }),
       )
-      if (mountedRef.current) setEntryIncidentMap(map)
+      if (mountedRef.current && entryIncidentMapReqIdRef.current === requestId) {
+        setEntryIncidentMap(map)
+      }
     } catch {
-      if (mountedRef.current) setEntryIncidentMap({})
+      if (mountedRef.current && entryIncidentMapReqIdRef.current === requestId) {
+        setEntryIncidentMap({})
+      }
     }
   })
 
@@ -1466,6 +1473,7 @@ function TimelineCard({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip
 }
 
 function TimelineRow({ entry, isExpanded, isDimmed, isGhost, incident, onClick, onTooltip, onTooltipClear }: EntryProps) {
+  const navigate = useNavigate()
   const possibleCause = entry.correlated_id ? parsePossibleCause(entry.metadata) : null
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (isInteractiveEntryTarget(e.target)) return
@@ -1513,8 +1521,10 @@ function TimelineRow({ entry, isExpanded, isDimmed, isGhost, incident, onClick, 
     >
       <div style={{ width: 20, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         {incident ? (
-          <span
+          <button
+            type="button"
             title={`Incident: ${incident.id}`}
+            aria-label={`Open incidents for incident ${incident.id}`}
             style={{
               width: 6,
               height: 6,
@@ -1524,10 +1534,13 @@ function TimelineRow({ entry, isExpanded, isDimmed, isGhost, incident, onClick, 
                 : 'var(--warning)',
               cursor: 'pointer',
               display: 'inline-block',
+              border: 'none',
+              padding: 0,
+              appearance: 'none',
             }}
             onClick={event => {
               event.stopPropagation()
-              window.location.href = '/incidents'
+              navigate('/incidents')
             }}
           />
         ) : (
