@@ -15,6 +15,7 @@ import {
   updateAdminUser,
 } from '../api/client'
 import type { AdminUser, OIDCProviderConfig } from '../api/client'
+import { readErrorMessage } from '../api/errorUtils'
 import { useSession } from '../session'
 
 interface InviteCode {
@@ -57,18 +58,6 @@ function normalizeInvite(invite: Record<string, unknown>): InviteCode {
 function normalizeOIDCPolicy(value: string | null | undefined): OIDCPolicy {
   if (value === 'existing_only' || value === 'invite_required') return value
   return 'open'
-}
-
-async function readErrorMessage(res: Response, fallback: string) {
-  const text = await res.text().catch(() => '')
-  if (!text) return fallback
-  try {
-    const parsed = JSON.parse(text) as { error?: string }
-    if (typeof parsed.error === 'string' && parsed.error) return parsed.error
-  } catch {
-    return text
-  }
-  return text
 }
 
 function formatInviteTimestamp(value: string): string {
@@ -266,7 +255,7 @@ function InvitesTab() {
           </thead>
           <tbody>
             {invites.map((invite, index) => {
-              const rowKey = invite.id || `${invite.code}-${invite.created_at || index}`
+              const rowKey = invite.id || `${invite.code}-${invite.created_at || index}-${index}`
               const copied = copiedInviteId === (invite.id || invite.code)
               const revoking = revokeLoadingId === invite.id
 

@@ -106,6 +106,11 @@ func (r *OIDCRegistry) Reload(ctx context.Context) error {
 	}
 
 	r.mu.Lock()
+	// If SetProvider updated r.providers while Reload was discovering providers,
+	// liveProviders will differ from the current r.providers entry while
+	// nextProviders still holds the stale liveProviders value. Merge those
+	// concurrent SetProvider writes into nextProviders here so Reload does not
+	// clobber mid-reload changes when it assigns r.providers = nextProviders.
 	for id, provider := range r.providers {
 		if liveProviders[id] != provider && nextProviders[id] == liveProviders[id] {
 			nextProviders[id] = provider

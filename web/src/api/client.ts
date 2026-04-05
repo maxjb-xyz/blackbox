@@ -1,3 +1,5 @@
+import { readErrorMessage } from './errorUtils'
+
 export interface SetupStatus {
   bootstrapped: boolean
 }
@@ -67,18 +69,6 @@ export interface AdminUser {
 
 function apiFetch(input: RequestInfo | URL, init?: RequestInit) {
   return fetch(input, { credentials: 'same-origin', ...init })
-}
-
-async function readErrorMessage(res: Response, fallback: string) {
-  const text = await res.text().catch(() => '')
-  if (!text) return fallback
-  try {
-    const data = JSON.parse(text) as { error?: string }
-    if (typeof data.error === 'string' && data.error) return data.error
-  } catch {
-    return text
-  }
-  return text
 }
 
 export async function checkSetupStatus(): Promise<SetupStatus> {

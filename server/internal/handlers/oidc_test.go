@@ -38,7 +38,7 @@ func TestOIDCProviderCallback_ReturnsServiceUnavailableWhenProviderUnavailable(t
 		State:      "test-state",
 		Nonce:      "test-nonce",
 		ProviderID: "provider-1",
-		ExpiresAt:  mustTimeAdd(t, 10),
+		ExpiresAt:  futureTime(t, 10),
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/oidc/provider-1/callback?state=test-state", nil)
@@ -68,7 +68,7 @@ func TestOIDCProviderCallback_ReturnsBadRequestWhenStateCookieMissing(t *testing
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
-func mustTimeAdd(t *testing.T, minutes int) time.Time {
+func futureTime(t *testing.T, minutes int) time.Time {
 	t.Helper()
 	return time.Now().Add(time.Duration(minutes) * time.Minute)
 }

@@ -127,6 +127,7 @@ export default function RegisterPage() {
               type="email"
               value={email}
               onChange={e => setEmail(e.target.value)}
+              required
               style={inputStyle}
             />
           </div>

@@ -246,6 +246,10 @@ func UpdateOIDCProvider(db *gorm.DB, registry *auth.OIDCRegistry) http.HandlerFu
 
 		updates := map[string]interface{}{}
 		if req.ID != nil {
+			if *req.ID != provider.ID && (provider.Enabled == nil || *provider.Enabled) {
+				writeError(w, http.StatusConflict, "disable provider before changing id")
+				return
+			}
 			updates["id"] = *req.ID
 		}
 		if req.Name != nil {
