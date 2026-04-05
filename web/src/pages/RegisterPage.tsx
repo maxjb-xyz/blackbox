@@ -22,8 +22,8 @@ export default function RegisterPage() {
   const [oidcProviders, setOIDCProviders] = useState<OIDCProvider[]>([])
 
   useEffect(() => {
-    setInviteCode(inviteCodeReadonly ? inviteCodeFromUrl || '' : '')
-  }, [inviteCodeFromUrl, inviteCodeReadonly])
+    setInviteCode(inviteCodeFromUrl)
+  }, [inviteCodeFromUrl])
 
   useEffect(() => {
     if (!sessionLoading && user) {

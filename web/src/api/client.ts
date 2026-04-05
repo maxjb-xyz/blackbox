@@ -266,6 +266,7 @@ export interface OIDCProviderConfig {
   client_id: string
   client_secret: string
   redirect_url: string
+  require_verified_email: boolean
   enabled: boolean
   created_at: string
   updated_at: string
@@ -276,8 +277,9 @@ export interface AdminOIDCProviderInput {
   name: string
   issuer: string
   client_id: string
-  client_secret: string
+  client_secret?: string
   redirect_url: string
+  require_verified_email: boolean
   enabled: boolean
 }
 

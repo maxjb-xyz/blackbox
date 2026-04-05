@@ -31,6 +31,7 @@ interface OIDCProviderFormState {
   issuer: string
   client_id: string
   client_secret: string
+  require_verified_email: boolean
   enabled: boolean
 }
 
@@ -84,6 +85,7 @@ function emptyOIDCProviderForm(): OIDCProviderFormState {
     issuer: '',
     client_id: '',
     client_secret: '',
+    require_verified_email: true,
     enabled: true,
   }
 }
@@ -504,6 +506,7 @@ function OIDCTab() {
       issuer: provider.issuer,
       client_id: provider.client_id,
       client_secret: '',
+      require_verified_email: provider.require_verified_email,
       enabled: provider.enabled,
     })
     setProviderError(null)
@@ -549,19 +552,22 @@ function OIDCTab() {
           client_id: clientID,
           client_secret: clientSecret,
           redirect_url: redirectURL,
+          require_verified_email: providerForm.require_verified_email,
           enabled: providerForm.enabled,
         })
         setProviderMessage('OIDC provider created')
       } else if (editingProviderId) {
-        await updateAdminOIDCProvider(editingProviderId, {
+        const updatePayload = {
           id: providerID,
           name,
           issuer,
           client_id: clientID,
-          client_secret: clientSecret || '***',
           redirect_url: redirectURL,
+          require_verified_email: providerForm.require_verified_email,
           enabled: providerForm.enabled,
-        })
+          ...(clientSecret ? { client_secret: clientSecret } : {}),
+        }
+        await updateAdminOIDCProvider(editingProviderId, updatePayload)
         setProviderMessage('OIDC provider updated')
       }
 
@@ -690,6 +696,15 @@ function OIDCTab() {
                 <span style={{ color: 'var(--muted)', fontSize: '11px' }}>
                   Update the provider ID to change the callback URL you register with your identity provider.
                 </span>
+              </label>
+
+              <label style={{ ...fieldWrapperStyle, gridColumn: '1 / -1', flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={providerForm.require_verified_email}
+                  onChange={e => setProviderForm(prev => ({ ...prev, require_verified_email: e.target.checked }))}
+                />
+                <span style={{ color: 'var(--muted)', fontSize: '11px', letterSpacing: '0.05em' }}>REQUIRE VERIFIED EMAIL FOR AUTO-LINKING</span>
               </label>
 
               <label style={{ ...fieldWrapperStyle, gridColumn: '1 / -1', flexDirection: 'row', alignItems: 'center', gap: 8 }}>
