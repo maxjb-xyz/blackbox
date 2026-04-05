@@ -11,6 +11,7 @@ import (
 	"blackbox/server/internal/models"
 	"blackbox/shared/types"
 	"github.com/oklog/ulid/v2"
+	"gorm.io/gorm"
 )
 
 const crashLoopWindow = 5 * time.Minute
@@ -52,6 +53,7 @@ func (m *Manager) handleMonitorDown(entry types.Entry) {
 	if err != nil {
 		log.Printf("incidents: ScoreCauses error for %s: %v", svc, err)
 	}
+	candidates = filterCauseCandidates(candidates, excludeEntryIDs(entry.ID))
 	correlation.ApplyNodeBonus(candidates, entry.NodeName)
 
 	incidentID := ulid.Make().String()
@@ -226,6 +228,7 @@ func (m *Manager) openSuspectedIncident(trigger types.Entry, reason string) {
 	if err != nil {
 		log.Printf("incidents: ScoreCauses error for %s: %v", svc, err)
 	}
+	candidates = filterCauseCandidates(candidates, excludeEntryIDs(trigger.ID))
 	correlation.ApplyNodeBonus(candidates, trigger.NodeName)
 
 	rootCauseID := ""
@@ -296,6 +299,7 @@ func (m *Manager) upgradeToConfirmed(incidentID string, downEntry types.Entry) {
 	if err != nil {
 		log.Printf("incidents: ScoreCauses while upgrading %s via %s: %v", incidentID, downEntry.ID, err)
 	}
+	candidates = filterCauseCandidates(candidates, m.linkedEntryIDs(incidentID, downEntry.ID))
 	correlation.ApplyNodeBonus(candidates, downEntry.NodeName)
 
 	rootCauseID := ""
@@ -386,6 +390,16 @@ func (m *Manager) pruneDies(key string, now time.Time) {
 }
 
 func (m *Manager) linkEntry(incidentID, entryID, role string, score int) {
+	var existing models.IncidentEntry
+	err := m.db.Where("incident_id = ? AND entry_id = ?", incidentID, entryID).First(&existing).Error
+	if err == nil {
+		return
+	}
+	if err != nil && err != gorm.ErrRecordNotFound {
+		log.Printf("incidents: lookup incident link %s -> %s: %v", entryID, incidentID, err)
+		return
+	}
+
 	ie := models.IncidentEntry{
 		IncidentID: incidentID,
 		EntryID:    entryID,
@@ -395,6 +409,52 @@ func (m *Manager) linkEntry(incidentID, entryID, role string, score int) {
 	if err := m.db.Create(&ie).Error; err != nil {
 		log.Printf("incidents: link entry %s -> %s: %v", entryID, incidentID, err)
 	}
+}
+
+func filterCauseCandidates(candidates []correlation.CauseCandidate, excluded map[string]struct{}) []correlation.CauseCandidate {
+	if len(candidates) == 0 || len(excluded) == 0 {
+		return candidates
+	}
+
+	filtered := make([]correlation.CauseCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidate.Entry == nil {
+			continue
+		}
+		if _, skip := excluded[candidate.Entry.ID]; skip {
+			continue
+		}
+		filtered = append(filtered, candidate)
+	}
+	return filtered
+}
+
+func excludeEntryIDs(ids ...string) map[string]struct{} {
+	excluded := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		if strings.TrimSpace(id) == "" {
+			continue
+		}
+		excluded[id] = struct{}{}
+	}
+	return excluded
+}
+
+func (m *Manager) linkedEntryIDs(incidentID string, extraIDs ...string) map[string]struct{} {
+	excluded := excludeEntryIDs(extraIDs...)
+
+	var links []models.IncidentEntry
+	if err := m.db.Where("incident_id = ?", incidentID).Find(&links).Error; err != nil {
+		log.Printf("incidents: load links for %s: %v", incidentID, err)
+		return excluded
+	}
+	for _, link := range links {
+		if link.EntryID == "" {
+			continue
+		}
+		excluded[link.EntryID] = struct{}{}
+	}
+	return excluded
 }
 
 func (m *Manager) broadcastOpened(inc models.Incident) {
