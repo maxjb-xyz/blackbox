@@ -56,6 +56,39 @@ function roleColor(role: string): string {
   return 'var(--muted)'
 }
 
+function incidentFingerprint(incident: Incident): string {
+  return [
+    incident.id,
+    incident.opened_at,
+    incident.resolved_at ?? '',
+    incident.status,
+    incident.confidence,
+    incident.title,
+    incident.services,
+    incident.root_cause_id ?? '',
+    incident.trigger_id ?? '',
+    incident.node_names,
+    incident.metadata,
+  ].join('|')
+}
+
+function mergeAndDedupeIncidents(preferred: Incident[], fallback: Incident[]): Incident[] {
+  const merged = new Map<string, Incident>()
+  for (const incident of preferred) {
+    merged.set(incident.id, incident)
+  }
+  for (const incident of fallback) {
+    if (!merged.has(incident.id)) {
+      merged.set(incident.id, incident)
+    }
+  }
+  return [...merged.values()].sort((left, right) => {
+    const tsDiff = new Date(right.opened_at).getTime() - new Date(left.opened_at).getTime()
+    if (tsDiff !== 0) return tsDiff
+    return right.id.localeCompare(left.id)
+  })
+}
+
 interface IncidentCardProps {
   incident: Incident
   defaultOpen?: boolean
@@ -65,6 +98,37 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
   const [expanded, setExpanded] = useState(defaultOpen)
   const [detail, setDetail] = useState<IncidentDetail | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
+
+  useEffect(() => {
+    if (!detail) return
+    if (detail.incident.id !== incident.id) {
+      setDetail(null)
+      return
+    }
+    if (incidentFingerprint(detail.incident) === incidentFingerprint(incident)) return
+
+    setDetail(prev => prev ? { ...prev, incident } : prev)
+    if (!expanded) return
+
+    let cancelled = false
+    setLoadingDetail(true)
+    void fetchIncident(incident.id)
+      .then(nextDetail => {
+        if (!cancelled) {
+          setDetail(nextDetail)
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingDetail(false)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [detail, expanded, incident])
 
   const detailIncident = detail?.incident ?? incident
   const services = parseIncidentServices(detailIncident)
@@ -261,8 +325,17 @@ export default function IncidentsPage() {
         fetchIncidents({ status: 'open', limit: 50 }),
         fetchIncidents({ status: 'resolved', limit: 20 }),
       ])
-      setOpenIncidents(open.incidents)
-      setResolvedIncidents(resolved.incidents)
+      const openIDs = new Set(open.incidents.map(incident => incident.id))
+      const resolvedIDs = new Set(resolved.incidents.map(incident => incident.id))
+
+      setOpenIncidents(prev => mergeAndDedupeIncidents(
+        open.incidents,
+        prev.filter(incident => incident.status === 'open' && !resolvedIDs.has(incident.id)),
+      ))
+      setResolvedIncidents(prev => mergeAndDedupeIncidents(
+        resolved.incidents,
+        prev.filter(incident => incident.status === 'resolved' && !openIDs.has(incident.id)),
+      ))
       setError(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load incidents')
@@ -283,15 +356,21 @@ export default function IncidentsPage() {
     const { type, data } = lastMessage
     if (type === 'incident_opened') {
       const inc = data as Incident
-      setOpenIncidents(prev => [inc, ...prev.filter(i => i.id !== inc.id)])
+      setOpenIncidents(prev => mergeAndDedupeIncidents([inc], prev.filter(i => i.id !== inc.id)))
+      setResolvedIncidents(prev => prev.filter(i => i.id !== inc.id))
     } else if (type === 'incident_updated') {
       const inc = data as Incident
-      setOpenIncidents(prev => prev.map(i => i.id === inc.id ? inc : i))
-      setResolvedIncidents(prev => prev.map(i => i.id === inc.id ? inc : i))
+      if (inc.status === 'resolved') {
+        setOpenIncidents(prev => prev.filter(i => i.id !== inc.id))
+        setResolvedIncidents(prev => mergeAndDedupeIncidents([inc], prev.filter(i => i.id !== inc.id)))
+      } else {
+        setOpenIncidents(prev => mergeAndDedupeIncidents([inc], prev.filter(i => i.id !== inc.id)))
+        setResolvedIncidents(prev => prev.filter(i => i.id !== inc.id))
+      }
     } else if (type === 'incident_resolved') {
       const inc = data as Incident
       setOpenIncidents(prev => prev.filter(i => i.id !== inc.id))
-      setResolvedIncidents(prev => [inc, ...prev.filter(i => i.id !== inc.id)])
+      setResolvedIncidents(prev => mergeAndDedupeIncidents([inc], prev.filter(i => i.id !== inc.id)))
     }
   }, [lastMessage])
 

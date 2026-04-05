@@ -401,6 +401,11 @@ export interface IncidentsPage {
   has_more: boolean
 }
 
+export interface IncidentMembership {
+  id: string
+  confidence: Incident['confidence']
+}
+
 export function parseIncidentServices(inc: Incident): string[] {
   try { return JSON.parse(inc.services) as string[] } catch { return [] }
 }
@@ -434,4 +439,16 @@ export async function fetchIncident(id: string): Promise<IncidentDetail> {
   const res = await apiFetch(`/api/incidents/${id}`)
   if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to fetch incident'))
   return res.json() as Promise<IncidentDetail>
+}
+
+export async function fetchIncidentsForEntryIds(entryIds: string[]): Promise<Record<string, IncidentMembership>> {
+  if (entryIds.length === 0) return {}
+  const res = await apiFetch('/api/incidents/membership', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ entry_ids: entryIds }),
+  })
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to fetch incident membership'))
+  const data = await res.json() as { memberships?: Record<string, IncidentMembership> }
+  return data.memberships ?? {}
 }

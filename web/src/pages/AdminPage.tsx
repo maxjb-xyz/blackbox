@@ -902,6 +902,7 @@ function SettingsTab() {
   }, [])
 
   async function handleSave() {
+    if (!initialLoaded) return
     setSaving(true)
     setError(null)
     setMessage(null)
@@ -951,6 +952,10 @@ function SettingsTab() {
 
         {loading ? (
           <div style={{ color: 'var(--muted)', fontSize: '12px' }}>loading...</div>
+        ) : !initialLoaded ? (
+          <div style={{ color: 'var(--danger)', fontSize: '12px' }}>
+            Load settings before editing file watcher configuration.
+          </div>
         ) : (
           <>
             <label
@@ -967,6 +972,7 @@ function SettingsTab() {
                 type="checkbox"
                 checked={redactSecrets}
                 onChange={e => setRedactSecrets(e.target.checked)}
+                disabled={!initialLoaded || saving}
                 style={{ marginTop: 2 }}
               />
               <div>
@@ -983,9 +989,9 @@ function SettingsTab() {
             <button
               type="button"
               onClick={() => void handleSave()}
-              disabled={saving}
+              disabled={!initialLoaded || saving}
               style={{
-                background: saving ? 'var(--border)' : 'var(--accent)',
+                background: !initialLoaded || saving ? 'var(--border)' : 'var(--accent)',
                 color: '#000',
                 border: 'none',
                 padding: '8px 16px',
@@ -993,7 +999,7 @@ function SettingsTab() {
                 fontSize: '12px',
                 fontWeight: 'bold',
                 letterSpacing: '0.1em',
-                cursor: saving ? 'not-allowed' : 'pointer',
+                cursor: !initialLoaded || saving ? 'not-allowed' : 'pointer',
               }}
             >
               {saving ? 'SAVING...' : 'SAVE'}

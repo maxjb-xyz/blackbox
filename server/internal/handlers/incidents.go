@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"blackbox/server/internal/models"
 	"blackbox/shared/types"
@@ -73,6 +74,87 @@ func ListIncidents(database *gorm.DB) http.HandlerFunc {
 type incidentEntryDetail struct {
 	Link models.IncidentEntry `json:"link"`
 	Data *types.Entry         `json:"entry"`
+}
+
+type incidentMembership struct {
+	ID         string `json:"id"`
+	Confidence string `json:"confidence"`
+}
+
+type incidentMembershipRow struct {
+	EntryID    string    `gorm:"column:entry_id"`
+	IncidentID string    `gorm:"column:incident_id"`
+	Confidence string    `gorm:"column:confidence"`
+	OpenedAt   time.Time `gorm:"column:opened_at"`
+}
+
+func ListIncidentMembership(database *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			EntryIDs []string `json:"entry_ids"`
+		}
+		if !decodeJSONBody(w, r, 32<<10, &req) {
+			return
+		}
+
+		if len(req.EntryIDs) > 200 {
+			writeError(w, http.StatusBadRequest, "entry_ids must contain at most 200 IDs")
+			return
+		}
+
+		entryIDs := make([]string, 0, len(req.EntryIDs))
+		seen := make(map[string]struct{}, len(req.EntryIDs))
+		for _, entryID := range req.EntryIDs {
+			entryID = strings.TrimSpace(entryID)
+			if entryID == "" {
+				continue
+			}
+			if _, ok := seen[entryID]; ok {
+				continue
+			}
+			seen[entryID] = struct{}{}
+			entryIDs = append(entryIDs, entryID)
+		}
+
+		resp := struct {
+			Memberships map[string]incidentMembership `json:"memberships"`
+		}{
+			Memberships: map[string]incidentMembership{},
+		}
+		if len(entryIDs) == 0 {
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(resp); err != nil {
+				log.Printf("ListIncidentMembership encode empty: %v", err)
+			}
+			return
+		}
+
+		var rows []incidentMembershipRow
+		if err := database.Table("incident_entries AS ie").
+			Select("ie.entry_id, incidents.id AS incident_id, incidents.confidence, incidents.opened_at").
+			Joins("JOIN incidents ON incidents.id = ie.incident_id").
+			Where("ie.entry_id IN ? AND incidents.status = ?", entryIDs, "open").
+			Order("incidents.opened_at DESC").
+			Scan(&rows).Error; err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to fetch incident membership")
+			return
+		}
+
+		for _, row := range rows {
+			if _, ok := resp.Memberships[row.EntryID]; ok {
+				continue
+			}
+			resp.Memberships[row.EntryID] = incidentMembership{
+				ID:         row.IncidentID,
+				Confidence: row.Confidence,
+			}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			log.Printf("ListIncidentMembership encode: %v", err)
+		}
+	}
 }
 
 func GetIncident(database *gorm.DB) http.HandlerFunc {

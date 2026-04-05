@@ -6,11 +6,10 @@ import {
   fetchEntries,
   fetchEntry,
   fetchEntryServices,
-  fetchIncident,
-  fetchIncidents,
+  fetchIncidentsForEntryIds,
   fetchNotes,
 } from '../api/client'
-import type { Entry, EntryNote, IncidentDetail } from '../api/client'
+import type { Entry, EntryNote } from '../api/client'
 import { useNodePulse } from '../components/NodePulse'
 import { useWebSocketContext } from '../components/WebSocketProvider'
 
@@ -106,21 +105,6 @@ interface TooltipState {
   text: string
   x: number
   y: number
-}
-
-function getIncidentDetailCached(
-  incidentId: string,
-  cache: Map<string, Promise<IncidentDetail>>,
-): Promise<IncidentDetail> {
-  const cached = cache.get(incidentId)
-  if (cached) return cached
-
-  const pending = fetchIncident(incidentId).catch(err => {
-    cache.delete(incidentId)
-    throw err
-  })
-  cache.set(incidentId, pending)
-  return pending
 }
 
 interface FileDiffMetadata {
@@ -776,8 +760,8 @@ function TimelineFeed({
   const renderedIdsRef = useRef<Set<string>>(new Set())
   const expandedIdRef = useRef<string | null>(null)
   const ghostEntryRef = useRef<Entry | null>(null)
+  const visibleEntryIDsRef = useRef<string[]>([])
   const mountedRef = useRef(true)
-  const incidentDetailCacheRef = useRef<Map<string, Promise<IncidentDetail>>>(new Map())
   const entryIncidentMapReqIdRef = useRef(0)
 
   const consumeMaterializedGhost = useEffectEvent((incoming: Entry[]) => {
@@ -790,24 +774,19 @@ function TimelineFeed({
     return true
   })
 
-  const loadIncidentMembership = useEffectEvent(async () => {
+  const loadIncidentMembership = useEffectEvent(async (entryIDs: string[]) => {
     const requestId = entryIncidentMapReqIdRef.current + 1
     entryIncidentMapReqIdRef.current = requestId
+
+    if (viewMode !== 'rows' || entryIDs.length === 0) {
+      if (mountedRef.current && entryIncidentMapReqIdRef.current === requestId) {
+        setEntryIncidentMap({})
+      }
+      return
+    }
+
     try {
-      const page = await fetchIncidents({ status: 'open', limit: 50 })
-      const map: Record<string, { id: string; confidence: string }> = {}
-      await Promise.all(
-        page.incidents.map(async inc => {
-          try {
-            const detail = await getIncidentDetailCached(inc.id, incidentDetailCacheRef.current)
-            for (const { link } of detail.entries) {
-              map[link.entry_id] = { id: inc.id, confidence: inc.confidence }
-            }
-          } catch {
-            // ignore
-          }
-        }),
-      )
+      const map = await fetchIncidentsForEntryIds(entryIDs)
       if (mountedRef.current && entryIncidentMapReqIdRef.current === requestId) {
         setEntryIncidentMap(map)
       }
@@ -848,7 +827,6 @@ function TimelineFeed({
 
       setNextCursor(page.next_cursor)
       setDone(!page.next_cursor)
-      void loadIncidentMembership()
       onEntriesChanged()
     } catch (err) {
       if (mountedRef.current) {
@@ -899,17 +877,6 @@ function TimelineFeed({
       return mergedEntries
     })
   }, [hideHeartbeat, lastMessage, nodeFilter, onEntriesChanged, qFilter, serviceFilter, sourceFilter])
-
-  useEffect(() => {
-    if (!lastMessage) return
-    if (lastMessage.type === 'incident_opened' || lastMessage.type === 'incident_updated' || lastMessage.type === 'incident_resolved') {
-      const incident = lastMessage.data as { id?: string }
-      if (incident.id) {
-        incidentDetailCacheRef.current.delete(incident.id)
-      }
-      void loadIncidentMembership()
-    }
-  }, [lastMessage, loadIncidentMembership])
 
   function handleRowClick(entry: Entry) {
     if (expandedId === entry.id) {
@@ -981,6 +948,20 @@ function TimelineFeed({
     result.splice(expandedIndex, 0, ghostEntry)
     return result
   })()
+  const visibleEntryIDs = displayEntries.map(entry => entry.id)
+  const visibleEntryIDsKey = visibleEntryIDs.join('|')
+  visibleEntryIDsRef.current = visibleEntryIDs
+
+  useEffect(() => {
+    void loadIncidentMembership(visibleEntryIDsRef.current)
+  }, [viewMode, visibleEntryIDsKey])
+
+  useEffect(() => {
+    if (!lastMessage) return
+    if (lastMessage.type === 'incident_opened' || lastMessage.type === 'incident_updated' || lastMessage.type === 'incident_resolved') {
+      void loadIncidentMembership(visibleEntryIDsRef.current)
+    }
+  }, [lastMessage, visibleEntryIDsKey])
 
   return (
     <>
