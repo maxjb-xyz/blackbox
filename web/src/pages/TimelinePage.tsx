@@ -35,10 +35,10 @@ function eventTextColor(event: string): string {
 }
 
 function eventCardBackground(event: string): string {
-  if (event === 'stop' || event === 'die' || event === 'down') return 'rgba(255, 68, 68, 0.08)'
-  if (event === 'start' || event === 'up') return 'rgba(0, 204, 68, 0.08)'
-  if (event === 'pull') return 'rgba(51, 153, 255, 0.08)'
-  if (event === 'restart' || event === 'update') return 'rgba(255, 153, 0, 0.08)'
+  if (event === 'stop' || event === 'die' || event === 'down') return 'var(--danger-bg)'
+  if (event === 'start' || event === 'up') return 'var(--success-bg)'
+  if (event === 'pull') return 'var(--info-bg)'
+  if (event === 'restart' || event === 'update') return 'var(--warning-bg)'
   return 'var(--surface)'
 }
 

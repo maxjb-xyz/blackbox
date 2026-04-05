@@ -13,7 +13,7 @@ import (
 )
 
 func TestEventCollapser_CollapsesRestartSequence(t *testing.T) {
-	collapser := newEventCollapser("node-1")
+	collapser := newEventCollapser("node-1", nil)
 	base := time.Date(2026, 4, 2, 12, 0, 0, 0, time.UTC)
 
 	if entries := collapser.Handle(base, testDockerMessage(base, "container", "stop", "abc123", "traefik", "")); len(entries) != 0 {
@@ -57,7 +57,7 @@ func TestEventCollapser_CollapsesRestartSequence(t *testing.T) {
 }
 
 func TestEventCollapser_EmitsStopAfterDebounce(t *testing.T) {
-	collapser := newEventCollapser("node-1")
+	collapser := newEventCollapser("node-1", nil)
 	base := time.Date(2026, 4, 2, 12, 0, 0, 0, time.UTC)
 
 	if entries := collapser.Handle(base, testDockerMessage(base, "container", "stop", "abc123", "traefik", "")); len(entries) != 0 {
@@ -95,7 +95,7 @@ func TestEventCollapser_EmitsStopAfterDebounce(t *testing.T) {
 }
 
 func TestEventCollapser_EmitsImmediateStartAndPassesThroughImageEvents(t *testing.T) {
-	collapser := newEventCollapser("node-1")
+	collapser := newEventCollapser("node-1", nil)
 	base := time.Date(2026, 4, 2, 12, 0, 0, 0, time.UTC)
 
 	startEntries := collapser.Handle(base, testDockerMessage(base, "container", "start", "abc123", "traefik", ""))
@@ -147,7 +147,7 @@ func TestBuildEntry_StripsGeneratedPrefixesFromContainerNames(t *testing.T) {
 }
 
 func TestBuildEntry_UsesContainerLookupForImagePullService(t *testing.T) {
-	resolver := newServiceResolver(fakeDockerResolverClient{
+	resolver := newServiceResolver(context.Background(), fakeDockerResolverClient{
 		containers: []dockercontainer.Summary{
 			{
 				Image:   "lscr.io/linuxserver/sonarr:latest",
@@ -169,6 +169,30 @@ func TestBuildEntry_UsesContainerLookupForImagePullService(t *testing.T) {
 	}
 	if entry.Content != "Image pulled: sonarr" {
 		t.Fatalf("unexpected content: %q", entry.Content)
+	}
+}
+
+func TestResolveContainerService_FallsBackWhenInspectFails(t *testing.T) {
+	resolver := newServiceResolver(context.Background(), fakeDockerResolverClient{
+		inspectErr: assertiveResolverError("inspect failed"),
+	})
+
+	service := resolver.resolveContainerService("abc123", nil, "hor2httb23tu3itbitb_sonarr")
+	if service != "sonarr" {
+		t.Fatalf("expected sanitized fallback service sonarr, got %q", service)
+	}
+}
+
+func TestResolveImageService_FallsBackWhenContainerListFails(t *testing.T) {
+	resolver := newServiceResolver(context.Background(), fakeDockerResolverClient{
+		containerErr: assertiveResolverError("container list failed"),
+	})
+
+	service := resolver.resolveImageService("sha256:abc123", map[string]string{
+		"name": "lscr.io/linuxserver/sonarr:latest",
+	})
+	if service != "sonarr" {
+		t.Fatalf("expected short image fallback service sonarr, got %q", service)
 	}
 }
 
@@ -198,7 +222,7 @@ func TestRunWatchLoop_PreservesBufferedEventsAcrossReconnect(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	collapser := newEventCollapser("node-1")
+	collapser := newEventCollapser("node-1", nil)
 	out := make(chan types.Entry, 4)
 	tickCh := make(chan time.Time)
 
@@ -264,7 +288,7 @@ func TestRunWatchLoop_EmitsExpiredStopBeforeLateStartWithoutTicker(t *testing.T)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	collapser := newEventCollapser("node-1")
+	collapser := newEventCollapser("node-1", nil)
 	out := make(chan types.Entry, 4)
 	tickCh := make(chan time.Time)
 	msgCh := make(chan dockerevents.Message, 2)
@@ -345,4 +369,10 @@ func (f fakeDockerResolverClient) ContainerInspect(_ context.Context, _ string) 
 
 func (f fakeDockerResolverClient) ContainerList(_ context.Context, _ dockercontainer.ListOptions) ([]dockercontainer.Summary, error) {
 	return f.containers, f.containerErr
+}
+
+type assertiveResolverError string
+
+func (e assertiveResolverError) Error() string {
+	return string(e)
 }

@@ -31,7 +31,7 @@ var watchedActions = map[string]bool{
 }
 
 func Watch(ctx context.Context, nodeName string, out chan<- types.Entry) {
-	collapser := newEventCollapser(nodeName)
+	collapser := newEventCollapser(nodeName, nil)
 
 	for {
 		if err := watch(ctx, nodeName, out, collapser); err != nil {
@@ -67,7 +67,7 @@ func watch(ctx context.Context, nodeName string, out chan<- types.Entry, collaps
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
 
-	collapser.resolver = newServiceResolver(cli)
+	collapser.resolver = newServiceResolver(ctx, cli)
 
 	return runWatchLoop(ctx, nodeName, out, msgCh, errCh, ticker.C, collapser, func() time.Time {
 		return time.Now().UTC()
@@ -118,11 +118,12 @@ type dockerResolverClient interface {
 }
 
 type serviceResolver struct {
+	ctx context.Context
 	cli dockerResolverClient
 }
 
-func newServiceResolver(cli dockerResolverClient) *serviceResolver {
-	return &serviceResolver{cli: cli}
+func newServiceResolver(ctx context.Context, cli dockerResolverClient) *serviceResolver {
+	return &serviceResolver{ctx: ctx, cli: cli}
 }
 
 func buildEntry(nodeName string, msg dockerevents.Message, resolver *serviceResolver) types.Entry {
@@ -200,11 +201,7 @@ type rawDockerEvent struct {
 	Attributes map[string]string `json:"attributes,omitempty"`
 }
 
-func newEventCollapser(nodeName string, resolvers ...*serviceResolver) *eventCollapser {
-	var resolver *serviceResolver
-	if len(resolvers) > 0 {
-		resolver = resolvers[0]
-	}
+func newEventCollapser(nodeName string, resolver *serviceResolver) *eventCollapser {
 	return &eventCollapser{
 		nodeName: nodeName,
 		resolver: resolver,
@@ -362,7 +359,7 @@ func (r *serviceResolver) resolveContainerService(containerID string, attrs map[
 		return sanitizeContainerName(rawName)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), dockerLookupTimeout)
+	ctx, cancel := context.WithTimeout(r.parentContext(), dockerLookupTimeout)
 	defer cancel()
 
 	inspected, err := r.cli.ContainerInspect(ctx, containerID)
@@ -390,7 +387,7 @@ func (r *serviceResolver) resolveImageService(imageID string, attrs map[string]s
 }
 
 func (r *serviceResolver) findContainerServiceForImage(imageID, ref string) string {
-	ctx, cancel := context.WithTimeout(context.Background(), dockerLookupTimeout)
+	ctx, cancel := context.WithTimeout(r.parentContext(), dockerLookupTimeout)
 	defer cancel()
 
 	containers, err := r.cli.ContainerList(ctx, dockercontainer.ListOptions{All: true})
@@ -459,12 +456,14 @@ func sanitizeContainerName(name string) string {
 	}
 
 	parts := strings.Split(name, "_")
+	// Handle swarm-style names like prefix_service_replica by extracting the service portion.
 	if len(parts) >= 3 && isNumericToken(parts[len(parts)-1]) {
 		service := strings.Join(parts[1:len(parts)-1], "_")
 		if service != "" {
 			return service
 		}
 	}
+	// Strip generated hash-like prefixes such as hor2httb23tu3itbitb_service.
 	if len(parts) >= 2 && shouldStripGeneratedPrefix(parts[0]) {
 		return strings.Join(parts[1:], "_")
 	}
@@ -518,12 +517,7 @@ func normalizeImageRef(ref string) string {
 	if ref == "" || strings.HasPrefix(ref, "sha256:") {
 		return ref
 	}
-	if idx := strings.Index(ref, "@"); idx != -1 {
-		ref = ref[:idx]
-	}
-	if idx := strings.LastIndex(ref, ":"); idx > strings.LastIndex(ref, "/") {
-		ref = ref[:idx]
-	}
+	ref = stripImageTagAndDigest(ref)
 	ref = strings.TrimPrefix(ref, "docker.io/")
 	ref = strings.TrimPrefix(ref, "index.docker.io/")
 	ref = strings.TrimPrefix(ref, "library/")
@@ -545,16 +539,28 @@ func cleanImageService(ref string) string {
 		return ""
 	}
 
+	ref = stripImageTagAndDigest(ref)
+	if idx := strings.LastIndex(ref, "/"); idx != -1 {
+		ref = ref[idx+1:]
+	}
+
+	return ref
+}
+
+func (r *serviceResolver) parentContext() context.Context {
+	if r == nil || r.ctx == nil {
+		return context.Background()
+	}
+	return r.ctx
+}
+
+func stripImageTagAndDigest(ref string) string {
 	if idx := strings.Index(ref, "@"); idx != -1 {
 		ref = ref[:idx]
 	}
 	if idx := strings.LastIndex(ref, ":"); idx > strings.LastIndex(ref, "/") {
 		ref = ref[:idx]
 	}
-	if idx := strings.LastIndex(ref, "/"); idx != -1 {
-		ref = ref[idx+1:]
-	}
-
 	return ref
 }
 

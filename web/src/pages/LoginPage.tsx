@@ -51,20 +51,12 @@ export default function LoginPage() {
     setLoading(true)
     try {
       await login(username, password)
-      let user = null
-      try {
-        user = await refreshSession()
-      } catch (err) {
-        console.error('LoginPage: failed to refresh session after login', err)
-        setError('Login succeeded, but session refresh failed. Please try again.')
-        return
-      }
+      const user = await refreshSession()
       if (!user) {
         console.error('LoginPage: refreshSession returned no user after login')
         setError('Login succeeded, but session could not be loaded. Please try again.')
         return
       }
-      navigate(redirectTo, { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed')
     } finally {
