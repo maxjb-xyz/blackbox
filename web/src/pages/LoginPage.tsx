@@ -14,7 +14,7 @@ function sanitizeRedirectTo(value: string | null) {
 export default function LoginPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const { refreshSession } = useSession()
+  const { user, loading: sessionLoading, refreshSession } = useSession()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -34,6 +34,16 @@ export default function LoginPage() {
   }, [])
 
   const redirectTo = sanitizeRedirectTo(searchParams.get('redirect_to'))
+
+  useEffect(() => {
+    if (!sessionLoading && user) {
+      navigate(redirectTo, { replace: true })
+    }
+  }, [navigate, redirectTo, sessionLoading, user])
+
+  if (sessionLoading || user) {
+    return null
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()

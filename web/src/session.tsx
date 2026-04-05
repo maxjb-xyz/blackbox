@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { fetchCurrentUser, logout as logoutRequest, type SessionUser } from './api/client'
 
 interface SessionContextValue {
@@ -14,6 +14,7 @@ const SessionContext = createContext<SessionContextValue | null>(null)
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<SessionUser | null>(null)
   const [loading, setLoading] = useState(true)
+  const requestSeqRef = useRef(0)
 
   const updateSession = useCallback((nextUser: SessionUser | null) => {
     setUser(nextUser)
@@ -21,15 +22,21 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const refreshSession = useCallback(async () => {
+    const requestID = requestSeqRef.current + 1
+    requestSeqRef.current = requestID
     try {
       const nextUser = await fetchCurrentUser()
-      updateSession(nextUser)
+      if (requestSeqRef.current !== requestID) return null
+      setUser(nextUser)
+      setLoading(false)
       return nextUser
     } catch {
-      updateSession(null)
+      if (requestSeqRef.current !== requestID) return null
+      setUser(null)
+      setLoading(false)
       return null
     }
-  }, [updateSession])
+  }, [])
 
   const logout = useCallback(async () => {
     try {
