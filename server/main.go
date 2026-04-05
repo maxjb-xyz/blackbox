@@ -91,6 +91,7 @@ func main() {
 
 	go func() {
 		const retryInterval = 10 * time.Second
+		lastOIDCRegistryStatus := oidcRegistryStatusUnknown
 		for attempt := 1; ; attempt++ {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			err := registry.Reload(ctx)
@@ -102,20 +103,11 @@ func main() {
 				if listErr != nil {
 					log.Printf("OIDC registry readiness check %d failed: %v", attempt, listErr)
 				} else {
-					live := len(providers) == 0
-					for _, provider := range providers {
-						if registry.Get(provider.ID) != nil {
-							live = true
-							break
-						}
+					currentOIDCRegistryStatus := oidcRegistryStatusFromProviders(providers, registry)
+					if msg := oidcRegistryTransitionMessage(attempt, lastOIDCRegistryStatus, currentOIDCRegistryStatus); msg != "" {
+						log.Print(msg)
 					}
-					if live {
-						if len(providers) > 0 {
-							log.Printf("OIDC registry ready")
-						}
-					} else {
-						log.Printf("OIDC registry reload attempt %d completed but no providers are currently available", attempt)
-					}
+					lastOIDCRegistryStatus = currentOIDCRegistryStatus
 				}
 			}
 			time.Sleep(retryInterval)
