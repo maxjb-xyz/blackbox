@@ -590,7 +590,7 @@ func renderDiff(ops []diffOp) string {
 			continue
 		}
 		if hiddenRun > 0 {
-			b.WriteString(fmt.Sprintf("@@ %d unchanged line(s) @@\n", hiddenRun))
+			fmt.Fprintf(&b, "@@ %d unchanged line(s) @@\n", hiddenRun)
 			hiddenRun = 0
 		}
 		b.WriteByte(op.kind)
@@ -600,7 +600,7 @@ func renderDiff(ops []diffOp) string {
 		}
 	}
 	if hiddenRun > 0 {
-		b.WriteString(fmt.Sprintf("@@ %d unchanged line(s) @@\n", hiddenRun))
+		fmt.Fprintf(&b, "@@ %d unchanged line(s) @@\n", hiddenRun)
 	}
 
 	diff := b.String()
