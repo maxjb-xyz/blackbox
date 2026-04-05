@@ -163,7 +163,8 @@ func main() {
 		r.Patch("/api/admin/users/{id}", handlers.UpdateAdminUser(database, eventHub))
 		r.Post("/api/admin/users/{id}/force-logout", handlers.ForceLogoutUser(database, eventHub))
 		r.Delete("/api/admin/users/{id}", handlers.DeleteAdminUser(database, eventHub))
-		r.Get("/api/admin/config", handlers.AdminConfig(webhookSecret))
+		r.Get("/api/admin/config", handlers.AdminConfig(database, webhookSecret))
+		r.Put("/api/admin/settings/file-watcher", handlers.UpdateFileWatcherSettings(database))
 		r.Get("/api/admin/oidc/providers", handlers.ListOIDCProviders(database))
 		r.Post("/api/admin/oidc/providers", handlers.CreateOIDCProvider(database, registry))
 		r.Patch("/api/admin/oidc/providers/{id}", handlers.UpdateOIDCProvider(database, registry))
@@ -174,6 +175,7 @@ func main() {
 
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.AgentAuth(agentConfig))
+		r.Get("/api/agent/config", handlers.AgentConfig(database))
 		r.Post("/api/agent/push", handlers.AgentPush(database, eventHub))
 	})
 

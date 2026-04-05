@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,7 +29,7 @@ func TestWatch_EmitsWriteForConfigFile(t *testing.T) {
 	defer cancel()
 
 	out := make(chan types.Entry, 4)
-	if count := Watch(ctx, "node-1", []string{root}, nil, out); count == 0 {
+	if count := Watch(ctx, "node-1", []string{root}, nil, NewSettings(true), out); count == 0 {
 		t.Fatal("expected watcher to register at least one directory")
 	}
 
@@ -47,12 +48,22 @@ func TestWatch_EmitsWriteForConfigFile(t *testing.T) {
 		t.Fatalf("entry service = %q, want %q", entry.Service, filepath.Clean(root))
 	}
 
-	var meta map[string]string
+	var meta map[string]any
 	if err := json.Unmarshal([]byte(entry.Metadata), &meta); err != nil {
 		t.Fatalf("decode metadata: %v", err)
 	}
 	if got := meta["path"]; got != target {
 		t.Fatalf("metadata path = %q, want %q", got, target)
+	}
+	diff, _ := meta["diff"].(string)
+	if !strings.Contains(diff, "-    image: lscr.io/linuxserver/sonarr\n") {
+		t.Fatalf("diff missing old image line: %q", diff)
+	}
+	if !strings.Contains(diff, "+    image: lscr.io/linuxserver/sonarr:latest\n") {
+		t.Fatalf("diff missing new image line: %q", diff)
+	}
+	if got := meta["diff_status"]; got != "included" {
+		t.Fatalf("diff_status = %v, want included", got)
 	}
 }
 
@@ -77,7 +88,7 @@ func TestWatch_FollowsSymlinkedRootDirectory(t *testing.T) {
 	defer cancel()
 
 	out := make(chan types.Entry, 4)
-	if count := Watch(ctx, "node-1", []string{linkRoot}, nil, out); count == 0 {
+	if count := Watch(ctx, "node-1", []string{linkRoot}, nil, NewSettings(true), out); count == 0 {
 		t.Fatal("expected watcher to register a symlinked root")
 	}
 
@@ -94,7 +105,7 @@ func TestWatch_FollowsSymlinkedRootDirectory(t *testing.T) {
 		t.Fatalf("entry content = %q, want %q", entry.Content, "file write: "+wantPath)
 	}
 
-	var meta map[string]string
+	var meta map[string]any
 	if err := json.Unmarshal([]byte(entry.Metadata), &meta); err != nil {
 		t.Fatalf("decode metadata: %v", err)
 	}
@@ -103,12 +114,97 @@ func TestWatch_FollowsSymlinkedRootDirectory(t *testing.T) {
 	}
 }
 
-func TestEventNameForOp_IncludesChmod(t *testing.T) {
-	if got := eventNameForOp(0); got != "" {
-		t.Fatalf("eventNameForOp(0) = %q, want empty string", got)
+func TestWatch_RedactsSensitiveDiffValues(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, ".env")
+	if err := os.WriteFile(target, []byte("API_TOKEN=old-secret\nNORMAL=value\n"), 0o644); err != nil {
+		t.Fatalf("write initial file: %v", err)
 	}
-	if got := eventNameForOp(fsnotify.Chmod); got != "chmod" {
-		t.Fatalf("eventNameForOp(chmod) = %q, want chmod", got)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	out := make(chan types.Entry, 4)
+	if count := Watch(ctx, "node-1", []string{root}, nil, NewSettings(true), out); count == 0 {
+		t.Fatal("expected watcher to register at least one directory")
+	}
+
+	if err := os.WriteFile(target, []byte("API_TOKEN=new-secret\nNORMAL=changed\n"), 0o644); err != nil {
+		t.Fatalf("rewrite env file: %v", err)
+	}
+
+	entry := waitForEntry(t, out)
+	var meta map[string]any
+	if err := json.Unmarshal([]byte(entry.Metadata), &meta); err != nil {
+		t.Fatalf("decode metadata: %v", err)
+	}
+
+	diff, _ := meta["diff"].(string)
+	if strings.Contains(diff, "old-secret") || strings.Contains(diff, "new-secret") {
+		t.Fatalf("diff leaked secret value: %q", diff)
+	}
+	if !strings.Contains(diff, "API_TOKEN= [REDACTED]\n") {
+		t.Fatalf("diff missing redacted token line: %q", diff)
+	}
+	if !strings.Contains(diff, "+NORMAL=changed\n") {
+		t.Fatalf("diff missing non-sensitive change: %q", diff)
+	}
+}
+
+func TestWatch_AllowsSensitiveDiffValuesWhenRedactionDisabled(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, ".env")
+	if err := os.WriteFile(target, []byte("API_TOKEN=old-secret\n"), 0o644); err != nil {
+		t.Fatalf("write initial file: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	out := make(chan types.Entry, 4)
+	if count := Watch(ctx, "node-1", []string{root}, nil, NewSettings(false), out); count == 0 {
+		t.Fatal("expected watcher to register at least one directory")
+	}
+
+	if err := os.WriteFile(target, []byte("API_TOKEN=new-secret\n"), 0o644); err != nil {
+		t.Fatalf("rewrite env file: %v", err)
+	}
+
+	entry := waitForEntry(t, out)
+	var meta map[string]any
+	if err := json.Unmarshal([]byte(entry.Metadata), &meta); err != nil {
+		t.Fatalf("decode metadata: %v", err)
+	}
+
+	diff, _ := meta["diff"].(string)
+	if !strings.Contains(diff, "-API_TOKEN=old-secret\n") || !strings.Contains(diff, "+API_TOKEN=new-secret\n") {
+		t.Fatalf("diff missing raw secret values: %q", diff)
+	}
+	if got := meta["diff_redacted"]; got != false {
+		t.Fatalf("diff_redacted = %v, want false", got)
+	}
+}
+
+func TestEventNameForOp_IncludesChmod(t *testing.T) {
+	tests := []struct {
+		name string
+		op   fsnotify.Op
+		want string
+	}{
+		{name: "zero", op: 0, want: ""},
+		{name: "write", op: fsnotify.Write, want: "write"},
+		{name: "create", op: fsnotify.Create, want: "create"},
+		{name: "remove", op: fsnotify.Remove, want: "remove"},
+		{name: "rename", op: fsnotify.Rename, want: "rename"},
+		{name: "chmod", op: fsnotify.Chmod, want: "chmod"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := eventNameForOp(tt.op); got != tt.want {
+				t.Fatalf("eventNameForOp(%s) = %q, want %q", tt.name, got, tt.want)
+			}
+		})
 	}
 }
 

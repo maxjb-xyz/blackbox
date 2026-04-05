@@ -20,6 +20,10 @@ type Client struct {
 	http      *http.Client
 }
 
+type AgentConfig struct {
+	FileWatcherRedactSecrets bool `json:"file_watcher_redact_secrets"`
+}
+
 // PermanentError signals that retrying the request will not help.
 type PermanentError struct {
 	StatusCode int
@@ -77,4 +81,37 @@ func (c *Client) Send(ctx context.Context, entry types.Entry) error {
 		return fmt.Errorf("server returned %d: %s", resp.StatusCode, msg)
 	}
 	return nil
+}
+
+func (c *Client) GetAgentConfig(ctx context.Context) (AgentConfig, error) {
+	req, err := http.NewRequest(http.MethodGet, c.serverURL+"/api/agent/config", nil)
+	if err != nil {
+		return AgentConfig{}, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("X-Blackbox-Agent-Key", c.token)
+	req.Header.Set("X-Blackbox-Node-Name", c.nodeName)
+	req = req.WithContext(ctx)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return AgentConfig{}, fmt.Errorf("fetch agent config: %w", err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		bodyBytes, readErr := io.ReadAll(io.LimitReader(resp.Body, 256))
+		msg := strings.TrimSpace(string(bodyBytes))
+		if readErr != nil {
+			msg = fmt.Sprintf("(could not read body: %v)", readErr)
+		}
+		return AgentConfig{}, fmt.Errorf("server returned %d: %s", resp.StatusCode, msg)
+	}
+
+	var config AgentConfig
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 8<<10)).Decode(&config); err != nil {
+		return AgentConfig{}, fmt.Errorf("decode agent config: %w", err)
+	}
+	return config, nil
 }

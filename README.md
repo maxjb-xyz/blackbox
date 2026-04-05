@@ -95,6 +95,7 @@ docker compose up -d
 ### Event Ingestion
 - **Docker events** — Automatic detection of container start, stop, die, create, pull, and delete events. Per-node, with a 3-second debounce to collapse rapid restarts.
 - **Config file watching** — inotify-based watching of `.yaml`, `.yml`, `.conf`, `.env`, `.json`, and `.ini` files via configurable `WATCH_PATHS`.
+- **Config diffs** — File change events include a bounded, redacted text diff in metadata for deeper timeline analysis.
 - **Uptime Kuma webhooks** — Ingest Down/Up state changes. Down events trigger automatic correlation: Blackbox queries the 120-second window before the incident for likely causes.
 - **Watchtower webhooks** — Ingest container image update events with version metadata.
 - **Manual entries** — Post arbitrary events from the UI or via the API.
@@ -152,7 +153,8 @@ docker compose up -d
 
 - `WATCH_PATHS` must match the container-side mount target, not the host source path. Example: `- /srv/stacks:/watch/stacks:ro` pairs with `WATCH_PATHS=/watch/stacks`.
 - On startup, the agent now logs a per-root registration line. If you see `failed to register root /watch/stacks`, the bind mount and `WATCH_PATHS` do not line up inside the container.
-- Some editors save by replacing files instead of writing them in place. Blackbox now emits alerts for those `rename` and `chmod` style config-file changes as well.
+- Some editors save by replacing files instead of writing them in place. Blackbox now emits alerts for those `rename` and `chmod-style` config-file changes as well.
+- File-change metadata now includes a small line diff when the file is UTF-8 text and under the tracking limit. Obvious secret values such as `TOKEN`, `PASSWORD`, and `CLIENT_SECRET` are redacted before upload.
 
 ### Agent Tokens
 

@@ -5,18 +5,21 @@ import {
   createAdminOIDCProvider,
   deleteAdminOIDCProvider,
   deleteAdminUser,
+  fetchAdminConfig,
   forceLogoutUser,
   getOIDCPolicy,
   listAdminOIDCProviders,
   listAdminUsers,
   revokeInvite,
   setOIDCPolicy,
+  updateFileWatcherSettings,
   updateAdminOIDCProvider,
   updateAdminUser,
 } from '../api/client'
 import type { AdminUser, OIDCProviderConfig } from '../api/client'
 import { readErrorMessage } from '../api/errorUtils'
 import { useSession } from '../session'
+import PageHeader from '../components/PageHeader'
 
 interface InviteCode {
   id: string
@@ -36,7 +39,7 @@ interface OIDCProviderFormState {
   enabled: boolean
 }
 
-type Tab = 'invites' | 'users' | 'oidc'
+type Tab = 'invites' | 'users' | 'oidc' | 'settings'
 type OIDCPolicy = 'open' | 'existing_only' | 'invite_required'
 
 const OIDC_POLICY_OPTIONS: Array<{ value: OIDCPolicy; description: string }> = [
@@ -94,9 +97,9 @@ export default function AdminPage() {
 
   return (
     <div>
-      <div style={{ padding: '18px 24px', borderBottom: '1px solid var(--border)', background: 'var(--surface)', display: 'flex', gap: 24, alignItems: 'center' }}>
-        <span style={{ color: 'var(--muted)', fontSize: '11px', letterSpacing: '0.1em' }}>ADMIN /</span>
-        {(['invites', 'users', 'oidc'] as Tab[]).map(t => (
+      <PageHeader
+        title="ADMIN /"
+        actions={(['invites', 'users', 'oidc', 'settings'] as Tab[]).map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -115,12 +118,13 @@ export default function AdminPage() {
             {t.toUpperCase()}
           </button>
         ))}
-      </div>
+      />
 
       <div style={{ padding: 24, maxWidth: 960, margin: '0 auto' }}>
         {tab === 'invites' && <InvitesTab />}
         {tab === 'users' && <UsersTab currentUserId={user?.user_id ?? ''} />}
         {tab === 'oidc' && <OIDCTab />}
+        {tab === 'settings' && <SettingsTab />}
       </div>
     </div>
   )
@@ -851,6 +855,109 @@ function OIDCTab() {
         )}
       </section>
     </div>
+  )
+}
+
+function SettingsTab() {
+  const [redactSecrets, setRedactSecrets] = useState(true)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
+
+  const loadSettings = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const config = await fetchAdminConfig()
+      setRedactSecrets(config.file_watcher_redact_secrets)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load settings')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadSettings()
+  }, [loadSettings])
+
+  async function handleSave() {
+    setSaving(true)
+    setError(null)
+    setMessage(null)
+    try {
+      const updated = await updateFileWatcherSettings(redactSecrets)
+      setRedactSecrets(updated.redact_secrets)
+      setMessage('File watcher settings updated')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save settings')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <section style={panelStyle}>
+      <div style={panelHeaderStyle}>
+        <span style={panelLabelStyle}>FILE WATCHER</span>
+      </div>
+
+      {message && <div style={{ color: 'var(--success)', fontSize: '12px', marginBottom: 12 }}>{message}</div>}
+      {error && <div style={{ color: 'var(--danger)', fontSize: '12px', marginBottom: 12 }}>{error}</div>}
+
+      {loading ? (
+        <div style={{ color: 'var(--muted)', fontSize: '12px' }}>loading...</div>
+      ) : (
+        <>
+          <label
+            style={{
+              display: 'flex',
+              gap: 10,
+              alignItems: 'flex-start',
+              border: '1px solid var(--border)',
+              padding: '12px 14px',
+              marginBottom: 16,
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={redactSecrets}
+              onChange={e => setRedactSecrets(e.target.checked)}
+              style={{ marginTop: 2 }}
+            />
+            <div>
+              <div style={{ color: 'var(--text)', fontSize: '11px', letterSpacing: '0.1em' }}>REDACT SECRETS IN FILE DIFFS</div>
+              <div style={{ color: 'var(--muted)', fontSize: '12px', marginTop: 4, lineHeight: '1.5' }}>
+                When enabled, obvious secret-bearing keys such as tokens, passwords, and client secrets are masked before file diffs are uploaded by agents.
+              </div>
+              <div style={{ color: 'var(--muted)', fontSize: '12px', marginTop: 8, lineHeight: '1.5' }}>
+                Agents refresh this setting periodically. Changing it affects newly captured file diffs, not historical entries already stored in Blackbox.
+              </div>
+            </div>
+          </label>
+
+          <button
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={saving}
+            style={{
+              background: saving ? 'var(--border)' : 'var(--accent)',
+              color: '#000',
+              border: 'none',
+              padding: '8px 16px',
+              fontFamily: 'inherit',
+              fontSize: '12px',
+              fontWeight: 'bold',
+              letterSpacing: '0.1em',
+              cursor: saving ? 'not-allowed' : 'pointer',
+            }}
+          >
+            {saving ? 'SAVING...' : 'SAVE'}
+          </button>
+        </>
+      )}
+    </section>
   )
 }
 
