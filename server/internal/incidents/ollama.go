@@ -19,6 +19,8 @@ const ollamaTimeout = 60 * time.Second
 const ollamaURLKey = "ollama_url"
 const ollamaModelKey = "ollama_model"
 
+var callOllamaFunc = callOllama
+
 type OllamaEnricher struct {
 	db            *gorm.DB
 	onIncidentSet func(string)
@@ -64,45 +66,37 @@ func (e *OllamaEnricher) EnrichAsync(incidentID string, linkedEntries []enrichEn
 	if e == nil {
 		return
 	}
-	go e.enrich(incidentID, linkedEntries)
-}
-
-func (e *OllamaEnricher) enrich(incidentID string, entries []enrichEntry) {
 	ollamaURL, ollamaModel := e.loadOllamaConfig()
 	if ollamaURL == "" || ollamaModel == "" {
 		return
 	}
+	if !e.setPending(incidentID, ollamaModel) {
+		return
+	}
+	go e.enrich(incidentID, linkedEntries, ollamaURL, ollamaModel)
+}
 
+func (e *OllamaEnricher) enrich(incidentID string, entries []enrichEntry, ollamaURL, ollamaModel string) {
 	var inc models.Incident
 	if err := e.db.First(&inc, "id = ?", incidentID).Error; err != nil {
+		e.clearPending(incidentID)
 		return
 	}
 
 	prompt := buildPrompt(inc, entries)
-	result, err := callOllama(ollamaURL, ollamaModel, prompt)
+	result, err := callOllamaFunc(ollamaURL, ollamaModel, prompt)
 	if err != nil {
 		log.Printf("incidents: ollama enrichment failed for %s: %v", incidentID, err)
+		e.clearPending(incidentID)
 		return
 	}
 
-	var meta map[string]interface{}
-	if err := json.Unmarshal([]byte(inc.Metadata), &meta); err != nil {
-		meta = make(map[string]interface{})
-	}
-	meta["ai_analysis"] = result
-	meta["ai_model"] = ollamaModel
-	meta["ai_enriched_at"] = time.Now().UTC().Format(time.RFC3339)
-
-	metaBytes, _ := json.Marshal(meta)
-	if err := e.db.Model(&models.Incident{}).Where("id = ?", incidentID).
-		Update("metadata", string(metaBytes)).Error; err != nil {
-		log.Printf("incidents: save ai metadata for %s: %v", incidentID, err)
-		return
-	}
-
-	if e.onIncidentSet != nil {
-		e.onIncidentSet(incidentID)
-	}
+	e.updateIncidentMetadata(incidentID, func(meta map[string]interface{}) {
+		delete(meta, "ai_pending")
+		meta["ai_analysis"] = result
+		meta["ai_model"] = ollamaModel
+		meta["ai_enriched_at"] = time.Now().UTC().Format(time.RFC3339)
+	})
 }
 
 func (e *OllamaEnricher) loadOllamaConfig() (url, model string) {
@@ -117,6 +111,43 @@ func (e *OllamaEnricher) loadOllamaConfig() (url, model string) {
 		}
 	}
 	return
+}
+
+func (e *OllamaEnricher) setPending(incidentID, ollamaModel string) bool {
+	return e.updateIncidentMetadata(incidentID, func(meta map[string]interface{}) {
+		meta["ai_pending"] = true
+		meta["ai_model"] = ollamaModel
+	})
+}
+
+func (e *OllamaEnricher) clearPending(incidentID string) {
+	e.updateIncidentMetadata(incidentID, func(meta map[string]interface{}) {
+		delete(meta, "ai_pending")
+	})
+}
+
+func (e *OllamaEnricher) updateIncidentMetadata(incidentID string, apply func(map[string]interface{})) bool {
+	var inc models.Incident
+	if err := e.db.First(&inc, "id = ?", incidentID).Error; err != nil {
+		return false
+	}
+
+	meta := make(map[string]interface{})
+	if err := json.Unmarshal([]byte(inc.Metadata), &meta); err != nil {
+		meta = make(map[string]interface{})
+	}
+	apply(meta)
+
+	metaBytes, _ := json.Marshal(meta)
+	if err := e.db.Model(&models.Incident{}).Where("id = ?", incidentID).
+		Update("metadata", string(metaBytes)).Error; err != nil {
+		log.Printf("incidents: save ai metadata for %s: %v", incidentID, err)
+		return false
+	}
+	if e.onIncidentSet != nil {
+		e.onIncidentSet(incidentID)
+	}
+	return true
 }
 
 func buildPrompt(inc models.Incident, entries []enrichEntry) string {

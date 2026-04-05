@@ -56,6 +56,10 @@ function roleColor(role: string): string {
   return 'var(--muted)'
 }
 
+function isIncidentAIPending(meta: Record<string, unknown>): boolean {
+  return meta.ai_pending === true
+}
+
 function incidentFingerprint(incident: Incident): string {
   return [
     incident.id,
@@ -133,7 +137,9 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
   const detailIncident = detail?.incident ?? incident
   const services = parseIncidentServices(detailIncident)
   const nodes = parseIncidentNodes(detailIncident)
+  const incidentMeta = parseIncidentMetadata(incident)
   const meta = parseIncidentMetadata(detailIncident)
+  const aiPending = isIncidentAIPending(incidentMeta) || isIncidentAIPending(meta)
 
   const toggle = useCallback(async () => {
     if (!expanded && !detail) {
@@ -190,6 +196,11 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
           )}
         </span>
         {statusLabel(incident)}
+        {aiPending && (
+          <span style={{ color: 'var(--accent)', fontSize: 11, marginLeft: 12, whiteSpace: 'nowrap', letterSpacing: '0.1em' }}>
+            AI THINKING
+          </span>
+        )}
         <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 12, whiteSpace: 'nowrap' }}>
           {formatTs(incident.opened_at)}
           {' → '}
@@ -280,6 +291,29 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
                   </div>
                 )
               })()}
+
+              {aiPending && typeof meta.ai_analysis !== 'string' && (
+                <div style={{ marginBottom: 8 }}>
+                  <div style={{ color: 'var(--muted)', marginBottom: 4, letterSpacing: '0.1em' }}>
+                    AI ANALYSIS
+                    {typeof meta.ai_model === 'string' && (
+                      <span style={{ color: 'var(--accent)', marginLeft: 8 }}>
+                        [AI · {meta.ai_model}]
+                      </span>
+                    )}
+                  </div>
+                  <div
+                    style={{
+                      borderTop: '1px solid var(--border)',
+                      paddingTop: 4,
+                      color: 'var(--accent)',
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    thinking...
+                  </div>
+                </div>
+              )}
 
               {typeof meta.ai_analysis === 'string' && (
                 <div>
