@@ -143,7 +143,7 @@ func TestInit_MigratesInviteCodeOIDCStateAndOIDCConfig(t *testing.T) {
 		ClientID:     "client-id",
 		ClientSecret: "client-secret",
 		RedirectURL:  "https://app.example.com/callback",
-		Enabled:      true,
+		Enabled:      models.BoolPtr(true),
 	}
 	assert.NoError(t, database.Create(&provider).Error)
 

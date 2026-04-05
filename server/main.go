@@ -63,36 +63,43 @@ func main() {
 		if err := database.Model(&models.OIDCProviderConfig{}).Count(&providerCount).Error; err != nil {
 			log.Printf("failed to count OIDC providers for env migration: %v", err)
 		} else if providerCount == 0 {
-			provider := models.OIDCProviderConfig{
-				ID:           ulid.Make().String(),
-				Name:         "SSO",
-				Issuer:       os.Getenv("OIDC_ISSUER"),
-				ClientID:     os.Getenv("OIDC_CLIENT_ID"),
-				ClientSecret: os.Getenv("OIDC_CLIENT_SECRET"),
-				RedirectURL:  os.Getenv("OIDC_REDIRECT_URL"),
-				Enabled:      true,
-			}
-			if err := database.Create(&provider).Error; err != nil {
-				log.Printf("failed to seed OIDC provider from env: %v", err)
+			issuer := strings.TrimSpace(os.Getenv("OIDC_ISSUER"))
+			clientID := strings.TrimSpace(os.Getenv("OIDC_CLIENT_ID"))
+			clientSecret := strings.TrimSpace(os.Getenv("OIDC_CLIENT_SECRET"))
+			redirectURL := strings.TrimSpace(os.Getenv("OIDC_REDIRECT_URL"))
+			if issuer == "" || clientID == "" || clientSecret == "" || redirectURL == "" {
+				log.Printf("OIDC_ENABLED=true but one or more required env vars are missing; skipping OIDC provider seed")
 			} else {
-				log.Printf("OIDC_ENABLED env vars detected, seeded 'SSO' provider — migrate to admin UI to manage")
+				provider := models.OIDCProviderConfig{
+					ID:           ulid.Make().String(),
+					Name:         "SSO",
+					Issuer:       issuer,
+					ClientID:     clientID,
+					ClientSecret: clientSecret,
+					RedirectURL:  redirectURL,
+					Enabled:      models.BoolPtr(true),
+				}
+				if err := database.Create(&provider).Error; err != nil {
+					log.Printf("failed to seed OIDC provider from env: %v", err)
+				} else {
+					log.Printf("OIDC_ENABLED env vars detected, seeded 'SSO' provider — migrate to admin UI to manage")
+				}
 			}
 		}
 	}
 
 	go func() {
-		const maxAttempts = 5
 		const retryInterval = 10 * time.Second
-		for i := 1; i <= maxAttempts; i++ {
+		for attempt := 1; ; attempt++ {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			err := registry.Reload(ctx)
 			cancel()
 			if err != nil {
-				log.Printf("OIDC registry reload attempt %d/%d failed: %v", i, maxAttempts, err)
+				log.Printf("OIDC registry reload attempt %d failed: %v", attempt, err)
 			} else {
 				providers, listErr := registry.ListEnabled()
 				if listErr != nil {
-					log.Printf("OIDC registry readiness check %d/%d failed: %v", i, maxAttempts, listErr)
+					log.Printf("OIDC registry readiness check %d failed: %v", attempt, listErr)
 				} else {
 					live := len(providers) == 0
 					for _, provider := range providers {
@@ -105,16 +112,13 @@ func main() {
 						if len(providers) > 0 {
 							log.Printf("OIDC registry ready")
 						}
-						return
+					} else {
+						log.Printf("OIDC registry reload attempt %d completed but no providers are currently available", attempt)
 					}
-					log.Printf("OIDC registry reload attempt %d/%d completed but no providers are currently available", i, maxAttempts)
 				}
 			}
-			if i < maxAttempts {
-				time.Sleep(retryInterval)
-			}
+			time.Sleep(retryInterval)
 		}
-		log.Printf("OIDC providers unavailable after %d attempts, OIDC routes will return 503 until reload succeeds", maxAttempts)
 	}()
 
 	r := chi.NewRouter()
@@ -126,7 +130,7 @@ func main() {
 		r.Use(middleware.RateLimit(10*time.Minute, 3))
 		r.Post("/api/auth/bootstrap", handlers.Bootstrap(database, jwtSecret))
 	})
-	r.Get("/api/auth/oidc/providers", handlers.ListPublicOIDCProviders(database))
+	r.Get("/api/auth/oidc/providers", handlers.ListPublicOIDCProviders(database, registry))
 	r.Get("/api/auth/oidc/{provider_id}/login", handlers.OIDCProviderLogin(database, registry))
 	r.Get("/api/auth/oidc/{provider_id}/callback", handlers.OIDCProviderCallback(database, registry, jwtSecret))
 	r.Group(func(r chi.Router) {

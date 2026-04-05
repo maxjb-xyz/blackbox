@@ -14,6 +14,7 @@ type OIDCRegistry struct {
 	mu        sync.RWMutex
 	providers map[string]*OIDCProvider
 	db        *gorm.DB
+	ready     bool
 }
 
 func NewOIDCRegistry(db *gorm.DB) *OIDCRegistry {
@@ -33,6 +34,28 @@ func (r *OIDCRegistry) Get(id string) *OIDCProvider {
 	return r.providers[id]
 }
 
+func (r *OIDCRegistry) IsReady() bool {
+	if r == nil {
+		return false
+	}
+
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.ready
+}
+
+func (r *OIDCRegistry) SetProvider(id string, provider *OIDCProvider) {
+	if r == nil || id == "" || provider == nil {
+		return
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.providers[id] = provider
+	r.ready = true
+}
+
 func (r *OIDCRegistry) Reload(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -43,7 +66,13 @@ func (r *OIDCRegistry) Reload(ctx context.Context) error {
 		return err
 	}
 
-	nextProviders := make(map[string]*OIDCProvider, len(providerConfigs))
+	r.mu.Lock()
+	nextProviders := make(map[string]*OIDCProvider, len(r.providers))
+	for id, provider := range r.providers {
+		nextProviders[id] = provider
+	}
+	r.mu.Unlock()
+
 	for _, providerConfig := range providerConfigs {
 		providerCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		provider, err := NewOIDCProvider(
@@ -56,13 +85,27 @@ func (r *OIDCRegistry) Reload(ctx context.Context) error {
 		cancel()
 		if err != nil {
 			log.Printf("oidc registry warning: provider %s unavailable: %v", providerConfig.ID, err)
+			if nextProviders[providerConfig.ID] != nil {
+				log.Printf("oidc registry warning: retaining previous provider %s after failed refresh", providerConfig.ID)
+			}
 			continue
 		}
 		nextProviders[providerConfig.ID] = provider
 	}
 
+	enabledIDs := make(map[string]struct{}, len(providerConfigs))
+	for _, providerConfig := range providerConfigs {
+		enabledIDs[providerConfig.ID] = struct{}{}
+	}
+	for id := range nextProviders {
+		if _, ok := enabledIDs[id]; !ok {
+			delete(nextProviders, id)
+		}
+	}
+
 	r.mu.Lock()
 	r.providers = nextProviders
+	r.ready = true
 	r.mu.Unlock()
 
 	return nil

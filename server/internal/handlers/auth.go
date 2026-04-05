@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"blackbox/server/internal/auth"
@@ -24,6 +25,8 @@ const (
 )
 
 var errAlreadyBootstrapped = errors.New("already bootstrapped")
+var errOIDCEmailAmbiguous = errors.New("oidc email match ambiguous")
+var errOIDCEmailAlreadyLinked = errors.New("oidc email already linked to a different identity")
 
 type oidcIDClaims struct {
 	Nonce             string `json:"nonce"`
@@ -166,7 +169,7 @@ func OIDCProviderLogin(database *gorm.DB, registry *auth.OIDCRegistry) http.Hand
 	return func(w http.ResponseWriter, r *http.Request) {
 		providerID := chi.URLParam(r, "provider_id")
 		var oidcProvider *auth.OIDCProvider
-		if registry != nil {
+		if registry != nil && registry.IsReady() {
 			oidcProvider = registry.Get(providerID)
 		}
 		if oidcProvider == nil {
@@ -262,7 +265,7 @@ func OIDCProviderCallback(database *gorm.DB, registry *auth.OIDCRegistry, jwtSec
 		}
 
 		var oidcProvider *auth.OIDCProvider
-		if registry != nil {
+		if registry != nil && registry.IsReady() {
 			oidcProvider = registry.Get(providerID)
 		}
 		if oidcProvider == nil {
@@ -302,39 +305,46 @@ func OIDCProviderCallback(database *gorm.DB, registry *auth.OIDCRegistry, jwtSec
 			writeError(w, http.StatusBadRequest, "nonce mismatch")
 			return
 		}
+		issuer := strings.TrimSpace(idToken.Issuer)
+		if issuer == "" {
+			cleanupState()
+			events.LogSystem(database, "auth", "user.login.oidc.failed", "OIDC callback error: missing issuer")
+			writeError(w, http.StatusUnauthorized, "invalid id_token issuer")
+			return
+		}
 
 		var user models.User
-		err = database.First(&user, "oidc_subject = ?", idClaims.Sub).Error
+		err = database.First(&user, "oidc_issuer = ? AND oidc_subject = ?", issuer, idClaims.Sub).Error
 		switch {
 		case err == nil:
 		case errors.Is(err, gorm.ErrRecordNotFound):
-			if idClaims.Email != "" {
-				err = database.First(&user, "email = ?", idClaims.Email).Error
-				switch {
-				case err == nil:
-					if err := database.Model(&user).Update("oidc_subject", idClaims.Sub).Error; err != nil {
-						cleanupState()
-						writeError(w, http.StatusInternalServerError, "failed to link account")
-						return
-					}
-					user.OIDCSubject = idClaims.Sub
-				case errors.Is(err, gorm.ErrRecordNotFound):
-					newUser, ok := handleNewOIDCUser(w, database, idClaims, oidcState, cleanupState)
-					if !ok {
-						return
-					}
-					user = newUser
-				default:
+			user, linkExisting, lookupErr := findOIDCUserByEmail(database, issuer, idClaims)
+			switch {
+			case lookupErr == nil && linkExisting:
+				if err := database.Model(&user).Updates(map[string]interface{}{
+					"oidc_issuer":  issuer,
+					"oidc_subject": idClaims.Sub,
+				}).Error; err != nil {
 					cleanupState()
-					writeError(w, http.StatusInternalServerError, "failed to lookup user")
+					writeError(w, http.StatusInternalServerError, "failed to link account")
 					return
 				}
-			} else {
-				newUser, ok := handleNewOIDCUser(w, database, idClaims, oidcState, cleanupState)
+				user.OIDCIssuer = issuer
+				user.OIDCSubject = idClaims.Sub
+			case lookupErr == nil:
+				newUser, ok := handleNewOIDCUser(w, database, issuer, idClaims, oidcState, cleanupState)
 				if !ok {
 					return
 				}
 				user = newUser
+			case errors.Is(lookupErr, errOIDCEmailAmbiguous), errors.Is(lookupErr, errOIDCEmailAlreadyLinked):
+				cleanupState()
+				writeError(w, http.StatusConflict, lookupErr.Error())
+				return
+			default:
+				cleanupState()
+				writeError(w, http.StatusInternalServerError, "failed to lookup user")
+				return
 			}
 		default:
 			cleanupState()
@@ -360,8 +370,13 @@ func OIDCProviderCallback(database *gorm.DB, registry *auth.OIDCRegistry, jwtSec
 
 // handleNewOIDCUser applies the OIDC access policy and creates a new user if allowed.
 // Returns the created user and true on success, or writes an error response and returns false.
-func handleNewOIDCUser(w http.ResponseWriter, database *gorm.DB, idClaims oidcIDClaims, oidcState models.OIDCState, cleanupState func()) (models.User, bool) {
-	policy := getOIDCPolicy(database)
+func handleNewOIDCUser(w http.ResponseWriter, database *gorm.DB, issuer string, idClaims oidcIDClaims, oidcState models.OIDCState, cleanupState func()) (models.User, bool) {
+	policy, err := getOIDCPolicy(database)
+	if err != nil {
+		cleanupState()
+		writeError(w, http.StatusInternalServerError, "failed to load OIDC policy")
+		return models.User{}, false
+	}
 	switch policy {
 	case "existing_only":
 		cleanupState()
@@ -372,6 +387,7 @@ func handleNewOIDCUser(w http.ResponseWriter, database *gorm.DB, idClaims oidcID
 			ID:          ulid.Make().String(),
 			Username:    preferredOIDCUsername(idClaims),
 			Email:       idClaims.Email,
+			OIDCIssuer:  issuer,
 			OIDCSubject: idClaims.Sub,
 			IsAdmin:     false,
 			CreatedAt:   time.Now(),
@@ -404,6 +420,7 @@ func handleNewOIDCUser(w http.ResponseWriter, database *gorm.DB, idClaims oidcID
 			ID:          ulid.Make().String(),
 			Username:    preferredOIDCUsername(idClaims),
 			Email:       idClaims.Email,
+			OIDCIssuer:  issuer,
 			OIDCSubject: idClaims.Sub,
 			IsAdmin:     false,
 			CreatedAt:   time.Now(),
@@ -415,6 +432,33 @@ func handleNewOIDCUser(w http.ResponseWriter, database *gorm.DB, idClaims oidcID
 		}
 		return user, true
 	}
+}
+
+func findOIDCUserByEmail(database *gorm.DB, issuer string, idClaims oidcIDClaims) (models.User, bool, error) {
+	if issuer == "" || strings.TrimSpace(idClaims.Email) == "" {
+		return models.User{}, false, nil
+	}
+
+	var matches []models.User
+	if err := database.Where("email = ?", idClaims.Email).Limit(2).Find(&matches).Error; err != nil {
+		return models.User{}, false, err
+	}
+	if len(matches) == 0 {
+		return models.User{}, false, nil
+	}
+	if len(matches) > 1 {
+		return models.User{}, false, errOIDCEmailAmbiguous
+	}
+
+	user := matches[0]
+	if user.OIDCIssuer == "" && user.OIDCSubject == "" {
+		return user, true, nil
+	}
+	if user.OIDCIssuer == issuer && user.OIDCSubject == idClaims.Sub {
+		return user, true, nil
+	}
+
+	return models.User{}, false, errOIDCEmailAlreadyLinked
 }
 
 func preferredOIDCUsername(claims oidcIDClaims) string {

@@ -4,8 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
 	"net/http"
+	"regexp"
+	"strings"
 	"time"
 
 	"blackbox/server/internal/auth"
@@ -33,16 +34,21 @@ type publicOIDCProviderResponse struct {
 	Name string `json:"name"`
 }
 
-func getOIDCPolicy(db *gorm.DB) string {
+var oidcProviderIDPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
+
+func getOIDCPolicy(db *gorm.DB) (string, error) {
 	var setting models.AppSetting
 	if err := db.First(&setting, "key = ?", "oidc_policy").Error; err != nil {
-		return "open"
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "open", nil
+		}
+		return "", err
 	}
 	switch setting.Value {
 	case "open", "existing_only", "invite_required":
-		return setting.Value
+		return setting.Value, nil
 	default:
-		return "open"
+		return "", errors.New("invalid OIDC policy value")
 	}
 }
 
@@ -79,6 +85,7 @@ func CreateOIDCProvider(db *gorm.DB, registry *auth.OIDCRegistry) http.HandlerFu
 		}
 
 		var req struct {
+			ID           string `json:"id"`
 			Name         string `json:"name"`
 			Issuer       string `json:"issuer"`
 			ClientID     string `json:"client_id"`
@@ -89,8 +96,20 @@ func CreateOIDCProvider(db *gorm.DB, registry *auth.OIDCRegistry) http.HandlerFu
 		if !decodeJSONBody(w, r, 8<<10, &req) {
 			return
 		}
+		req.ID = strings.TrimSpace(req.ID)
+		req.Name = strings.TrimSpace(req.Name)
+		req.Issuer = strings.TrimSpace(req.Issuer)
+		req.ClientID = strings.TrimSpace(req.ClientID)
+		req.RedirectURL = strings.TrimSpace(req.RedirectURL)
 		if req.Name == "" || req.Issuer == "" || req.ClientID == "" || req.ClientSecret == "" || req.RedirectURL == "" {
 			writeError(w, http.StatusBadRequest, "name, issuer, client_id, client_secret, and redirect_url required")
+			return
+		}
+		if req.ID == "" {
+			req.ID = ulid.Make().String()
+		}
+		if !oidcProviderIDPattern.MatchString(req.ID) {
+			writeError(w, http.StatusBadRequest, "invalid provider id")
 			return
 		}
 
@@ -100,20 +119,23 @@ func CreateOIDCProvider(db *gorm.DB, registry *auth.OIDCRegistry) http.HandlerFu
 		}
 
 		provider := models.OIDCProviderConfig{
-			ID:           ulid.Make().String(),
+			ID:           req.ID,
 			Name:         req.Name,
 			Issuer:       req.Issuer,
 			ClientID:     req.ClientID,
 			ClientSecret: req.ClientSecret,
 			RedirectURL:  req.RedirectURL,
-			Enabled:      enabled,
+			Enabled:      models.BoolPtr(enabled),
 		}
 		if err := db.Create(&provider).Error; err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to create OIDC provider")
 			return
 		}
 
-		reloadOIDCRegistryAsync(registry)
+		if err := reloadOIDCRegistry(r.Context(), registry); err != nil {
+			writeError(w, http.StatusInternalServerError, "OIDC provider saved but registry reload failed")
+			return
+		}
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
@@ -141,6 +163,7 @@ func UpdateOIDCProvider(db *gorm.DB, registry *auth.OIDCRegistry) http.HandlerFu
 		}
 
 		var req struct {
+			ID           *string `json:"id"`
 			Name         *string `json:"name"`
 			Issuer       *string `json:"issuer"`
 			ClientID     *string `json:"client_id"`
@@ -151,17 +174,45 @@ func UpdateOIDCProvider(db *gorm.DB, registry *auth.OIDCRegistry) http.HandlerFu
 		if !decodeJSONBody(w, r, 8<<10, &req) {
 			return
 		}
+		if req.ID != nil {
+			trimmed := strings.TrimSpace(*req.ID)
+			if trimmed == "" {
+				writeError(w, http.StatusBadRequest, "id cannot be empty")
+				return
+			}
+			if !oidcProviderIDPattern.MatchString(trimmed) {
+				writeError(w, http.StatusBadRequest, "invalid provider id")
+				return
+			}
+			req.ID = &trimmed
+		}
+		if req.Name != nil {
+			trimmed := strings.TrimSpace(*req.Name)
+			req.Name = &trimmed
+		}
 		if req.Name != nil && *req.Name == "" {
 			writeError(w, http.StatusBadRequest, "name cannot be empty")
 			return
+		}
+		if req.Issuer != nil {
+			trimmed := strings.TrimSpace(*req.Issuer)
+			req.Issuer = &trimmed
 		}
 		if req.Issuer != nil && *req.Issuer == "" {
 			writeError(w, http.StatusBadRequest, "issuer cannot be empty")
 			return
 		}
+		if req.ClientID != nil {
+			trimmed := strings.TrimSpace(*req.ClientID)
+			req.ClientID = &trimmed
+		}
 		if req.ClientID != nil && *req.ClientID == "" {
 			writeError(w, http.StatusBadRequest, "client_id cannot be empty")
 			return
+		}
+		if req.RedirectURL != nil {
+			trimmed := strings.TrimSpace(*req.RedirectURL)
+			req.RedirectURL = &trimmed
 		}
 		if req.RedirectURL != nil && *req.RedirectURL == "" {
 			writeError(w, http.StatusBadRequest, "redirect_url cannot be empty")
@@ -169,6 +220,9 @@ func UpdateOIDCProvider(db *gorm.DB, registry *auth.OIDCRegistry) http.HandlerFu
 		}
 
 		updates := map[string]interface{}{}
+		if req.ID != nil {
+			updates["id"] = *req.ID
+		}
 		if req.Name != nil {
 			updates["name"] = *req.Name
 		}
@@ -188,18 +242,25 @@ func UpdateOIDCProvider(db *gorm.DB, registry *auth.OIDCRegistry) http.HandlerFu
 			updates["enabled"] = *req.Enabled
 		}
 
+		updatedProviderID := providerID
+		if req.ID != nil {
+			updatedProviderID = *req.ID
+		}
 		if len(updates) > 0 {
 			if err := db.Model(&provider).Updates(updates).Error; err != nil {
 				writeError(w, http.StatusInternalServerError, "failed to update OIDC provider")
 				return
 			}
-			if err := db.First(&provider, "id = ?", providerID).Error; err != nil {
+			if err := db.First(&provider, "id = ?", updatedProviderID).Error; err != nil {
 				writeError(w, http.StatusInternalServerError, "failed to fetch updated OIDC provider")
 				return
 			}
 		}
 
-		reloadOIDCRegistryAsync(registry)
+		if err := reloadOIDCRegistry(r.Context(), registry); err != nil {
+			writeError(w, http.StatusInternalServerError, "OIDC provider saved but registry reload failed")
+			return
+		}
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(toOIDCProviderResponse(provider))
@@ -225,7 +286,10 @@ func DeleteOIDCProvider(db *gorm.DB, registry *auth.OIDCRegistry) http.HandlerFu
 			return
 		}
 
-		reloadOIDCRegistryAsync(registry)
+		if err := reloadOIDCRegistry(r.Context(), registry); err != nil {
+			writeError(w, http.StatusInternalServerError, "OIDC provider deleted but registry reload failed")
+			return
+		}
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
@@ -240,8 +304,14 @@ func GetOIDCPolicy(db *gorm.DB) http.HandlerFunc {
 			return
 		}
 
+		policy, err := getOIDCPolicy(db)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to load OIDC policy")
+			return
+		}
+
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]string{"policy": getOIDCPolicy(db)})
+		_ = json.NewEncoder(w).Encode(map[string]string{"policy": policy})
 	}
 }
 
@@ -287,20 +357,36 @@ func SetOIDCPolicy(db *gorm.DB) http.HandlerFunc {
 	}
 }
 
-func ListPublicOIDCProviders(db *gorm.DB) http.HandlerFunc {
+func ListPublicOIDCProviders(db *gorm.DB, registry *auth.OIDCRegistry) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var providers []models.OIDCProviderConfig
 		if err := db.Where("enabled = ?", true).Order("name ASC").Find(&providers).Error; err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to list OIDC providers")
 			return
 		}
+		if len(providers) == 0 {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string][]publicOIDCProviderResponse{"providers": []publicOIDCProviderResponse{}})
+			return
+		}
+		if registry == nil || !registry.IsReady() {
+			writeError(w, http.StatusServiceUnavailable, "OIDC providers unavailable")
+			return
+		}
 
-		resp := make([]publicOIDCProviderResponse, len(providers))
-		for i, provider := range providers {
-			resp[i] = publicOIDCProviderResponse{
+		resp := make([]publicOIDCProviderResponse, 0, len(providers))
+		for _, provider := range providers {
+			if registry.Get(provider.ID) == nil {
+				continue
+			}
+			resp = append(resp, publicOIDCProviderResponse{
 				ID:   provider.ID,
 				Name: provider.Name,
-			}
+			})
+		}
+		if len(resp) == 0 {
+			writeError(w, http.StatusServiceUnavailable, "OIDC providers unavailable")
+			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -316,20 +402,18 @@ func toOIDCProviderResponse(provider models.OIDCProviderConfig) oidcProviderResp
 		ClientID:     provider.ClientID,
 		ClientSecret: "***",
 		RedirectURL:  provider.RedirectURL,
-		Enabled:      provider.Enabled,
+		Enabled:      provider.Enabled != nil && *provider.Enabled,
 		CreatedAt:    provider.CreatedAt,
 		UpdatedAt:    provider.UpdatedAt,
 	}
 }
 
-func reloadOIDCRegistryAsync(registry *auth.OIDCRegistry) {
+func reloadOIDCRegistry(parent context.Context, registry *auth.OIDCRegistry) error {
 	if registry == nil {
-		return
+		return nil
 	}
 
-	go func() {
-		if err := registry.Reload(context.Background()); err != nil {
-			log.Printf("oidc registry reload failed: %v", err)
-		}
-	}()
+	ctx, cancel := context.WithTimeout(parent, 15*time.Second)
+	defer cancel()
+	return registry.Reload(ctx)
 }

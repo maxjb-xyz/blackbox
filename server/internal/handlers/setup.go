@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"blackbox/server/internal/auth"
@@ -28,7 +29,10 @@ func HealthCheck(database *gorm.DB, registry *auth.OIDCRegistry) http.HandlerFun
 		oidcStatus := "disabled"
 		oidcEnabled := false
 		var providers []models.OIDCProviderConfig
-		if err := database.Where("enabled = ?", true).Find(&providers).Error; err == nil && len(providers) > 0 {
+		if err := database.Where("enabled = ?", true).Find(&providers).Error; err != nil {
+			oidcEnabled = true
+			oidcStatus = fmt.Sprintf("error: %v", err)
+		} else if len(providers) > 0 {
 			oidcEnabled = true
 			oidcStatus = "unavailable"
 			if registry != nil {
