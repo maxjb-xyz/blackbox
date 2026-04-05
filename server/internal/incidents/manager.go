@@ -21,8 +21,9 @@ type pendingWatchtower struct {
 
 // Manager evaluates incoming entries and manages the incident lifecycle.
 type Manager struct {
-	db  *gorm.DB
-	hub *hub.Hub
+	db       *gorm.DB
+	hub      *hub.Hub
+	enricher *OllamaEnricher
 
 	mu            sync.Mutex
 	openIncidents map[string]string            // normalizedService -> incidentID
@@ -32,13 +33,15 @@ type Manager struct {
 
 // NewManager creates a Manager. Call Run in a goroutine.
 func NewManager(db *gorm.DB, h *hub.Hub) *Manager {
-	return &Manager{
+	m := &Manager{
 		db:            db,
 		hub:           h,
 		openIncidents: make(map[string]string),
 		pendingWT:     make(map[string]pendingWatchtower),
 		recentDies:    make(map[string][]time.Time),
 	}
+	m.enricher = NewOllamaEnricher(db, m.broadcastUpdated)
+	return m
 }
 
 // NewChannel returns a buffered channel sized for the Manager.

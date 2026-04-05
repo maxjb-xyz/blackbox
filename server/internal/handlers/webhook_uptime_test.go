@@ -26,7 +26,7 @@ func TestWebhookUptime_DownEvent_NoCorrelation(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	handlers.WebhookUptime(database, nil)(w, req)
+	handlers.WebhookUptime(database, nil, nil)(w, req)
 
 	assert.Equal(t, http.StatusCreated, w.Code)
 
@@ -73,7 +73,7 @@ func TestWebhookUptime_DownEvent_WithCorrelation(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	handlers.WebhookUptime(database, nil)(w, req)
+	handlers.WebhookUptime(database, nil, nil)(w, req)
 
 	assert.Equal(t, http.StatusCreated, w.Code)
 
@@ -92,6 +92,7 @@ func TestWebhookUptime_DownEvent_WithCorrelation(t *testing.T) {
 	assert.Equal(t, "homelab-01", meta["cause_node"])
 	assert.Equal(t, "die", meta["cause_event"])
 	assert.Equal(t, "01AGENTENTRY000001", meta["cause_entry_id"])
+	assert.Equal(t, float64(60), meta["cause_score"])
 }
 
 func TestWebhookUptime_UpEvent(t *testing.T) {
@@ -105,7 +106,7 @@ func TestWebhookUptime_UpEvent(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	handlers.WebhookUptime(database, nil)(w, req)
+	handlers.WebhookUptime(database, nil, nil)(w, req)
 
 	assert.Equal(t, http.StatusCreated, w.Code)
 
@@ -152,7 +153,7 @@ func TestWebhookUptime_UpEvent_AddsOutageDurationAndNormalizesService(t *testing
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	handlers.WebhookUptime(database, nil)(w, req)
+	handlers.WebhookUptime(database, nil, nil)(w, req)
 
 	require.Equal(t, http.StatusCreated, w.Code)
 
@@ -193,7 +194,7 @@ func TestWebhookUptime_UpEvent_UsesRawAliasHistoryDuringRollout(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	handlers.WebhookUptime(database, nil)(w, req)
+	handlers.WebhookUptime(database, nil, nil)(w, req)
 
 	require.Equal(t, http.StatusCreated, w.Code)
 
@@ -230,7 +231,7 @@ func TestWebhookUptime_UpEvent_ClampsNegativeOutageDuration(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	handlers.WebhookUptime(database, nil)(w, req)
+	handlers.WebhookUptime(database, nil, nil)(w, req)
 
 	require.Equal(t, http.StatusCreated, w.Code)
 
@@ -288,7 +289,7 @@ func TestWebhookUptime_UpEvent_PrefersLatestPriorDownAtOrBeforeRecovery(t *testi
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	handlers.WebhookUptime(database, nil)(w, req)
+	handlers.WebhookUptime(database, nil, nil)(w, req)
 
 	require.Equal(t, http.StatusCreated, w.Code)
 
@@ -309,7 +310,7 @@ func TestWebhookUptime_MissingMonitorName(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	handlers.WebhookUptime(database, nil)(w, req)
+	handlers.WebhookUptime(database, nil, nil)(w, req)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 
@@ -326,7 +327,7 @@ func TestWebhookUptime_RejectsWhitespaceOnlyMonitorName(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	handlers.WebhookUptime(database, nil)(w, req)
+	handlers.WebhookUptime(database, nil, nil)(w, req)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 
@@ -342,7 +343,7 @@ func TestWebhookUptime_MalformedJSON(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	handlers.WebhookUptime(database, nil)(w, req)
+	handlers.WebhookUptime(database, nil, nil)(w, req)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
@@ -369,7 +370,7 @@ func TestWebhookUptime_BadTimestampFallsBackAndSetsFlag(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	before := time.Now().UTC()
-	handlers.WebhookUptime(database, nil)(w, req)
+	handlers.WebhookUptime(database, nil, nil)(w, req)
 	after := time.Now().UTC()
 
 	assert.Equal(t, http.StatusCreated, w.Code)
