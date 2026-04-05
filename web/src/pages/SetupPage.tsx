@@ -61,8 +61,8 @@ export default function SetupPage({ onBootstrapped }: SetupPageProps) {
     <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg)' }}>
       <div className="w-full max-w-sm" style={{ border: '1px solid var(--border)', padding: '2rem' }}>
         <div className="flex items-center gap-2 mb-6">
-          <Terminal size={16} style={{ color: 'var(--accent)' }} />
-          <span style={{ color: 'var(--accent)', fontSize: '11px', letterSpacing: '0.1em' }}>
+          <Terminal size={16} style={{ color: 'var(--muted)' }} />
+          <span style={{ color: 'var(--muted)', fontSize: '12px', letterSpacing: '0.1em' }}>
             BLACKBOX / INITIAL SETUP
           </span>
         </div>

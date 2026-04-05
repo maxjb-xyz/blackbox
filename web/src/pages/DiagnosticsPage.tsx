@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { CheckCircle, XCircle } from 'lucide-react'
 import { checkHealth } from '../api/client'
 import type { HealthStatus } from '../api/client'
+import PageHeader from '../components/PageHeader'
 
 export default function DiagnosticsPage() {
   const [health, setHealth] = useState<HealthStatus | null>(null)
@@ -42,35 +43,26 @@ export default function DiagnosticsPage() {
 
   return (
     <div style={{ minHeight: '100%', background: '#0B0B0B', fontFamily: 'JetBrains Mono, Fira Code, Cascadia Code, ui-monospace, monospace' }}>
-      <div
-        style={{
-          padding: '8px 10px',
-          borderBottom: '1px solid var(--border)',
-          background: '#0B0B0B',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}
-      >
-        <span style={{ color: 'var(--muted)', fontSize: '11px', letterSpacing: '0.1em' }}>
-          DIAGNOSTICS / SYSTEM HEALTH
-        </span>
-        <button
-          onClick={reload}
-          style={{
-            background: 'none',
-            border: '1px solid var(--border)',
-            color: 'var(--muted)',
-            padding: '2px 8px',
-            fontFamily: 'JetBrains Mono, Fira Code, Cascadia Code, ui-monospace, monospace',
-            fontSize: '11px',
-            cursor: 'pointer',
-            letterSpacing: '0.05em',
-          }}
-        >
-          REFRESH
-        </button>
-      </div>
+      <PageHeader
+        title="DIAGNOSTICS / SYSTEM HEALTH"
+        actions={(
+          <button
+            onClick={reload}
+            style={{
+              background: 'none',
+              border: '1px solid var(--border)',
+              color: 'var(--muted)',
+              padding: '4px 10px',
+              fontFamily: 'JetBrains Mono, Fira Code, Cascadia Code, ui-monospace, monospace',
+              fontSize: '11px',
+              cursor: 'pointer',
+              letterSpacing: '0.05em',
+            }}
+          >
+            REFRESH
+          </button>
+        )}
+      />
       <div style={{ padding: '10px 16px', maxWidth: 960, margin: '0 auto', background: '#0B0B0B' }}>
         {healthError && (
           <div style={{ color: 'var(--danger)', fontSize: '12px', marginBottom: 12 }}>
