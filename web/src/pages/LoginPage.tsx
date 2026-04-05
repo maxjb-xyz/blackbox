@@ -14,7 +14,7 @@ function sanitizeRedirectTo(value: string | null) {
 export default function LoginPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const { refreshSession } = useSession()
+  const { user, loading: sessionLoading, refreshSession } = useSession()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -35,26 +35,31 @@ export default function LoginPage() {
 
   const redirectTo = sanitizeRedirectTo(searchParams.get('redirect_to'))
 
+  useEffect(() => {
+    if (!sessionLoading && user) {
+      navigate(redirectTo, { replace: true })
+    }
+  }, [navigate, redirectTo, sessionLoading, user])
+
+  if (sessionLoading || user) {
+    return null
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
     setLoading(true)
     try {
       await login(username, password)
-      let user = null
-      try {
-        user = await refreshSession()
-      } catch (err) {
-        console.error('LoginPage: failed to refresh session after login', err)
-        setError('Login succeeded, but session refresh failed. Please try again.')
-        return
-      }
+      // Deliberately shadow the outer user with the local user from refreshSession so this handler can
+      // inspect the immediate return value; refreshSession can return null for a superseded request even
+      // when the outer user updates later, so the setError path here is intentional.
+      const user = await refreshSession()
       if (!user) {
         console.error('LoginPage: refreshSession returned no user after login')
         setError('Login succeeded, but session could not be loaded. Please try again.')
         return
       }
-      navigate(redirectTo, { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed')
     } finally {

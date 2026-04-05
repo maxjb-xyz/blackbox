@@ -9,6 +9,12 @@
   --accent: #FF3333;
   --success: #00CC44;
   --danger: #FF4444;
+  --info: #3399FF;
+  --warning: #FF9900;
+  --success-bg: color-mix(in srgb, var(--success) 8%, transparent);
+  --danger-bg: color-mix(in srgb, var(--danger) 8%, transparent);
+  --info-bg: color-mix(in srgb, var(--info) 8%, transparent);
+  --warning-bg: color-mix(in srgb, var(--warning) 8%, transparent);
 }
 
 * {

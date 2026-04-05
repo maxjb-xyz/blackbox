@@ -8,13 +8,6 @@ import { useWebSocketContext } from '../components/WebSocketProvider'
 
 const SOURCE_OPTIONS = ['', 'docker', 'files', 'agent', 'webhook']
 
-const SOURCE_TINT: Record<string, string> = {
-  docker: 'rgba(26, 58, 92, 0.35)',
-  files: 'rgba(58, 46, 10, 0.35)',
-  webhook: 'rgba(42, 26, 58, 0.35)',
-  agent: 'rgba(10, 46, 46, 0.35)',
-}
-
 const FILTER_CONTROL_STYLE = {
   background: 'var(--bg)',
   border: '1px solid var(--border)',
@@ -26,16 +19,27 @@ const FILTER_CONTROL_STYLE = {
 const ROW_GRID_TEMPLATE = '20px 130px 110px 80px 140px 90px minmax(0, 1fr)'
 
 function eventBorderColor(event: string): string {
-  if (event === 'die' || event === 'down') return '#FF4444'
+  if (event === 'stop' || event === 'die' || event === 'down') return 'var(--danger)'
   if (event === 'start' || event === 'up') return 'var(--success)'
-  if (event === 'update') return '#FF9900'
+  if (event === 'pull') return 'var(--info)'
+  if (event === 'restart' || event === 'update') return 'var(--warning)'
   return 'var(--border)'
 }
 
 function eventTextColor(event: string): string {
-  if (event === 'die' || event === 'down') return '#FF4444'
+  if (event === 'stop' || event === 'die' || event === 'down') return 'var(--danger)'
   if (event === 'start' || event === 'up') return 'var(--success)'
+  if (event === 'pull') return 'var(--info)'
+  if (event === 'restart' || event === 'update') return 'var(--warning)'
   return 'var(--text)'
+}
+
+function eventCardBackground(event: string): string {
+  if (event === 'stop' || event === 'die' || event === 'down') return 'var(--danger-bg)'
+  if (event === 'start' || event === 'up') return 'var(--success-bg)'
+  if (event === 'pull') return 'var(--info-bg)'
+  if (event === 'restart' || event === 'update') return 'var(--warning-bg)'
+  return 'var(--surface)'
 }
 
 function formatTimestamp(ts?: string | null) {
@@ -1089,7 +1093,7 @@ function TimelineCard({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip
       }
       onMouseLeave={possibleCause ? onTooltipClear : undefined}
       style={{
-        background: SOURCE_TINT[entry.source] ?? 'var(--surface)',
+        background: eventCardBackground(entry.event),
         borderLeft: `3px solid ${eventBorderColor(entry.event)}`,
         padding: '14px 18px',
         cursor: 'pointer',
