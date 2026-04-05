@@ -516,6 +516,7 @@ The database is automatically migrated on startup — no manual schema managemen
 - [x] Incidents UI + sidebar badge
 - [ ] Timeline UI polish and interaction improvements
 - [ ] Grafana data source plugin
+- [ ] Optional AI-Enhanced correlation engine
 - [ ] Mobile-friendly view
 
 ---
