@@ -25,8 +25,8 @@ func Register(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 		if !decodeJSONBody(w, r, maxCredentialBodyBytes, &req) {
 			return
 		}
-		if req.Username == "" || req.Password == "" || req.InviteCode == "" {
-			writeError(w, http.StatusBadRequest, "username, password, and invite_code required")
+		if req.Username == "" || req.Password == "" || req.Email == "" || req.InviteCode == "" {
+			writeError(w, http.StatusBadRequest, "username, password, email, and invite_code required")
 			return
 		}
 

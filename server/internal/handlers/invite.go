@@ -98,25 +98,30 @@ func RevokeInvite(database *gorm.DB) http.HandlerFunc {
 		}
 
 		inviteID := chi.URLParam(r, "id")
-		var invite models.InviteCode
-		if err := database.First(&invite, "id = ?", inviteID).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				writeError(w, http.StatusNotFound, "invite not found")
+		result := database.Where("id = ? AND used_by = ''", inviteID).Delete(&models.InviteCode{})
+		if result.Error != nil {
+			writeError(w, http.StatusInternalServerError, "failed to revoke invite")
+			return
+		}
+		if result.RowsAffected == 0 {
+			var invite models.InviteCode
+			if err := database.First(&invite, "id = ?", inviteID).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					writeError(w, http.StatusNotFound, "invite not found")
+					return
+				}
+				writeError(w, http.StatusInternalServerError, "failed to fetch invite")
 				return
 			}
-			writeError(w, http.StatusInternalServerError, "failed to fetch invite")
-			return
-		}
-		if invite.UsedBy != "" {
-			writeError(w, http.StatusConflict, "invite already used")
-			return
-		}
-		if err := database.Delete(&invite).Error; err != nil {
+			if invite.UsedBy != "" {
+				writeError(w, http.StatusConflict, "invite already used")
+				return
+			}
 			writeError(w, http.StatusInternalServerError, "failed to revoke invite")
 			return
 		}
 
-		events.LogSystem(database, "auth", "invite.revoked", "invite "+invite.ID+" revoked")
+		events.LogSystem(database, "auth", "invite.revoked", "invite "+inviteID+" revoked")
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
