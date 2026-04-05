@@ -84,12 +84,11 @@ func ScoreCauses(db *gorm.DB, services []string, at time.Time) ([]CauseCandidate
 // ApplyNodeBonus adds +20 to candidates from the same node as triggerNode
 // and re-sorts by score descending.
 func ApplyNodeBonus(candidates []CauseCandidate, triggerNode string) {
-	if triggerNode == "" {
-		return
-	}
-	for i := range candidates {
-		if candidates[i].Entry.NodeName == triggerNode {
-			candidates[i].Score += 20
+	if triggerNode != "" {
+		for i := range candidates {
+			if candidates[i].Entry.NodeName == triggerNode {
+				candidates[i].Score += 20
+			}
 		}
 	}
 	sort.Slice(candidates, func(i, j int) bool { return causeCandidateLess(candidates[i], candidates[j]) })
