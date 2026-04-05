@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	dockercontainer "github.com/docker/docker/api/types/container"
 	dockerevents "github.com/docker/docker/api/types/events"
 
 	"blackbox/shared/types"
@@ -115,12 +116,80 @@ func TestEventCollapser_EmitsImmediateStartAndPassesThroughImageEvents(t *testin
 		t.Fatalf("expected 1 raw event for start, got %d", len(startMeta.RawEvents))
 	}
 
-	imageEntries := collapser.Handle(base.Add(time.Second), testDockerMessage(base.Add(time.Second), "image", "pull", "sha256:abc123", "", ""))
+	imageEntries := collapser.Handle(
+		base.Add(time.Second),
+		testDockerMessage(base.Add(time.Second), "image", "pull", "sha256:abc123", "lscr.io/linuxserver/sonarr:latest", ""),
+	)
 	if len(imageEntries) != 1 {
 		t.Fatalf("expected 1 image entry, got %d", len(imageEntries))
 	}
-	if imageEntries[0].Event != "pull" || imageEntries[0].Content != "image pulled: sha256:abc123" {
+	if imageEntries[0].Event != "pull" || imageEntries[0].Content != "Image pulled: sonarr" {
 		t.Fatalf("unexpected image entry: %+v", imageEntries[0])
+	}
+	if imageEntries[0].Service != "sonarr" {
+		t.Fatalf("expected image service sonarr, got %q", imageEntries[0].Service)
+	}
+}
+
+func TestBuildEntry_StripsGeneratedPrefixesFromContainerNames(t *testing.T) {
+	entry := buildEntry(
+		"node-1",
+		testDockerMessage(time.Now().UTC(), "container", "create", "abc123", "hor2httb23tu3itbitb_sonarr", ""),
+		nil,
+	)
+
+	if entry.Service != "sonarr" {
+		t.Fatalf("expected service sonarr, got %q", entry.Service)
+	}
+	if entry.Content != "Container created: sonarr" {
+		t.Fatalf("unexpected content: %q", entry.Content)
+	}
+}
+
+func TestBuildEntry_UsesContainerLookupForImagePullService(t *testing.T) {
+	resolver := newServiceResolver(fakeDockerResolverClient{
+		containers: []dockercontainer.Summary{
+			{
+				Image:   "lscr.io/linuxserver/sonarr:latest",
+				ImageID: "sha256:abc123",
+				Names:   []string{"/generatedprefix_sonarr"},
+				Labels:  map[string]string{"com.docker.compose.service": "sonarr"},
+			},
+		},
+	})
+
+	entry := buildEntry(
+		"node-1",
+		testDockerMessage(time.Now().UTC(), "image", "pull", "sha256:abc123", "ghcr.io/example/not-the-service-name:latest", ""),
+		resolver,
+	)
+
+	if entry.Service != "sonarr" {
+		t.Fatalf("expected service sonarr, got %q", entry.Service)
+	}
+	if entry.Content != "Image pulled: sonarr" {
+		t.Fatalf("unexpected content: %q", entry.Content)
+	}
+}
+
+func TestBuildCollapsedContainerEntry_UsesSwarmServiceLabel(t *testing.T) {
+	base := time.Now().UTC()
+	entry := buildCollapsedContainerEntry("node-1", "restart", []dockerevents.Message{
+		testDockerMessageWithAttrs(base, "container", "stop", "abc123", "stack_sonarr.1.xxxxx", "", map[string]string{
+			"com.docker.swarm.service.name": "stack_sonarr",
+			"com.docker.stack.namespace":    "stack",
+		}),
+		testDockerMessageWithAttrs(base.Add(time.Second), "container", "start", "abc123", "stack_sonarr.1.xxxxx", "", map[string]string{
+			"com.docker.swarm.service.name": "stack_sonarr",
+			"com.docker.stack.namespace":    "stack",
+		}),
+	}, nil)
+
+	if entry.Service != "sonarr" {
+		t.Fatalf("expected service sonarr, got %q", entry.Service)
+	}
+	if entry.Content != "Container restarted: sonarr" {
+		t.Fatalf("unexpected content: %q", entry.Content)
 	}
 }
 
@@ -236,12 +305,19 @@ func TestRunWatchLoop_EmitsExpiredStopBeforeLateStartWithoutTicker(t *testing.T)
 }
 
 func testDockerMessage(ts time.Time, typ, action, id, name, exitCode string) dockerevents.Message {
+	return testDockerMessageWithAttrs(ts, typ, action, id, name, exitCode, nil)
+}
+
+func testDockerMessageWithAttrs(ts time.Time, typ, action, id, name, exitCode string, extra map[string]string) dockerevents.Message {
 	attrs := map[string]string{}
 	if name != "" {
 		attrs["name"] = name
 	}
 	if exitCode != "" {
 		attrs["exitCode"] = exitCode
+	}
+	for key, value := range extra {
+		attrs[key] = value
 	}
 
 	return dockerevents.Message{
@@ -254,4 +330,19 @@ func testDockerMessage(ts time.Time, typ, action, id, name, exitCode string) doc
 			Attributes: attrs,
 		},
 	}
+}
+
+type fakeDockerResolverClient struct {
+	inspectResponse dockercontainer.InspectResponse
+	inspectErr      error
+	containers      []dockercontainer.Summary
+	containerErr    error
+}
+
+func (f fakeDockerResolverClient) ContainerInspect(_ context.Context, _ string) (dockercontainer.InspectResponse, error) {
+	return f.inspectResponse, f.inspectErr
+}
+
+func (f fakeDockerResolverClient) ContainerList(_ context.Context, _ dockercontainer.ListOptions) ([]dockercontainer.Summary, error) {
+	return f.containers, f.containerErr
 }
