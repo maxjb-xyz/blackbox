@@ -28,7 +28,7 @@ type uptimePayload struct {
 	} `json:"monitor"`
 }
 
-func WebhookUptime(database *gorm.DB, h *hub.Hub) http.HandlerFunc {
+func WebhookUptime(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var payload uptimePayload
 		if !decodeJSONBody(w, r, 1<<20, &payload) {
@@ -69,15 +69,17 @@ func WebhookUptime(database *gorm.DB, h *hub.Hub) http.HandlerFunc {
 			meta["status"] = "down"
 
 			if !timeFallback {
-				cause, err := findCauseForServices(database, serviceCandidates, ts)
+				candidates, err := correlation.ScoreCauses(database, serviceCandidates, ts)
 				if err != nil {
 					log.Printf("correlation lookup failed for %s: %v", payload.Monitor.Name, err)
-				} else if cause != nil {
-					correlatedID = cause.ID
-					meta["possible_cause"] = cause.Content
-					meta["cause_node"] = cause.NodeName
-					meta["cause_event"] = cause.Event
-					meta["cause_entry_id"] = cause.ID
+				} else if len(candidates) > 0 {
+					best := candidates[0]
+					correlatedID = best.Entry.ID
+					meta["possible_cause"] = best.Entry.Content
+					meta["cause_node"] = best.Entry.NodeName
+					meta["cause_event"] = best.Entry.Event
+					meta["cause_entry_id"] = best.Entry.ID
+					meta["cause_score"] = best.Score
 				}
 			} else {
 				log.Printf("skipping correlation for %s due to time fallback", payload.Monitor.Name)
@@ -128,6 +130,11 @@ func WebhookUptime(database *gorm.DB, h *hub.Hub) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "failed to save entry")
 			return
 		}
+		select {
+		case incidentCh <- entry:
+		default:
+			log.Printf("incident channel full, dropping entry %s", entry.ID)
+		}
 		if h != nil {
 			if msg := MarshalWSMessage("entry", entry); msg != nil {
 				h.Broadcast(msg)
@@ -166,21 +173,4 @@ func uniqueServiceNames(names ...string) []string {
 		unique = append(unique, name)
 	}
 	return unique
-}
-
-func findCauseForServices(database *gorm.DB, services []string, ts time.Time) (*types.Entry, error) {
-	var best *types.Entry
-	for _, service := range services {
-		cause, err := correlation.FindCause(database, service, ts)
-		if err != nil {
-			return nil, err
-		}
-		if cause == nil {
-			continue
-		}
-		if best == nil || cause.Timestamp.After(best.Timestamp) {
-			best = cause
-		}
-	}
-	return best, nil
 }

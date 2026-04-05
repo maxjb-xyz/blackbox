@@ -3,6 +3,7 @@ package incidents
 import (
 	"encoding/json"
 	"log"
+	"strings"
 	"time"
 
 	"blackbox/server/internal/correlation"
@@ -80,6 +81,27 @@ func (m *Manager) handleMonitorDown(entry types.Entry) {
 
 	m.openIncidents[svc] = incidentID
 	m.broadcastOpened(incident)
+
+	enrichEntries := make([]enrichEntry, 0, len(candidates)+1)
+	enrichEntries = append(enrichEntries, enrichEntry{
+		Role:    "trigger",
+		Content: entry.Content,
+		Source:  entry.Source,
+		Event:   entry.Event,
+	})
+	for _, c := range candidates {
+		ee := enrichEntry{
+			Role:    "cause",
+			Content: c.Entry.Content,
+			Source:  c.Entry.Source,
+			Event:   c.Entry.Event,
+		}
+		if logSnippet := extractLogSnippet(c.Entry); logSnippet != "" {
+			ee.Log = logSnippet
+		}
+		enrichEntries = append(enrichEntries, ee)
+	}
+	m.EnrichAsync(incidentID, enrichEntries)
 }
 
 func (m *Manager) handleMonitorUp(entry types.Entry) {
@@ -368,6 +390,20 @@ func extractExitCodeFromEntry(e types.Entry) string {
 		}
 	}
 	return ""
+}
+
+func extractLogSnippet(e *types.Entry) string {
+	if e == nil {
+		return ""
+	}
+
+	var meta struct {
+		LogSnippet []string `json:"log_snippet"`
+	}
+	if err := json.Unmarshal([]byte(e.Metadata), &meta); err != nil || len(meta.LogSnippet) == 0 {
+		return ""
+	}
+	return strings.Join(meta.LogSnippet, "\n")
 }
 
 // marshalWSMessage mirrors handlers.MarshalWSMessage to avoid a circular import.

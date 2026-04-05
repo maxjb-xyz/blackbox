@@ -19,7 +19,7 @@ type watchtowerPayload struct {
 	Level   string `json:"Level"`
 }
 
-func WebhookWatchtower(database *gorm.DB, h *hub.Hub) http.HandlerFunc {
+func WebhookWatchtower(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var payload watchtowerPayload
 		if !decodeJSONBody(w, r, 1<<20, &payload) {
@@ -64,6 +64,11 @@ func WebhookWatchtower(database *gorm.DB, h *hub.Hub) http.HandlerFunc {
 		if err := database.Create(&entry).Error; err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to save entry")
 			return
+		}
+		select {
+		case incidentCh <- entry:
+		default:
+			log.Printf("incident channel full, dropping entry %s", entry.ID)
 		}
 		if h != nil {
 			if msg := MarshalWSMessage("entry", entry); msg != nil {
