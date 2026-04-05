@@ -26,9 +26,15 @@ type Manager struct {
 	enricher *OllamaEnricher
 
 	mu            sync.Mutex
-	openIncidents map[string]string            // normalizedService -> incidentID
-	pendingWT     map[string]pendingWatchtower // normalizedService -> pending
-	recentDies    map[string][]time.Time       // normalizedService -> die timestamps
+	openIncidents map[string]string            // "service|node" -> incidentID
+	pendingWT     map[string]pendingWatchtower // normalizedService -> pending (watchtower has no node)
+	recentDies    map[string][]time.Time       // "service|node" -> die timestamps
+}
+
+// incidentKey returns the composite lookup key for open incidents and recent-die
+// tracking. node may be empty for webhook-sourced events that carry no node info.
+func incidentKey(svc, node string) string {
+	return svc + "|" + node
 }
 
 // NewManager creates a Manager. Call Run in a goroutine.

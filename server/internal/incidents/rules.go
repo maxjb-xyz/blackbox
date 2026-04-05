@@ -37,11 +37,14 @@ func (m *Manager) processEntry(entry types.Entry) {
 
 func (m *Manager) handleMonitorDown(entry types.Entry) {
 	svc := entry.Service
+	prefix := svc + "|"
 
-	// If a suspected incident is already open, upgrade it.
-	if incidentID, ok := m.openIncidents[svc]; ok {
-		m.upgradeToConfirmed(incidentID, entry)
-		return
+	// If a suspected incident is already open for this service (any node), upgrade it.
+	for key, incidentID := range m.openIncidents {
+		if strings.HasPrefix(key, prefix) {
+			m.upgradeToConfirmed(incidentID, entry)
+			return
+		}
 	}
 
 	candidates, err := correlation.ScoreCauses(m.db, []string{svc}, entry.Timestamp)
@@ -79,7 +82,7 @@ func (m *Manager) handleMonitorDown(entry types.Entry) {
 		m.linkEntry(incidentID, c.Entry.ID, "cause", c.Score)
 	}
 
-	m.openIncidents[svc] = incidentID
+	m.openIncidents[incidentKey(svc, entry.NodeName)] = incidentID
 	m.broadcastOpened(incident)
 
 	enrichEntries := make([]enrichEntry, 0, len(candidates)+1)
@@ -106,44 +109,54 @@ func (m *Manager) handleMonitorDown(entry types.Entry) {
 
 func (m *Manager) handleMonitorUp(entry types.Entry) {
 	svc := entry.Service
-	incidentID, ok := m.openIncidents[svc]
-	if !ok {
+	prefix := svc + "|"
+
+	// Collect all keys for this service (across all nodes).
+	var keys []string
+	for key := range m.openIncidents {
+		if strings.HasPrefix(key, prefix) {
+			keys = append(keys, key)
+		}
+	}
+	if len(keys) == 0 {
 		return
 	}
-
-	m.linkEntry(incidentID, entry.ID, "recovery", 0)
 
 	now := entry.Timestamp
-	if err := m.db.Model(&models.Incident{}).
-		Where("id = ?", incidentID).
-		Updates(map[string]interface{}{
-			"status":      "resolved",
-			"resolved_at": now,
-		}).Error; err != nil {
-		log.Printf("incidents: resolve incident error: %v", err)
-		return
+	for _, key := range keys {
+		incidentID := m.openIncidents[key]
+		m.linkEntry(incidentID, entry.ID, "recovery", 0)
+		if err := m.db.Model(&models.Incident{}).
+			Where("id = ?", incidentID).
+			Updates(map[string]interface{}{
+				"status":      "resolved",
+				"resolved_at": now,
+			}).Error; err != nil {
+			log.Printf("incidents: resolve incident error: %v", err)
+			continue
+		}
+		delete(m.openIncidents, key)
+		var updated models.Incident
+		_ = m.db.First(&updated, "id = ?", incidentID)
+		m.broadcastResolved(updated)
 	}
-	delete(m.openIncidents, svc)
-
-	var updated models.Incident
-	_ = m.db.First(&updated, "id = ?", incidentID)
-	m.broadcastResolved(updated)
 }
 
 func (m *Manager) handleContainerExit(entry types.Entry) {
 	svc := entry.Service
+	key := incidentKey(svc, entry.NodeName)
 
-	m.recentDies[svc] = append(m.recentDies[svc], entry.Timestamp)
-	m.pruneDies(svc, entry.Timestamp)
+	m.recentDies[key] = append(m.recentDies[key], entry.Timestamp)
+	m.pruneDies(key, entry.Timestamp)
 
-	if incidentID, ok := m.openIncidents[svc]; ok {
+	if incidentID, ok := m.openIncidents[key]; ok {
 		m.linkEntry(incidentID, entry.ID, "evidence", 0)
 		m.broadcastUpdated(incidentID)
 		return
 	}
 
 	exitCode := extractExitCodeFromEntry(entry)
-	isCrashLoop := len(m.recentDies[svc]) >= crashLoopThreshold
+	isCrashLoop := len(m.recentDies[key]) >= crashLoopThreshold
 
 	if exitCode == "" || exitCode == "0" {
 		if !isCrashLoop {
@@ -156,9 +169,11 @@ func (m *Manager) handleContainerExit(entry types.Entry) {
 
 func (m *Manager) handleContainerStart(entry types.Entry) {
 	svc := entry.Service
-	incidentID, ok := m.openIncidents[svc]
+	key := incidentKey(svc, entry.NodeName)
+	incidentID, ok := m.openIncidents[key]
 	if !ok {
-		if pw, hasPW := m.pendingWT[svc]; hasPW && time.Now().Before(pw.deadline) {
+		// pendingWT is keyed by service only — watchtower webhooks carry no node info.
+		if pw, hasPW := m.pendingWT[svc]; hasPW && entry.Timestamp.Before(pw.deadline) {
 			m.openSuspectedIncidentWithCause(entry, pw.entry, "watchtower update triggered restart")
 			delete(m.pendingWT, svc)
 		}
@@ -174,12 +189,11 @@ func (m *Manager) handleContainerStart(entry types.Entry) {
 	}
 
 	m.linkEntry(incidentID, entry.ID, "recovery", 0)
-	now := time.Now().UTC()
 	_ = m.db.Model(&models.Incident{}).Where("id = ?", incidentID).Updates(map[string]interface{}{
 		"status":      "resolved",
-		"resolved_at": now,
+		"resolved_at": entry.Timestamp,
 	})
-	delete(m.openIncidents, svc)
+	delete(m.openIncidents, key)
 
 	var updated models.Incident
 	_ = m.db.First(&updated, "id = ?", incidentID)
@@ -190,7 +204,7 @@ func (m *Manager) handleWatchtowerUpdate(entry types.Entry) {
 	svc := entry.Service
 	m.pendingWT[svc] = pendingWatchtower{
 		entry:    entry,
-		deadline: time.Now().Add(watchtowerPendingTTL),
+		deadline: entry.Timestamp.Add(watchtowerPendingTTL),
 	}
 }
 
@@ -229,7 +243,7 @@ func (m *Manager) openSuspectedIncident(trigger types.Entry, reason string) {
 	for _, c := range candidates {
 		m.linkEntry(incidentID, c.Entry.ID, "cause", c.Score)
 	}
-	m.openIncidents[svc] = incidentID
+	m.openIncidents[incidentKey(svc, trigger.NodeName)] = incidentID
 	m.broadcastOpened(incident)
 }
 
@@ -254,7 +268,7 @@ func (m *Manager) openSuspectedIncidentWithCause(trigger, cause types.Entry, rea
 	}
 	m.linkEntry(incidentID, trigger.ID, "trigger", 0)
 	m.linkEntry(incidentID, cause.ID, "cause", 70)
-	m.openIncidents[svc] = incidentID
+	m.openIncidents[incidentKey(svc, trigger.NodeName)] = incidentID
 	m.broadcastOpened(incident)
 }
 
@@ -301,22 +315,27 @@ func sweepExpiredSuspectedLocked(m *Manager) {
 			"resolved_at": now,
 			"metadata":    string(metaBytes),
 		})
-		delete(m.openIncidents, serviceFromIncident(inc))
+		for key, id := range m.openIncidents {
+			if id == inc.ID {
+				delete(m.openIncidents, key)
+				break
+			}
+		}
 		var updated models.Incident
 		_ = m.db.First(&updated, "id = ?", inc.ID)
 		m.broadcastResolved(updated)
 	}
 }
 
-func (m *Manager) pruneDies(svc string, now time.Time) {
+func (m *Manager) pruneDies(key string, now time.Time) {
 	cutoff := now.Add(-crashLoopWindow)
-	filtered := m.recentDies[svc][:0]
-	for _, t := range m.recentDies[svc] {
+	filtered := m.recentDies[key][:0]
+	for _, t := range m.recentDies[key] {
 		if t.After(cutoff) {
 			filtered = append(filtered, t)
 		}
 	}
-	m.recentDies[svc] = filtered
+	m.recentDies[key] = filtered
 }
 
 func (m *Manager) linkEntry(incidentID, entryID, role string, score int) {
