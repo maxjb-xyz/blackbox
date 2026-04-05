@@ -13,6 +13,38 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
+func TestServiceFromPath(t *testing.T) {
+	roots := []watchRoot{
+		{configured: "/etc/nginx", resolved: "/etc/nginx"},
+		{configured: "/opt/myapp", resolved: "/opt/myapp"},
+		{configured: "/home/user/docker/redis", resolved: "/home/user/docker/redis"},
+	}
+	cases := []struct {
+		name string
+		path string
+		want string
+	}{
+		{"etc child", "/etc/nginx/sites-available/foo.conf", "nginx"},
+		{"opt child", "/opt/myapp/config.yml", "myapp"},
+		{"docker home child", "/home/user/docker/redis/redis.conf", "redis"},
+		{"etc exact service", "/etc/nginx", "nginx"},
+		{"opt exact service", "/opt/myapp", "myapp"},
+		{"var lib child", "/var/lib/foo/bar.conf", "foo"},
+		{"unmatched path falls back to root dir", "/custom/path/config.yml", "/custom/path"},
+		{"empty path falls back deterministically", "", "."},
+		{"trailing slash still resolves service", "/etc/nginx/", "nginx"},
+		{"exact prefix returns empty service", "/etc", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := serviceFromPath(tc.path, roots)
+			if got != tc.want {
+				t.Fatalf("serviceFromPath(%q) = %q, want %q", tc.path, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestWatch_EmitsWriteForConfigFile(t *testing.T) {
 	root := t.TempDir()
 	serviceDir := filepath.Join(root, "sonarr")

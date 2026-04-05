@@ -27,7 +27,9 @@ func TestNormalizeService(t *testing.T) {
 		want string
 	}{
 		{name: "alias match", in: "traefik-proxy", want: "traefik"},
+		{name: "alias match case insensitive", in: "Traefik-Proxy", want: "traefik"},
 		{name: "unchanged", in: "postgres", want: "postgres"},
+		{name: "lowercases direct names", in: "Radarr", want: "radarr"},
 		{name: "trimmed empty", in: "   ", want: ""},
 	}
 

@@ -20,9 +20,9 @@
 
 ## What is Blackbox?
 
-Blackbox is a lightweight, self-hosted event correlation platform built for homelabbers who want to understand their infrastructure at a glance. It collects events from Docker, config file changes, uptime monitors, and container update tools — correlates them into a single chronological timeline — and gives you a dark, dense UI designed for quick diagnosis at 2 AM.
+Blackbox is a lightweight, self-hosted event correlation platform built for homelabbers who want to understand their infrastructure at a glance. It collects events from Docker, config file changes, uptime monitors, and container update tools, correlates them into a single chronological timeline, and groups likely outages into incidents with scored cause candidates and optional local-AI summaries.
 
-When your homelab breaks, Blackbox tells you what happened. You just write why.
+When your homelab breaks, Blackbox tells you what happened. You don't need to lift a finger.
 
 ### Core Principles
 
@@ -88,17 +88,27 @@ docker compose up -d
 
 **3. Open `http://your-server:8080` and complete the setup wizard.**
 
+**4. Optional: open Admin > Settings to configure file-diff redaction and Ollama-based incident enrichment.**
+
 ---
 
 ## Features
 
 ### Event Ingestion
-- **Docker events** — Automatic detection of container start, stop, die, create, pull, and delete events. Per-node, with a 3-second debounce to collapse rapid restarts.
+- **Docker events** — Automatic detection of container start, stop, die, create, pull, and delete events. Per-node, with a 3-second debounce to collapse rapid restarts into a single restart/stop entry.
+- **Smarter service inference** — Docker and file events resolve service names from Compose labels, Swarm metadata, image/container lookups, and common homelab path layouts so correlation works with cleaner service names.
+- **Crash log capture** — Collapsed Docker stop/restart events include a best-effort tail of recent container logs, which Blackbox can surface directly inside incidents.
 - **Config file watching** — inotify-based watching of `.yaml`, `.yml`, `.conf`, `.env`, `.json`, and `.ini` files via configurable `WATCH_PATHS`.
-- **Config diffs** — File change events include a bounded, redacted text diff in metadata for deeper timeline analysis.
-- **Uptime Kuma webhooks** — Ingest Down/Up state changes. Down events trigger automatic correlation: Blackbox queries the 120-second window before the incident for likely causes.
-- **Watchtower webhooks** — Ingest container image update events with version metadata.
+- **Config diffs** — File change events include a bounded text diff in metadata for deeper timeline analysis, with optional secret redaction controlled from the Admin settings page.
+- **Uptime Kuma webhooks** — Ingest Down/Up state changes. Down events open confirmed incidents and score likely causes from recent Docker, file, and webhook activity.
+- **Watchtower webhooks** — Ingest container image update events with version metadata and use them as incident evidence when a restart follows shortly after.
 - **Manual entries** — Post arbitrary events from the UI or via the API.
+
+### Incidents & Correlation
+- **Incident lifecycle** — Blackbox opens confirmed incidents from monitor-down events and suspected incidents from crash loops, unexpected container exits, and update-triggered restarts.
+- **Weighted cause scoring** — Likely causes are ranked from recent entries using event-specific lookback windows, same-node bonuses, and log-snippet bonuses.
+- **Event chain view** — The Incidents page shows open and resolved incidents, duration, linked trigger/cause/recovery events, and the chosen root-cause entry.
+- **Optional AI enrichment** — If Ollama is configured, Blackbox stores an AI-generated root-cause summary and suggested incident title in incident metadata.
 
 ### Timeline
 - Chronological, paginated event feed across all nodes
@@ -119,7 +129,7 @@ docker compose up -d
 - Invite-code-based user registration
 
 ### Security
-- Distroless container images (no shell, non-root user)
+- Distroless container images (no shell, non-root server image)
 - Constant-time token comparison for all shared secrets
 - Rate limiting on auth endpoints
 - Security headers middleware
@@ -155,6 +165,13 @@ docker compose up -d
 - On startup, the agent now logs a per-root registration line. If you see `failed to register root /watch/stacks`, the bind mount and `WATCH_PATHS` do not line up inside the container.
 - Some editors save by replacing files instead of writing them in place. Blackbox now emits alerts for those `rename` and `chmod-style` config-file changes as well.
 - File-change metadata now includes a small line diff when the file is UTF-8 text and under the tracking limit. Obvious secret values such as `TOKEN`, `PASSWORD`, and `CLIENT_SECRET` are redacted before upload.
+
+### Incident Enrichment
+
+- Incident detection works without extra configuration. Confirmed incidents come from Uptime Kuma Down/Up pairs; suspected incidents come from crash loops, non-zero exits, and watchtower-triggered restarts.
+- Ollama enrichment is optional and configured in **Admin > Settings** with an absolute Ollama base URL such as `http://192.168.1.10:11434` and a model name such as `llama3.2`.
+- Leaving the Ollama URL or model blank disables AI enrichment while keeping the incident engine and correlation scoring active.
+- The same Admin settings page also controls whether newly captured file diffs redact obvious secret-bearing keys before upload.
 
 ### Agent Tokens
 
@@ -358,7 +375,7 @@ Blackbox is split into two components designed to run across multiple nodes.
 
 | Component | Role |
 |-----------|------|
-| **Server** | Central brain. Hosts the UI, stores the database, receives events from agents, and handles webhook ingestion. |
+| **Server** | Central brain. Hosts the UI, stores the database, receives events from agents, handles webhook ingestion, and runs the incident/correlation engine. |
 | **Agent** | Lightweight binary deployed on each node. Watches Docker and config files, pushes events to the server. |
 
 ---
@@ -410,6 +427,13 @@ docker build -f agent/Dockerfile -t blackbox-agent .
 
 All protected endpoints require an authenticated session cookie (obtained via login). Agent endpoints require `X-Blackbox-Agent-Key` and `X-Blackbox-Node-Name` headers. Webhook endpoints require an `X-Webhook-Secret` header.
 
+### Incidents
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/incidents` | List incidents. Query params: `status`, `confidence`, `service`, `limit` (1-200). |
+| `GET` | `/api/incidents/{id}` | Get a single incident with linked trigger/cause/evidence/recovery entries. |
+
 ### Timeline
 
 | Method | Path | Description |
@@ -434,6 +458,14 @@ All protected endpoints require an authenticated session cookie (obtained via lo
 | `GET` | `/api/services/aliases` | List service name aliases. |
 | `POST` | `/api/services/aliases` | Create a service alias. |
 | `DELETE` | `/api/services/aliases/{alias}` | Remove a service alias. |
+
+### Admin Settings
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/admin/config` | Load admin-visible runtime config, including webhook secret, file-watcher settings, and Ollama settings. |
+| `PUT` | `/api/admin/settings/file-watcher` | Update file-diff secret redaction behavior for newly uploaded diffs. |
+| `PUT` | `/api/admin/settings/ollama` | Update the Ollama URL and model used for optional incident enrichment. |
 
 ### Agent Ingestion
 
@@ -478,8 +510,10 @@ The database is automatically migrated on startup — no manual schema managemen
 - [x] Node management + pulse indicator
 - [x] Manual entry creation + notes
 - [x] Service aliases
-- [ ] Improved correlation engine (automatic causation for downtime events)
-- [ ] Option to integrate local AI into correlation engine
+- [x] Incident lifecycle engine
+- [x] Improved correlation engine (automatic causation for downtime events)
+- [x] Optional local AI enrichment via Ollama
+- [x] Incidents UI + sidebar badge
 - [ ] Timeline UI polish and interaction improvements
 - [ ] Grafana data source plugin
 - [ ] Mobile-friendly view

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"blackbox/server/internal/auth"
@@ -31,6 +32,8 @@ func TestAdminConfig_ReturnsWebhookSecret(t *testing.T) {
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
 	assert.Equal(t, "my-secret-value", resp["webhook_secret"])
 	assert.Equal(t, true, resp["file_watcher_redact_secrets"])
+	assert.Equal(t, "", resp["ollama_url"])
+	assert.Equal(t, "", resp["ollama_model"])
 	assert.Equal(t, "no-store, no-cache, must-revalidate", w.Header().Get("Cache-Control"))
 	assert.Equal(t, "no-cache", w.Header().Get("Pragma"))
 	assert.Equal(t, "0", w.Header().Get("Expires"))
@@ -48,6 +51,8 @@ func TestAdminConfig_EmptyWebhookSecret(t *testing.T) {
 
 	database := newTestDB(t)
 	require.NoError(t, database.Create(&models.AppSetting{Key: "file_watcher_redact_secrets", Value: "false"}).Error)
+	require.NoError(t, database.Create(&models.AppSetting{Key: "ollama_url", Value: " http://localhost:11434 "}).Error)
+	require.NoError(t, database.Create(&models.AppSetting{Key: "ollama_model", Value: " llama3.2 "}).Error)
 
 	handlers.AdminConfig(database, "")(w, req)
 
@@ -56,4 +61,23 @@ func TestAdminConfig_EmptyWebhookSecret(t *testing.T) {
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
 	assert.Equal(t, "", resp["webhook_secret"])
 	assert.Equal(t, false, resp["file_watcher_redact_secrets"])
+	assert.Equal(t, "http://localhost:11434", resp["ollama_url"])
+	assert.Equal(t, "llama3.2", resp["ollama_model"])
+}
+
+func TestUpdateOllamaSettings_RejectsInvalidURL(t *testing.T) {
+	t.Parallel()
+
+	database := newTestDB(t)
+	req := httptest.NewRequest(http.MethodPut, "/api/admin/settings/ollama", strings.NewReader(`{"ollama_url":"not a url","ollama_model":"llama3.2"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handlers.UpdateOllamaSettings(database)(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	var count int64
+	require.NoError(t, database.Model(&models.AppSetting{}).Count(&count).Error)
+	assert.Zero(t, count)
 }

@@ -21,7 +21,7 @@ type createEntryRequest struct {
 	Timestamp string   `json:"timestamp"`
 }
 
-func CreateEntry(database *gorm.DB, h *hub.Hub) http.HandlerFunc {
+func CreateEntry(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req createEntryRequest
 		if !decodeJSONBody(w, r, 1<<20, &req) {
@@ -88,6 +88,7 @@ func CreateEntry(database *gorm.DB, h *hub.Hub) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "failed to save entry")
 			return
 		}
+		dispatchToIncidentChannel(incidentCh, entry)
 		if h != nil {
 			if msg := MarshalWSMessage("entry", entry); msg != nil {
 				h.Broadcast(msg)

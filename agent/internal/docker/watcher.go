@@ -1,9 +1,12 @@
 package docker
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"sort"
 	"strings"
@@ -13,6 +16,7 @@ import (
 	dockerevents "github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/api/types/filters"
 	dockerclient "github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/oklog/ulid/v2"
 
 	"blackbox/shared/types"
@@ -20,6 +24,8 @@ import (
 
 const debounceWindow = 3 * time.Second
 const dockerLookupTimeout = 2 * time.Second
+const logCaptureLines = 50
+const logCaptureTimeout = 5 * time.Second
 
 var watchedActions = map[string]bool{
 	"start":  true,
@@ -115,6 +121,7 @@ func runWatchLoop(
 type dockerResolverClient interface {
 	ContainerInspect(ctx context.Context, containerID string) (dockercontainer.InspectResponse, error)
 	ContainerList(ctx context.Context, options dockercontainer.ListOptions) ([]dockercontainer.Summary, error)
+	ContainerLogs(ctx context.Context, container string, options dockercontainer.LogsOptions) (io.ReadCloser, error)
 }
 
 type serviceResolver struct {
@@ -291,9 +298,17 @@ func buildCollapsedContainerEntry(nodeName, event string, rawEvents []dockereven
 		content = fmt.Sprintf("%s: %s", event, service)
 	}
 
-	metaBytes, _ := json.Marshal(map[string]interface{}{
+	meta := map[string]interface{}{
 		"raw_events": buildRawEvents(rawEvents),
-	})
+	}
+	if (event == "stop" || event == "restart") && resolver != nil && containerID != "" {
+		if lines := resolver.captureContainerLogs(containerID); len(lines) > 0 {
+			meta["log_snippet"] = lines
+			meta["log_lines_captured"] = len(lines)
+			meta["log_truncated"] = len(lines) == logCaptureLines
+		}
+	}
+	metaBytes, _ := json.Marshal(meta)
 
 	// Callers currently build collapsed entries from at least one raw event, but
 	// keep a defensive time.Now().UTC() fallback so future empty rawEvents slices
@@ -384,6 +399,47 @@ func (r *serviceResolver) resolveImageService(imageID string, attrs map[string]s
 		}
 	}
 	return cleanImageService(ref)
+}
+
+// captureContainerLogs fetches the last logCaptureLines lines from a container.
+// Returns nil on any error — log capture is best-effort.
+func (r *serviceResolver) captureContainerLogs(containerID string) []string {
+	if r == nil || r.cli == nil || containerID == "" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(r.parentContext(), logCaptureTimeout)
+	defer cancel()
+
+	tail := fmt.Sprintf("%d", logCaptureLines)
+	rc, err := r.cli.ContainerLogs(ctx, containerID, dockercontainer.LogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Tail:       tail,
+	})
+	if err != nil || rc == nil {
+		return nil
+	}
+	defer func() { _ = rc.Close() }()
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	if _, err := stdcopy.StdCopy(&stdoutBuf, &stderrBuf, rc); err != nil {
+		return nil
+	}
+
+	lines := scanLogLines(&stdoutBuf)
+	lines = append(lines, scanLogLines(&stderrBuf)...)
+	return lines
+}
+
+func scanLogLines(r io.Reader) []string {
+	var lines []string
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		if trimmed := strings.TrimSpace(scanner.Text()); trimmed != "" {
+			lines = append(lines, trimmed)
+		}
+	}
+	return lines
 }
 
 func (r *serviceResolver) findContainerServiceForImage(imageID, ref string) string {

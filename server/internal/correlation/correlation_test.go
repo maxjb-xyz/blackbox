@@ -108,7 +108,7 @@ func TestFindCause_ExactServiceMatchOnly(t *testing.T) {
 	assert.Nil(t, cause)
 }
 
-func TestFindCause_ReturnsMostRecentWhenMultiple(t *testing.T) {
+func TestFindCause_ReturnsHighestScoringCandidateWhenMultiple(t *testing.T) {
 	database := newTestDB(t)
 	now := time.Now().UTC()
 
@@ -136,5 +136,5 @@ func TestFindCause_ReturnsMostRecentWhenMultiple(t *testing.T) {
 	cause, err := correlation.FindCause(database, "my-app", now)
 	require.NoError(t, err)
 	require.NotNil(t, cause)
-	assert.Equal(t, "01TEST00000000006", cause.ID)
+	assert.Equal(t, "01TEST00000000005", cause.ID)
 }

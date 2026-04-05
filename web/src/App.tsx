@@ -5,6 +5,7 @@ import Shell from './components/Shell'
 import AccountPage from './pages/AccountPage'
 import AdminPage from './pages/AdminPage'
 import DiagnosticsPage from './pages/DiagnosticsPage'
+import IncidentsPage from './pages/IncidentsPage'
 import LoginPage from './pages/LoginPage'
 import NodesPage from './pages/NodesPage'
 import RegisterPage from './pages/RegisterPage'
@@ -121,14 +122,15 @@ function AppRoutes() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/" element={<Shell />}>
-        <Route index element={<Navigate to="/timeline" replace />} />
+        <Route index element={<Navigate to="/incidents" replace />} />
+        <Route path="incidents" element={<IncidentsPage />} />
         <Route path="timeline" element={<TimelinePage />} />
         <Route path="nodes" element={<NodesPage />} />
         <Route path="webhooks" element={<WebhooksPage />} />
         <Route path="account" element={<AccountPage />} />
         <Route path="admin" element={<AdminPage />} />
         <Route path="diagnostics" element={<DiagnosticsPage />} />
-        <Route path="*" element={<Navigate to="/timeline" replace />} />
+        <Route path="*" element={<Navigate to="/incidents" replace />} />
       </Route>
     </Routes>
   )

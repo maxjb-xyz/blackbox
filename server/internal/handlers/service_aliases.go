@@ -55,7 +55,7 @@ func CreateServiceAlias(database *gorm.DB) http.HandlerFunc {
 
 		record := models.ServiceAlias{
 			Canonical: normalizedCanonical,
-			Alias:     alias,
+			Alias:     strings.ToLower(alias),
 		}
 		if err := database.Create(&record).Error; err != nil {
 			if errors.Is(err, gorm.ErrDuplicatedKey) {
@@ -79,7 +79,7 @@ func DeleteServiceAlias(database *gorm.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "invalid alias")
 			return
 		}
-		alias = strings.TrimSpace(alias)
+		alias = strings.ToLower(strings.TrimSpace(alias))
 		if alias == "" {
 			writeError(w, http.StatusBadRequest, "alias is required")
 			return

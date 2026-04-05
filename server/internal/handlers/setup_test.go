@@ -42,6 +42,22 @@ func authenticatedAgentRequest(t *testing.T, entry types.Entry, nodeName string)
 	return req, w, middleware.AgentAuth(config)
 }
 
+func testIncidentChannel(t *testing.T) chan types.Entry {
+	t.Helper()
+
+	ch := make(chan types.Entry, 16)
+	t.Cleanup(func() {
+		for {
+			select {
+			case <-ch:
+			default:
+				return
+			}
+		}
+	})
+	return ch
+}
+
 func TestSetupStatus_NotBootstrapped(t *testing.T) {
 	database := newTestDB(t)
 

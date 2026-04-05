@@ -221,6 +221,41 @@ func rootFor(path string, roots []watchRoot) string {
 	return filepath.Dir(path)
 }
 
+// serviceFromPath extracts a service name from a file path by stripping
+// common config directory prefixes. Falls back to the watch root path.
+func serviceFromPath(filePath string, roots []watchRoot) string {
+	logical := logicalPathFor(filePath, roots)
+
+	prefixes := []string{"/etc/", "/opt/", "/var/lib/"}
+	for _, prefix := range prefixes {
+		base := strings.TrimSuffix(prefix, "/")
+		if logical == base || logical == prefix {
+			return ""
+		}
+		if strings.HasPrefix(logical, prefix) {
+			rest := strings.TrimPrefix(logical, prefix)
+			if rest == "" || rest == "/" {
+				return ""
+			}
+			parts := strings.SplitN(rest, "/", 2)
+			if parts[0] != "" {
+				return parts[0]
+			}
+		}
+	}
+
+	// Handle /home/<user>/docker/<service>/...
+	if strings.HasPrefix(logical, "/home/") {
+		rest := strings.TrimPrefix(logical, "/home/")
+		parts := strings.SplitN(rest, "/", 4) // user / "docker" / service / ...
+		if len(parts) >= 3 && parts[1] == "docker" && parts[2] != "" {
+			return parts[2]
+		}
+	}
+
+	return rootFor(filePath, roots)
+}
+
 func logicalPathFor(path string, roots []watchRoot) string {
 	p := filepath.Clean(path)
 	for _, r := range roots {
@@ -647,7 +682,7 @@ func runWatcher(ctx context.Context, nodeName string, rootPaths []watchRoot, ign
 				Timestamp: time.Now().UTC(),
 				NodeName:  nodeName,
 				Source:    "files",
-				Service:   rootFor(path, rootPaths),
+				Service:   serviceFromPath(path, rootPaths),
 				Event:     event,
 				Content:   fmt.Sprintf("file %s: %s", event, eventPath),
 				Metadata:  string(meta),

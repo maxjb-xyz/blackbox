@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { createNote, fetchEntries, fetchEntry, fetchEntryServices, fetchNotes } from '../api/client'
+import {
+  createNote,
+  fetchEntries,
+  fetchEntry,
+  fetchEntryServices,
+  fetchIncidentsForEntryIds,
+  fetchNotes,
+} from '../api/client'
 import type { Entry, EntryNote } from '../api/client'
 import { useNodePulse } from '../components/NodePulse'
 import { useWebSocketContext } from '../components/WebSocketProvider'
@@ -81,6 +88,22 @@ function formatMetadataWithoutDiff(metadata: string) {
   const clone = { ...parsed }
   delete clone.diff
   return JSON.stringify(clone, null, 2)
+}
+
+function webhookProviderLabel(entry: Entry): string | null {
+  if (entry.source !== 'webhook') return null
+  const parsed = parseMetadataObject(entry.metadata)
+  if (parsed) {
+    if (typeof parsed['watchtower.title'] === 'string' || typeof parsed['watchtower.level'] === 'string') {
+      return 'watchtower'
+    }
+    if (typeof parsed.monitor === 'string') {
+      return 'kuma'
+    }
+  }
+  if (entry.event === 'update') return 'watchtower'
+  if (entry.event === 'up' || entry.event === 'down') return 'kuma'
+  return 'webhook'
 }
 
 type ViewMode = 'cards' | 'rows'
@@ -747,12 +770,15 @@ function TimelineFeed({
   const [ghostEntry, setGhostEntry] = useState<Entry | null>(null)
   const [tooltip, setTooltip] = useState<TooltipState | null>(null)
   const [sentinelVisible, setSentinelVisible] = useState(false)
+  const [entryIncidentMap, setEntryIncidentMap] = useState<Record<string, { id: string; confidence: string }>>({})
 
   const sentinelRef = useRef<HTMLDivElement>(null)
   const renderedIdsRef = useRef<Set<string>>(new Set())
   const expandedIdRef = useRef<string | null>(null)
   const ghostEntryRef = useRef<Entry | null>(null)
+  const visibleEntryIDsRef = useRef<string[]>([])
   const mountedRef = useRef(true)
+  const entryIncidentMapReqIdRef = useRef(0)
 
   const consumeMaterializedGhost = useEffectEvent((incoming: Entry[]) => {
     const ghost = ghostEntryRef.current
@@ -762,6 +788,29 @@ function TimelineFeed({
     ghostEntryRef.current = null
     setGhostEntry(null)
     return true
+  })
+
+  const loadIncidentMembership = useEffectEvent(async (entryIDs: string[]) => {
+    const requestId = entryIncidentMapReqIdRef.current + 1
+    entryIncidentMapReqIdRef.current = requestId
+
+    if (viewMode !== 'rows' || entryIDs.length === 0) {
+      if (mountedRef.current && entryIncidentMapReqIdRef.current === requestId) {
+        setEntryIncidentMap({})
+      }
+      return
+    }
+
+    try {
+      const map = await fetchIncidentsForEntryIds(entryIDs)
+      if (mountedRef.current && entryIncidentMapReqIdRef.current === requestId) {
+        setEntryIncidentMap(map)
+      }
+    } catch {
+      if (mountedRef.current && entryIncidentMapReqIdRef.current === requestId) {
+        setEntryIncidentMap({})
+      }
+    }
   })
 
   const loadPage = useEffectEvent(async (cursor?: string) => {
@@ -915,6 +964,20 @@ function TimelineFeed({
     result.splice(expandedIndex, 0, ghostEntry)
     return result
   })()
+  const visibleEntryIDs = displayEntries.map(entry => entry.id)
+  const visibleEntryIDsKey = visibleEntryIDs.join('|')
+  visibleEntryIDsRef.current = visibleEntryIDs
+
+  useEffect(() => {
+    void loadIncidentMembership(visibleEntryIDsRef.current)
+  }, [viewMode, visibleEntryIDsKey])
+
+  useEffect(() => {
+    if (!lastMessage) return
+    if (lastMessage.type === 'incident_opened' || lastMessage.type === 'incident_updated' || lastMessage.type === 'incident_resolved') {
+      void loadIncidentMembership(visibleEntryIDsRef.current)
+    }
+  }, [lastMessage, visibleEntryIDsKey])
 
   return (
     <>
@@ -971,6 +1034,7 @@ function TimelineFeed({
                 isExpanded={expandedId === entry.id}
                 isDimmed={expandedId !== null && expandedId !== entry.id}
                 isGhost={ghostEntry?.id === entry.id}
+                incident={entryIncidentMap[entry.id]}
                 onClick={() => handleRowClick(entry)}
                 onTooltip={setTooltip}
                 onTooltipClear={() => setTooltip(null)}
@@ -1010,6 +1074,7 @@ interface EntryProps {
   isExpanded: boolean
   isDimmed: boolean
   isGhost: boolean
+  incident?: { id: string; confidence: string }
   onClick: () => void
   onTooltip: (tooltip: TooltipState) => void
   onTooltipClear: () => void
@@ -1306,6 +1371,7 @@ function DiffModal({ entry, diff, open, onClose }: { entry: Entry; diff: FileDif
 
 function TimelineCard({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip, onTooltipClear }: EntryProps) {
   const possibleCause = entry.correlated_id ? parsePossibleCause(entry.metadata) : null
+  const sourceLabel = webhookProviderLabel(entry) ?? entry.source
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (isInteractiveEntryTarget(e.target)) return
     if (e.key !== 'Enter' && e.key !== ' ') return
@@ -1352,7 +1418,7 @@ function TimelineCard({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip
           {entry.node_name && <span style={{ margin: '0 6px' }}>|</span>}
           {entry.node_name}
           {entry.source && <span style={{ margin: '0 6px' }}>|</span>}
-          <span style={{ color: 'var(--muted)' }}>{entry.source}</span>
+          <span style={{ color: 'var(--muted)' }}>{sourceLabel}</span>
         </span>
         <span
           style={{
@@ -1404,8 +1470,10 @@ function TimelineCard({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip
   )
 }
 
-function TimelineRow({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip, onTooltipClear }: EntryProps) {
+function TimelineRow({ entry, isExpanded, isDimmed, isGhost, incident, onClick, onTooltip, onTooltipClear }: EntryProps) {
+  const navigate = useNavigate()
   const possibleCause = entry.correlated_id ? parsePossibleCause(entry.metadata) : null
+  const sourceLabel = webhookProviderLabel(entry) ?? entry.source
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (isInteractiveEntryTarget(e.target)) return
     if (e.key !== 'Enter' && e.key !== ' ') return
@@ -1450,9 +1518,36 @@ function TimelineRow({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip,
       }
       onMouseLeave={possibleCause ? onTooltipClear : undefined}
     >
-      <span style={{ color: 'var(--accent)', fontSize: '11px', lineHeight: '20px' }}>
-        {entry.correlated_id ? '^' : ''}
-      </span>
+      <div style={{ width: 20, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {incident ? (
+          <button
+            type="button"
+            title={`Incident: ${incident.id}`}
+            aria-label={`Open incidents for incident ${incident.id}`}
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
+              background: incident.confidence === 'confirmed'
+                ? 'var(--danger)'
+                : 'var(--warning)',
+              cursor: 'pointer',
+              display: 'inline-block',
+              border: 'none',
+              padding: 0,
+              appearance: 'none',
+            }}
+            onClick={event => {
+              event.stopPropagation()
+              navigate('/incidents')
+            }}
+          />
+        ) : (
+          <span style={{ color: 'var(--accent)', fontSize: '11px', lineHeight: '20px' }}>
+            {entry.correlated_id ? '^' : ''}
+          </span>
+        )}
+      </div>
       <span style={{ color: 'var(--muted)', fontSize: '12px', whiteSpace: 'nowrap' }}>
         {formatTimestamp(entry.timestamp)}
       </span>
@@ -1460,7 +1555,7 @@ function TimelineRow({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip,
         {entry.node_name}
       </span>
       <span style={{ color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
-        {entry.source}
+        {sourceLabel}
       </span>
       <div style={{ overflow: 'hidden', minWidth: 0 }}>
         {entry.service && (

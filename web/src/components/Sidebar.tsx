@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Activity,
+  AlertTriangle,
   ExternalLink,
   LogOut,
   Server,
@@ -10,11 +11,13 @@ import {
   Wrench,
 } from 'lucide-react'
 import { NavLink, useNavigate } from 'react-router-dom'
+import { fetchIncidents, type Incident } from '../api/client'
 import { useNodePulse } from './NodePulse'
 import { useWebSocketContext } from './WebSocketProvider'
 import { useSession } from '../session'
 
 const NAV_ITEMS = [
+  { label: 'INCIDENTS', to: '/incidents', icon: AlertTriangle, badge: true },
   { label: 'TIMELINE', to: '/timeline', icon: Activity },
   { label: 'NODES', to: '/nodes', icon: Server, pulse: true },
 ] as const
@@ -28,10 +31,14 @@ const ADMIN_ITEMS = [
 
 export default function Sidebar() {
   const { onlineCount, totalCount, loading, error, lastUpdated } = useNodePulse()
-  const { status, lastConnectedAt, reconnect } = useWebSocketContext()
+  const { status, lastConnectedAt, lastMessage, reconnect } = useWebSocketContext()
   const navigate = useNavigate()
   const { user, logout } = useSession()
   const [isLogoutHovered, setIsLogoutHovered] = useState(false)
+  const [openCount, setOpenCount] = useState(0)
+  const [hasMoreOpen, setHasMoreOpen] = useState(false)
+  const [hasConfirmed, setHasConfirmed] = useState(false)
+  const openIncidentSummaryReqIdRef = useRef(0)
 
   const username = user?.username ?? ''
   const isAdmin = user?.is_admin === true
@@ -70,6 +77,34 @@ export default function Sidebar() {
     return <span className={`text-[11px] ${colorClassName}`}>[{onlineCount}/{totalCount}]</span>
   }
 
+  const refreshOpenIncidentSummary = useCallback(() => {
+    const requestId = openIncidentSummaryReqIdRef.current + 1
+    openIncidentSummaryReqIdRef.current = requestId
+    fetchIncidents({ status: 'open', limit: 200 })
+      .then(page => {
+        if (openIncidentSummaryReqIdRef.current !== requestId) return
+        setOpenCount(page.incidents.length)
+        setHasMoreOpen(page.has_more)
+        setHasConfirmed(page.incidents.some(i => i.confidence === 'confirmed'))
+      })
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    refreshOpenIncidentSummary()
+  }, [refreshOpenIncidentSummary])
+
+  useEffect(() => {
+    if (!lastMessage) return
+    const { type, data } = lastMessage
+    if (type === 'incident_opened' || type === 'incident_updated' || type === 'incident_resolved') {
+      const inc = data as Incident
+      if (inc.id) {
+        refreshOpenIncidentSummary()
+      }
+    }
+  }, [lastMessage, refreshOpenIncidentSummary])
+
   return (
     <div className="flex min-h-screen w-[200px] flex-col border-r border-[var(--border)] bg-[#0B0B0B] font-mono">
       <div className="flex items-center px-4 py-4">
@@ -94,6 +129,16 @@ export default function Sidebar() {
                 <Icon size={14} />
                 <span>{item.label}</span>
               </span>
+              {'badge' in item && item.badge && openCount > 0 && (
+                <span
+                  style={{
+                    fontSize: 11,
+                    color: hasConfirmed ? 'var(--danger)' : 'var(--warning)',
+                  }}
+                >
+                  [{hasMoreOpen ? '200+' : openCount}]
+                </span>
+              )}
               {'pulse' in item && item.pulse && nodeBadge()}
             </NavLink>
           )

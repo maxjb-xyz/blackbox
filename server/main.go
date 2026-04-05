@@ -13,6 +13,7 @@ import (
 	"blackbox/server/internal/db"
 	"blackbox/server/internal/handlers"
 	"blackbox/server/internal/hub"
+	"blackbox/server/internal/incidents"
 	"blackbox/server/internal/middleware"
 	"blackbox/server/internal/models"
 	"blackbox/server/internal/static"
@@ -55,6 +56,9 @@ func main() {
 	}
 	log.Printf("database initialized at %s", dbPath)
 	eventHub := hub.New()
+	incidentCh := incidents.NewChannel()
+	incidentMgr := incidents.NewManager(database, eventHub)
+	go incidentMgr.Run(context.Background(), incidentCh)
 
 	registry := auth.NewOIDCRegistry(database)
 
@@ -141,9 +145,12 @@ func main() {
 		r.Post("/api/auth/invite", handlers.CreateInvite(database))
 		r.Get("/api/auth/invite", handlers.ListInvites(database))
 		r.Get("/api/nodes", handlers.ListNodes(database))
+		r.Get("/api/incidents", handlers.ListIncidents(database))
+		r.Post("/api/incidents/membership", handlers.ListIncidentMembership(database))
+		r.Get("/api/incidents/{id}", handlers.GetIncident(database))
 		r.Get("/api/entries", handlers.ListEntries(database))
 		r.Get("/api/entries/services", handlers.ListEntryServices(database))
-		r.Post("/api/entries", handlers.CreateEntry(database, eventHub))
+		r.Post("/api/entries", handlers.CreateEntry(database, eventHub, incidentCh))
 		r.Get("/api/entries/{id}", handlers.GetEntry(database))
 		r.Post("/api/entries/{id}/notes", handlers.CreateNote(database))
 		r.Get("/api/entries/{id}/notes", handlers.ListNotes(database))
@@ -165,6 +172,7 @@ func main() {
 		r.Delete("/api/admin/users/{id}", handlers.DeleteAdminUser(database, eventHub))
 		r.Get("/api/admin/config", handlers.AdminConfig(database, webhookSecret))
 		r.Put("/api/admin/settings/file-watcher", handlers.UpdateFileWatcherSettings(database))
+		r.Put("/api/admin/settings/ollama", handlers.UpdateOllamaSettings(database))
 		r.Get("/api/admin/oidc/providers", handlers.ListOIDCProviders(database))
 		r.Post("/api/admin/oidc/providers", handlers.CreateOIDCProvider(database, registry))
 		r.Patch("/api/admin/oidc/providers/{id}", handlers.UpdateOIDCProvider(database, registry))
@@ -176,13 +184,13 @@ func main() {
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.AgentAuth(agentConfig))
 		r.Get("/api/agent/config", handlers.AgentConfig(database))
-		r.Post("/api/agent/push", handlers.AgentPush(database, eventHub))
+		r.Post("/api/agent/push", handlers.AgentPush(database, eventHub, incidentCh))
 	})
 
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.WebhookAuth(webhookSecret))
-		r.Post("/api/webhooks/uptime", handlers.WebhookUptime(database, eventHub))
-		r.Post("/api/webhooks/watchtower", handlers.WebhookWatchtower(database, eventHub))
+		r.Post("/api/webhooks/uptime", handlers.WebhookUptime(database, eventHub, incidentCh))
+		r.Post("/api/webhooks/watchtower", handlers.WebhookWatchtower(database, eventHub, incidentCh))
 	})
 
 	spaHandler := static.Handler(staticFiles)
