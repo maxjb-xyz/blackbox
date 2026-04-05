@@ -24,6 +24,16 @@ func TestIssueAndVerifyJWT_RoundTrip(t *testing.T) {
 	assert.Equal(t, 0, claims.TokenVersion)
 }
 
+func TestIssueAndVerifyJWT_OIDCLinked(t *testing.T) {
+	token, err := auth.IssueJWT("user-456", "bob", "bob@example.com", true, false, 2, "test-secret", time.Hour)
+	require.NoError(t, err)
+	assert.NotEmpty(t, token)
+
+	claims, err := auth.VerifyJWT(token, "test-secret")
+	require.NoError(t, err)
+	assert.True(t, claims.OIDCLinked)
+}
+
 func TestVerifyJWT_WrongSecret(t *testing.T) {
 	token, err := auth.IssueJWT("user-123", "alice", "", false, false, 0, "secret-a", time.Hour)
 	require.NoError(t, err)

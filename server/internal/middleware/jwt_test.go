@@ -17,7 +17,7 @@ import (
 
 func TestJWTAuth_ValidCookie(t *testing.T) {
 	secret := "test-secret"
-	token, err := auth.IssueJWT("user-1", "alice", "", false, 0, secret, time.Hour)
+	token, err := auth.IssueJWT("user-1", "alice", "", false, false, 0, secret, time.Hour)
 	require.NoError(t, err)
 
 	reached := false
@@ -37,7 +37,7 @@ func TestJWTAuth_ValidCookie(t *testing.T) {
 
 func TestJWTAuth_RejectsBearerToken(t *testing.T) {
 	secret := "test-secret"
-	token, err := auth.IssueJWT("user-1", "alice", "", false, 0, secret, time.Hour)
+	token, err := auth.IssueJWT("user-1", "alice", "", false, false, 0, secret, time.Hour)
 	require.NoError(t, err)
 
 	handler := middleware.JWTAuth(secret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -82,7 +82,7 @@ func TestTokenVersionCheck_RejectsStaleToken(t *testing.T) {
 	require.NoError(t, database.Create(&user).Error)
 
 	// Issue JWT with tv=0
-	token, err := auth.IssueJWT("u1", "alice", "", false, 0, "secret", time.Hour)
+	token, err := auth.IssueJWT("u1", "alice", "", false, false, 0, "secret", time.Hour)
 	require.NoError(t, err)
 
 	// Bump user's token_version to 1
@@ -113,7 +113,7 @@ func TestTokenVersionCheck_AcceptsCurrentToken(t *testing.T) {
 	user := models.User{ID: "u2", Username: "bob", TokenVersion: 3}
 	require.NoError(t, database.Create(&user).Error)
 
-	token, err := auth.IssueJWT("u2", "bob", "", false, 3, "secret", time.Hour)
+	token, err := auth.IssueJWT("u2", "bob", "", false, false, 3, "secret", time.Hour)
 	require.NoError(t, err)
 
 	reached := false

@@ -3,6 +3,7 @@ package handlers
 import (
 	"errors"
 	"net/http"
+	"net/mail"
 	"strings"
 
 	"blackbox/server/internal/auth"
@@ -32,6 +33,13 @@ func UpdateAccount(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 			return
 		}
 		req.Email = strings.TrimSpace(req.Email)
+		if req.Email != "" {
+			parsedEmail, err := mail.ParseAddress(req.Email)
+			if err != nil || parsedEmail.Address != req.Email {
+				writeError(w, http.StatusBadRequest, "valid email required")
+				return
+			}
+		}
 
 		var user models.User
 		if err := database.First(&user, "id = ?", claims.UserID).Error; err != nil {

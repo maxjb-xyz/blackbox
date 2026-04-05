@@ -198,6 +198,7 @@ export default function AccountPage() {
               ) : canEditEmail && editingEmail ? (
                 <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <input
+                    aria-label="Email address"
                     type="email"
                     value={emailInput}
                     onChange={event => setEmailInput(event.target.value)}
