@@ -103,7 +103,7 @@ const inputStyle: CSSProperties = {
 }
 
 export default function AccountPage() {
-  const { user, refreshSession } = useSession()
+  const { user, updateSession } = useSession()
   const [editingEmail, setEditingEmail] = useState(false)
   const [emailInput, setEmailInput] = useState('')
   const [saving, setSaving] = useState(false)
@@ -158,12 +158,8 @@ export default function AccountPage() {
     setSaving(true)
     setError(null)
     try {
-      await updateAccountEmail(nextEmail)
-      const nextUser = await refreshSession()
-      if (!nextUser) {
-        setError('Email updated, but session refresh failed. Reload the page.')
-        return
-      }
+      const updatedUser = await updateAccountEmail(nextEmail)
+      updateSession(updatedUser)
       setEditingEmail(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update email')

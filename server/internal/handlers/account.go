@@ -21,6 +21,9 @@ func UpdateAccount(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
+		// Check the JWT claim first to short-circuit obvious SSO-managed accounts.
+		// We re-check persisted OIDC linkage after loading the user below to guard
+		// against stale or tampered tokens and enforce current server-side state.
 		if claims.OIDCLinked {
 			writeError(w, http.StatusForbidden, "email is managed by your SSO provider")
 			return
@@ -33,12 +36,10 @@ func UpdateAccount(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 			return
 		}
 		req.Email = strings.TrimSpace(req.Email)
-		if req.Email != "" {
-			parsedEmail, err := mail.ParseAddress(req.Email)
-			if err != nil || parsedEmail.Address != req.Email {
-				writeError(w, http.StatusBadRequest, "valid email required")
-				return
-			}
+		parsedEmail, err := mail.ParseAddress(req.Email)
+		if req.Email == "" || err != nil || parsedEmail.Address != req.Email {
+			writeError(w, http.StatusBadRequest, "valid email required")
+			return
 		}
 
 		var user models.User
@@ -47,6 +48,7 @@ func UpdateAccount(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 			return
 		}
 
+		// Re-check server-side OIDC state even after the JWT gate above.
 		if user.OIDCIssuer != "" {
 			writeError(w, http.StatusForbidden, "email is managed by your SSO provider")
 			return

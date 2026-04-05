@@ -4,6 +4,7 @@ import { fetchCurrentUser, logout as logoutRequest, type SessionUser } from './a
 interface SessionContextValue {
   user: SessionUser | null
   loading: boolean
+  updateSession: (nextUser: SessionUser | null) => void
   refreshSession: () => Promise<SessionUser | null>
   logout: () => Promise<void>
 }
@@ -14,27 +15,29 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<SessionUser | null>(null)
   const [loading, setLoading] = useState(true)
 
+  const updateSession = useCallback((nextUser: SessionUser | null) => {
+    setUser(nextUser)
+    setLoading(false)
+  }, [])
+
   const refreshSession = useCallback(async () => {
     try {
       const nextUser = await fetchCurrentUser()
-      setUser(nextUser)
+      updateSession(nextUser)
       return nextUser
     } catch {
-      setUser(null)
+      updateSession(null)
       return null
-    } finally {
-      setLoading(false)
     }
-  }, [])
+  }, [updateSession])
 
   const logout = useCallback(async () => {
     try {
       await logoutRequest()
     } finally {
-      setUser(null)
-      setLoading(false)
+      updateSession(null)
     }
-  }, [])
+  }, [updateSession])
 
   useEffect(() => {
     void refreshSession()
@@ -44,10 +47,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     () => ({
       user,
       loading,
+      updateSession,
       refreshSession,
       logout,
     }),
-    [user, loading, refreshSession, logout],
+    [user, loading, updateSession, refreshSession, logout],
   )
 
   return (
