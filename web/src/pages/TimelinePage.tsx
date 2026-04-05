@@ -90,6 +90,22 @@ function formatMetadataWithoutDiff(metadata: string) {
   return JSON.stringify(clone, null, 2)
 }
 
+function webhookProviderLabel(entry: Entry): string | null {
+  if (entry.source !== 'webhook') return null
+  const parsed = parseMetadataObject(entry.metadata)
+  if (parsed) {
+    if (typeof parsed['watchtower.title'] === 'string' || typeof parsed['watchtower.level'] === 'string') {
+      return 'watchtower'
+    }
+    if (typeof parsed.monitor === 'string') {
+      return 'kuma'
+    }
+  }
+  if (entry.event === 'update') return 'watchtower'
+  if (entry.event === 'up' || entry.event === 'down') return 'kuma'
+  return 'webhook'
+}
+
 type ViewMode = 'cards' | 'rows'
 
 function getStoredViewMode(): ViewMode {
@@ -1355,6 +1371,7 @@ function DiffModal({ entry, diff, open, onClose }: { entry: Entry; diff: FileDif
 
 function TimelineCard({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip, onTooltipClear }: EntryProps) {
   const possibleCause = entry.correlated_id ? parsePossibleCause(entry.metadata) : null
+  const sourceLabel = webhookProviderLabel(entry) ?? entry.source
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (isInteractiveEntryTarget(e.target)) return
     if (e.key !== 'Enter' && e.key !== ' ') return
@@ -1401,7 +1418,7 @@ function TimelineCard({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip
           {entry.node_name && <span style={{ margin: '0 6px' }}>|</span>}
           {entry.node_name}
           {entry.source && <span style={{ margin: '0 6px' }}>|</span>}
-          <span style={{ color: 'var(--muted)' }}>{entry.source}</span>
+          <span style={{ color: 'var(--muted)' }}>{sourceLabel}</span>
         </span>
         <span
           style={{
@@ -1456,6 +1473,7 @@ function TimelineCard({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip
 function TimelineRow({ entry, isExpanded, isDimmed, isGhost, incident, onClick, onTooltip, onTooltipClear }: EntryProps) {
   const navigate = useNavigate()
   const possibleCause = entry.correlated_id ? parsePossibleCause(entry.metadata) : null
+  const sourceLabel = webhookProviderLabel(entry) ?? entry.source
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (isInteractiveEntryTarget(e.target)) return
     if (e.key !== 'Enter' && e.key !== ' ') return
@@ -1537,7 +1555,7 @@ function TimelineRow({ entry, isExpanded, isDimmed, isGhost, incident, onClick, 
         {entry.node_name}
       </span>
       <span style={{ color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
-        {entry.source}
+        {sourceLabel}
       </span>
       <div style={{ overflow: 'hidden', minWidth: 0 }}>
         {entry.service && (
