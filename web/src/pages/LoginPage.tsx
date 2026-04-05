@@ -51,6 +51,9 @@ export default function LoginPage() {
     setLoading(true)
     try {
       await login(username, password)
+      // Deliberately shadow the outer user with the local user from refreshSession so this handler can
+      // inspect the immediate return value; refreshSession can return null for a superseded request even
+      // when the outer user updates later, so the setError path here is intentional.
       const user = await refreshSession()
       if (!user) {
         console.error('LoginPage: refreshSession returned no user after login')
