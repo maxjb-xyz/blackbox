@@ -13,6 +13,32 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
+func TestServiceFromPath(t *testing.T) {
+	roots := []watchRoot{
+		{configured: "/etc/nginx", resolved: "/etc/nginx"},
+		{configured: "/opt/myapp", resolved: "/opt/myapp"},
+		{configured: "/home/user/docker/redis", resolved: "/home/user/docker/redis"},
+	}
+	cases := []struct {
+		path string
+		want string
+	}{
+		{"/etc/nginx/sites-available/foo.conf", "nginx"},
+		{"/opt/myapp/config.yml", "myapp"},
+		{"/home/user/docker/redis/redis.conf", "redis"},
+		{"/etc/nginx", "nginx"},
+		{"/opt/myapp", "myapp"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.path, func(t *testing.T) {
+			got := serviceFromPath(tc.path, roots)
+			if got != tc.want {
+				t.Fatalf("serviceFromPath(%q) = %q, want %q", tc.path, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestWatch_EmitsWriteForConfigFile(t *testing.T) {
 	root := t.TempDir()
 	serviceDir := filepath.Join(root, "sonarr")

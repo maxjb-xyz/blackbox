@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"testing"
 	"time"
 
@@ -369,6 +370,10 @@ func (f fakeDockerResolverClient) ContainerInspect(_ context.Context, _ string) 
 
 func (f fakeDockerResolverClient) ContainerList(_ context.Context, _ dockercontainer.ListOptions) ([]dockercontainer.Summary, error) {
 	return f.containers, f.containerErr
+}
+
+func (f fakeDockerResolverClient) ContainerLogs(_ context.Context, _ string, _ dockercontainer.LogsOptions) (io.ReadCloser, error) {
+	return nil, nil
 }
 
 type assertiveResolverError string
