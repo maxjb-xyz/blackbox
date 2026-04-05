@@ -98,6 +98,14 @@ function mergeEntries(existing: Entry[], incoming: Entry[]): Entry[] {
   return Array.from(merged.values()).sort(compareEntries)
 }
 
+function mergeServiceOptions(existing: string[], incoming: string[]): string[] {
+  const merged = new Set(existing)
+  for (const service of incoming) {
+    if (service) merged.add(service)
+  }
+  return Array.from(merged).sort((a, b) => a.localeCompare(b))
+}
+
 function matchesEntryFilters(
   entry: Entry,
   nodeFilter: string,
@@ -395,30 +403,57 @@ export default function TimelinePage() {
   const [hideHeartbeat, setHideHeartbeat] = useState<boolean>(getStoredHideHeartbeat)
   const [serviceOptions, setServiceOptions] = useState<string[]>([])
 
-  const serviceRequestRef = useRef(0)
   const serviceMountedRef = useRef(true)
+  const serviceRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const serviceRefreshPromiseRef = useRef<Promise<void> | null>(null)
+  const serviceRefreshQueuedRef = useRef(false)
 
   const nodeFilter = searchParams.get('node') ?? ''
   const sourceFilter = searchParams.get('source') ?? ''
   const serviceFilter = searchParams.get('service') ?? ''
   const qFilter = searchParams.get('q') ?? ''
 
-  const refreshServices = useCallback(() => {
-    const requestId = ++serviceRequestRef.current
-    void fetchEntryServices()
-      .then(({ services }) => {
-        if (!serviceMountedRef.current || requestId !== serviceRequestRef.current) return
-        setServiceOptions(services)
-      })
-      .catch(err => {
-        if (serviceMountedRef.current) console.error('fetchEntryServices:', err)
-      })
+  const refreshServices = useCallback(function scheduleServiceRefresh() {
+    if (serviceRefreshTimeoutRef.current) return
+
+    serviceRefreshTimeoutRef.current = setTimeout(() => {
+      serviceRefreshTimeoutRef.current = null
+
+      if (serviceRefreshPromiseRef.current) {
+        serviceRefreshQueuedRef.current = true
+        return
+      }
+
+      const refreshPromise = fetchEntryServices()
+        .then(({ services }) => {
+          if (!serviceMountedRef.current) return
+          setServiceOptions(prev => mergeServiceOptions(prev, services))
+        })
+        .catch(err => {
+          if (serviceMountedRef.current) console.error('fetchEntryServices:', err)
+        })
+        .finally(() => {
+          serviceRefreshPromiseRef.current = null
+          if (serviceRefreshQueuedRef.current) {
+            serviceRefreshQueuedRef.current = false
+            scheduleServiceRefresh()
+          }
+        })
+
+      serviceRefreshPromiseRef.current = refreshPromise
+    }, 150)
   }, [])
 
   useEffect(() => {
     serviceMountedRef.current = true
     refreshServices()
-    return () => { serviceMountedRef.current = false }
+    return () => {
+      serviceMountedRef.current = false
+      if (serviceRefreshTimeoutRef.current) {
+        clearTimeout(serviceRefreshTimeoutRef.current)
+        serviceRefreshTimeoutRef.current = null
+      }
+    }
   }, [refreshServices])
 
   function setFilter(key: string, value: string) {
