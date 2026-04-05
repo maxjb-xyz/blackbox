@@ -43,8 +43,8 @@ func ScoreCauses(db *gorm.DB, services []string, at time.Time) ([]CauseCandidate
 
 	var candidates []types.Entry
 	err := db.Where(
-		"service IN ? AND timestamp BETWEEN ? AND ? AND source != ?",
-		services, windowStart, at, "webhook",
+		"service IN ? AND timestamp BETWEEN ? AND ? AND NOT (source = ? AND event IN ?)",
+		services, windowStart, at, "webhook", []string{"down", "up"},
 	).Order("timestamp DESC").Find(&candidates).Error
 	if err != nil {
 		return nil, err
