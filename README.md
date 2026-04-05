@@ -517,6 +517,7 @@ The database is automatically migrated on startup — no manual schema managemen
 - [ ] Timeline UI polish and interaction improvements
 - [ ] Grafana data source plugin
 - [ ] Optional AI-Enhanced correlation engine
+- [ ] Support tracking systemd services
 - [ ] Mobile-friendly view
 
 ---
