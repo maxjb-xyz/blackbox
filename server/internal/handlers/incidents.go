@@ -100,7 +100,7 @@ func GetIncident(database *gorm.DB) http.HandlerFunc {
 		for _, link := range links {
 			var entry types.Entry
 			if err := database.First(&entry, "id = ?", link.EntryID).Error; err != nil {
-				log.Printf("GetIncident missing entry for link %s entry %s: %v", link.ID, link.EntryID, err)
+				log.Printf("GetIncident missing entry for incident %s entry %s role %s: %v", link.IncidentID, link.EntryID, link.Role, err)
 				continue
 			}
 			details = append(details, incidentEntryDetail{Link: link, Data: &entry})

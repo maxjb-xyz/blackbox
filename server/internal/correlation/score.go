@@ -36,6 +36,9 @@ const maxLookbackWindow = 300 * time.Second
 // ordered by score descending. The caller should apply ApplyNodeBonus
 // once the trigger node is known.
 func ScoreCauses(db *gorm.DB, services []string, at time.Time) ([]CauseCandidate, error) {
+	if len(services) == 0 {
+		return []CauseCandidate{}, nil
+	}
 	windowStart := at.Add(-maxLookbackWindow)
 
 	var candidates []types.Entry
