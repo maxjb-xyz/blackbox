@@ -310,13 +310,9 @@ func buildCollapsedContainerEntry(nodeName, event string, rawEvents []dockereven
 	}
 	metaBytes, _ := json.Marshal(meta)
 
-	// Callers currently build collapsed entries from at least one raw event, but
-	// keep a defensive time.Now().UTC() fallback so future empty rawEvents slices
-	// still produce a usable timestamp if messageTimestamp cannot be derived.
-	timestamp := time.Now().UTC()
-	if len(rawEvents) > 0 {
-		timestamp = messageTimestamp(rawEvents[len(rawEvents)-1])
-	}
+	// Use the first stop event for collapsed stop timestamps so replacement
+	// create/start events cannot appear to precede the stop that triggered them.
+	timestamp := collapsedEntryTimestamp(event, rawEvents)
 
 	return types.Entry{
 		ID:        ulid.Make().String(),
@@ -328,6 +324,19 @@ func buildCollapsedContainerEntry(nodeName, event string, rawEvents []dockereven
 		Content:   content,
 		Metadata:  string(metaBytes),
 	}
+}
+
+func collapsedEntryTimestamp(event string, rawEvents []dockerevents.Message) time.Time {
+	// Callers currently build collapsed entries from at least one raw event, but
+	// keep a defensive time.Now().UTC() fallback so future empty rawEvents slices
+	// still produce a usable timestamp if messageTimestamp cannot be derived.
+	if len(rawEvents) == 0 {
+		return time.Now().UTC()
+	}
+	if event == "stop" {
+		return messageTimestamp(rawEvents[0])
+	}
+	return messageTimestamp(rawEvents[len(rawEvents)-1])
 }
 
 func buildRawEvents(rawEvents []dockerevents.Message) []rawDockerEvent {

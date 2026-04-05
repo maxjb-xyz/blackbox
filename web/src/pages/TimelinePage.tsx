@@ -213,9 +213,19 @@ function entryTimestampMs(entry: Entry): number {
   return Number.isNaN(ts) ? 0 : ts
 }
 
+function entryTimestampSortKey(entry: Entry): string {
+  const ts = entry.timestamp?.trim() ?? ''
+  const match = ts.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?Z$/)
+  if (!match) return ts
+  const [, base, fraction = ''] = match
+  return `${base}.${fraction.padEnd(9, '0')}Z`
+}
+
 function compareEntries(a: Entry, b: Entry): number {
   const tsDiff = entryTimestampMs(b) - entryTimestampMs(a)
   if (tsDiff !== 0) return tsDiff
+  const tsKeyDiff = entryTimestampSortKey(b).localeCompare(entryTimestampSortKey(a))
+  if (tsKeyDiff !== 0) return tsKeyDiff
   if (a.id === b.id) return 0
   return a.id < b.id ? 1 : -1
 }

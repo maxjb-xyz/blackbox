@@ -83,8 +83,8 @@ func TestEventCollapser_EmitsStopAfterDebounce(t *testing.T) {
 	if entry.Content != "Container stopped: traefik (exit code: 137)" {
 		t.Fatalf("unexpected content: %q", entry.Content)
 	}
-	if !entry.Timestamp.Equal(base.Add(time.Second)) {
-		t.Fatalf("expected timestamp %v, got %v", base.Add(time.Second), entry.Timestamp)
+	if !entry.Timestamp.Equal(base) {
+		t.Fatalf("expected timestamp %v, got %v", base, entry.Timestamp)
 	}
 
 	var meta struct {
