@@ -393,14 +393,6 @@ func jsonStrings(ss []string) string {
 	return string(b)
 }
 
-func serviceFromIncident(inc models.Incident) string {
-	var svcs []string
-	if err := json.Unmarshal([]byte(inc.Services), &svcs); err != nil || len(svcs) == 0 {
-		return ""
-	}
-	return svcs[0]
-}
-
 func extractExitCodeFromEntry(e types.Entry) string {
 	var meta map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(e.Metadata), &meta); err != nil {
