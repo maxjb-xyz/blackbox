@@ -3,6 +3,8 @@ package handlers
 import (
 	"errors"
 	"net/http"
+	"net/mail"
+	"strings"
 	"time"
 
 	"blackbox/server/internal/auth"
@@ -25,8 +27,14 @@ func Register(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 		if !decodeJSONBody(w, r, maxCredentialBodyBytes, &req) {
 			return
 		}
-		if req.Username == "" || req.Password == "" || req.Email == "" || req.InviteCode == "" {
+		email := strings.TrimSpace(req.Email)
+		if req.Username == "" || req.Password == "" || email == "" || req.InviteCode == "" {
 			writeError(w, http.StatusBadRequest, "username, password, email, and invite_code required")
+			return
+		}
+		parsedEmail, err := mail.ParseAddress(email)
+		if err != nil || parsedEmail.Address != email {
+			writeError(w, http.StatusBadRequest, "valid email required")
 			return
 		}
 
@@ -56,7 +64,7 @@ func Register(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 			user = models.User{
 				ID:           userID,
 				Username:     req.Username,
-				Email:        req.Email,
+				Email:        email,
 				PasswordHash: hash,
 				IsAdmin:      false,
 				CreatedAt:    time.Now(),

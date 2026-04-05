@@ -158,3 +158,31 @@ func TestRegister_RequiresEmail(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
+
+func TestRegister_RejectsInvalidEmail(t *testing.T) {
+	t.Run("whitespace only", func(t *testing.T) {
+		database := newTestDB(t)
+
+		body := `{"username":"erin","password":"Hunter2!secure","email":"   ","invite_code":"doesnotmatter"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		handlers.Register(database, "jwt-test-secret")(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("malformed", func(t *testing.T) {
+		database := newTestDB(t)
+
+		body := `{"username":"erin","password":"Hunter2!secure","email":"not-an-email","invite_code":"doesnotmatter"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		handlers.Register(database, "jwt-test-secret")(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+}
