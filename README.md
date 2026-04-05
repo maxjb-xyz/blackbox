@@ -145,8 +145,14 @@ docker compose up -d
 | `SERVER_URL` | Yes | — | Base URL of the Blackbox server (e.g., `http://blackbox-server:8080`). |
 | `AGENT_TOKEN` | Yes | — | Token matching an entry in the server's `AGENT_TOKENS`. |
 | `NODE_NAME` | No | System hostname | Identifier for this node in the timeline. |
-| `WATCH_PATHS` | No | — | Colon-separated list of directories to watch for file changes (e.g., `/etc:/opt/appdata`). |
+| `WATCH_PATHS` | No | — | Colon-separated list of directories to watch for file changes as seen inside the agent container (e.g., `/watch/etc:/watch/appdata`). |
 | `WATCH_IGNORE` | No | — | Colon-separated glob patterns to exclude from file watching. |
+
+### File Watcher Troubleshooting
+
+- `WATCH_PATHS` must match the container-side mount target, not the host source path. Example: `- /srv/stacks:/watch/stacks:ro` pairs with `WATCH_PATHS=/watch/stacks`.
+- On startup, the agent now logs a per-root registration line. If you see `failed to register root /watch/stacks`, the bind mount and `WATCH_PATHS` do not line up inside the container.
+- Some editors save by replacing files instead of writing them in place. Blackbox now emits alerts for those `rename` and `chmod` style config-file changes as well.
 
 ### Agent Tokens
 
