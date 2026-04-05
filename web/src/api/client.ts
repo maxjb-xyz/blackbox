@@ -175,7 +175,7 @@ export async function fetchEntries(params: {
 
 export async function fetchEntryServices(): Promise<{ services: string[] }> {
   const res = await apiFetch('/api/entries/services')
-  if (!res.ok) throw new Error('Failed to fetch entry services')
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to fetch entry services'))
   return res.json()
 }
 

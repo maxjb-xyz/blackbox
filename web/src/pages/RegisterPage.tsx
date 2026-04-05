@@ -48,16 +48,9 @@ export default function RegisterPage() {
     try {
       await register(username, email, password, inviteCode)
       let user = null
-      try {
-        user = await refreshSession()
-      } catch (err) {
-        console.error('RegisterPage: failed to refresh session after registration', err)
-        setError('Registration succeeded, but session refresh failed. Please sign in.')
-        return
-      }
+      user = await refreshSession()
       if (!user) {
-        console.error('RegisterPage: refreshSession returned no user after registration')
-        setError('Registration succeeded, but session could not be loaded. Please sign in.')
+        setError('Registration succeeded, but session refresh failed. Please sign in.')
         return
       }
       navigate('/timeline', { replace: true })
