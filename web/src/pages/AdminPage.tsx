@@ -864,6 +864,11 @@ function SettingsTab() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
+  const [ollamaURL, setOllamaURL] = useState('')
+  const [ollamaModel, setOllamaModel] = useState('')
+  const [ollamaSaving, setOllamaSaving] = useState(false)
+  const [ollamaError, setOllamaError] = useState<string | null>(null)
+  const [ollamaSuccess, setOllamaSuccess] = useState(false)
 
   const loadSettings = useCallback(async () => {
     setLoading(true)
@@ -871,6 +876,8 @@ function SettingsTab() {
     try {
       const config = await fetchAdminConfig()
       setRedactSecrets(config.file_watcher_redact_secrets)
+      setOllamaURL(config.ollama_url ?? '')
+      setOllamaModel(config.ollama_model ?? '')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load settings')
     } finally {
@@ -897,67 +904,133 @@ function SettingsTab() {
     }
   }
 
+  async function saveOllamaSettings(e: React.FormEvent) {
+    e.preventDefault()
+    setOllamaSaving(true)
+    setOllamaError(null)
+    setOllamaSuccess(false)
+    try {
+      const res = await fetch('/api/admin/settings/ollama', {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ollama_url: ollamaURL, ollama_model: ollamaModel }),
+      })
+      if (!res.ok) throw new Error(await readErrorMessage(res, 'Save failed'))
+      setOllamaSuccess(true)
+    } catch (err) {
+      setOllamaError(err instanceof Error ? err.message : 'Save failed')
+    } finally {
+      setOllamaSaving(false)
+    }
+  }
+
   return (
-    <section style={panelStyle}>
-      <div style={panelHeaderStyle}>
-        <span style={panelLabelStyle}>FILE WATCHER</span>
-      </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      <section style={panelStyle}>
+        <div style={panelHeaderStyle}>
+          <span style={panelLabelStyle}>FILE WATCHER</span>
+        </div>
 
-      {message && <div style={{ color: 'var(--success)', fontSize: '12px', marginBottom: 12 }}>{message}</div>}
-      {error && <div style={{ color: 'var(--danger)', fontSize: '12px', marginBottom: 12 }}>{error}</div>}
+        {message && <div style={{ color: 'var(--success)', fontSize: '12px', marginBottom: 12 }}>{message}</div>}
+        {error && <div style={{ color: 'var(--danger)', fontSize: '12px', marginBottom: 12 }}>{error}</div>}
 
-      {loading ? (
-        <div style={{ color: 'var(--muted)', fontSize: '12px' }}>loading...</div>
-      ) : (
-        <>
-          <label
-            style={{
-              display: 'flex',
-              gap: 10,
-              alignItems: 'flex-start',
-              border: '1px solid var(--border)',
-              padding: '12px 14px',
-              marginBottom: 16,
-            }}
-          >
+        {loading ? (
+          <div style={{ color: 'var(--muted)', fontSize: '12px' }}>loading...</div>
+        ) : (
+          <>
+            <label
+              style={{
+                display: 'flex',
+                gap: 10,
+                alignItems: 'flex-start',
+                border: '1px solid var(--border)',
+                padding: '12px 14px',
+                marginBottom: 16,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={redactSecrets}
+                onChange={e => setRedactSecrets(e.target.checked)}
+                style={{ marginTop: 2 }}
+              />
+              <div>
+                <div style={{ color: 'var(--text)', fontSize: '11px', letterSpacing: '0.1em' }}>REDACT SECRETS IN FILE DIFFS</div>
+                <div style={{ color: 'var(--muted)', fontSize: '12px', marginTop: 4, lineHeight: '1.5' }}>
+                  When enabled, obvious secret-bearing keys such as tokens, passwords, and client secrets are masked before file diffs are uploaded by agents.
+                </div>
+                <div style={{ color: 'var(--muted)', fontSize: '12px', marginTop: 8, lineHeight: '1.5' }}>
+                  Agents refresh this setting periodically. Changing it affects newly captured file diffs, not historical entries already stored in Blackbox.
+                </div>
+              </div>
+            </label>
+
+            <button
+              type="button"
+              onClick={() => void handleSave()}
+              disabled={saving}
+              style={{
+                background: saving ? 'var(--border)' : 'var(--accent)',
+                color: '#000',
+                border: 'none',
+                padding: '8px 16px',
+                fontFamily: 'inherit',
+                fontSize: '12px',
+                fontWeight: 'bold',
+                letterSpacing: '0.1em',
+                cursor: saving ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {saving ? 'SAVING...' : 'SAVE'}
+            </button>
+          </>
+        )}
+      </section>
+
+      <section style={panelStyle}>
+        <h3 style={{ fontSize: 11, color: 'var(--muted)', letterSpacing: '0.1em', margin: '0 0 12px 0' }}>
+          AI ENRICHMENT (OPTIONAL)
+        </h3>
+        <form onSubmit={saveOllamaSettings} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <label style={{ fontSize: 12, color: 'var(--muted)' }}>
+            OLLAMA URL
             <input
-              type="checkbox"
-              checked={redactSecrets}
-              onChange={e => setRedactSecrets(e.target.checked)}
-              style={{ marginTop: 2 }}
+              type="url"
+              value={ollamaURL}
+              onChange={e => {
+                setOllamaURL(e.target.value)
+                setOllamaSuccess(false)
+              }}
+              placeholder="http://192.168.1.10:11434"
+              style={{ display: 'block', width: '100%', marginTop: 4, ...FILTER_CONTROL_STYLE }}
             />
-            <div>
-              <div style={{ color: 'var(--text)', fontSize: '11px', letterSpacing: '0.1em' }}>REDACT SECRETS IN FILE DIFFS</div>
-              <div style={{ color: 'var(--muted)', fontSize: '12px', marginTop: 4, lineHeight: '1.5' }}>
-                When enabled, obvious secret-bearing keys such as tokens, passwords, and client secrets are masked before file diffs are uploaded by agents.
-              </div>
-              <div style={{ color: 'var(--muted)', fontSize: '12px', marginTop: 8, lineHeight: '1.5' }}>
-                Agents refresh this setting periodically. Changing it affects newly captured file diffs, not historical entries already stored in Blackbox.
-              </div>
-            </div>
           </label>
-
+          <label style={{ fontSize: 12, color: 'var(--muted)' }}>
+            MODEL
+            <input
+              type="text"
+              value={ollamaModel}
+              onChange={e => {
+                setOllamaModel(e.target.value)
+                setOllamaSuccess(false)
+              }}
+              placeholder="llama3.2"
+              style={{ display: 'block', width: '100%', marginTop: 4, ...FILTER_CONTROL_STYLE }}
+            />
+          </label>
+          {ollamaError && <div style={{ color: 'var(--danger)', fontSize: 11 }}>{ollamaError}</div>}
+          {ollamaSuccess && <div style={{ color: 'var(--success)', fontSize: 11 }}>saved</div>}
           <button
-            type="button"
-            onClick={() => void handleSave()}
-            disabled={saving}
-            style={{
-              background: saving ? 'var(--border)' : 'var(--accent)',
-              color: '#000',
-              border: 'none',
-              padding: '8px 16px',
-              fontFamily: 'inherit',
-              fontSize: '12px',
-              fontWeight: 'bold',
-              letterSpacing: '0.1em',
-              cursor: saving ? 'not-allowed' : 'pointer',
-            }}
+            type="submit"
+            disabled={ollamaSaving}
+            style={{ alignSelf: 'flex-start', fontSize: 11, padding: '4px 12px', cursor: 'pointer', fontFamily: 'inherit' }}
           >
-            {saving ? 'SAVING...' : 'SAVE'}
+            {ollamaSaving ? 'SAVING...' : 'SAVE'}
           </button>
-        </>
-      )}
-    </section>
+        </form>
+      </section>
+    </div>
   )
 }
 
@@ -1001,6 +1074,16 @@ const inputStyle: CSSProperties = {
   padding: '8px 10px',
   fontFamily: 'inherit',
   fontSize: '12px',
+  outline: 'none',
+}
+
+const FILTER_CONTROL_STYLE: CSSProperties = {
+  background: 'var(--bg)',
+  border: '1px solid var(--border)',
+  color: 'var(--text)',
+  fontSize: '12px',
+  padding: '2px 6px',
+  fontFamily: 'inherit',
   outline: 'none',
 }
 

@@ -256,6 +256,8 @@ export async function deleteAdminUser(id: string): Promise<void> {
 export interface AdminConfig {
   webhook_secret: string
   file_watcher_redact_secrets: boolean
+  ollama_url: string
+  ollama_model: string
 }
 
 export async function fetchAdminConfig(): Promise<AdminConfig> {
@@ -354,4 +356,73 @@ export async function setOIDCPolicy(policy: string): Promise<void> {
     body: JSON.stringify({ policy }),
   })
   if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to update OIDC policy'))
+}
+
+export interface Incident {
+  id: string
+  opened_at: string
+  resolved_at?: string | null
+  status: 'open' | 'resolved'
+  confidence: 'confirmed' | 'suspected'
+  title: string
+  services: string
+  root_cause_id?: string
+  trigger_id?: string
+  node_names: string
+  metadata: string
+}
+
+export interface IncidentEntryLink {
+  link: {
+    incident_id: string
+    entry_id: string
+    role: 'trigger' | 'cause' | 'evidence' | 'recovery'
+    score: number
+  }
+  entry: Entry
+}
+
+export interface IncidentDetail {
+  incident: Incident
+  entries: IncidentEntryLink[]
+}
+
+export interface IncidentsPage {
+  incidents: Incident[]
+  has_more: boolean
+}
+
+export function parseIncidentServices(inc: Incident): string[] {
+  try { return JSON.parse(inc.services) as string[] } catch { return [] }
+}
+
+export function parseIncidentNodes(inc: Incident): string[] {
+  try { return JSON.parse(inc.node_names) as string[] } catch { return [] }
+}
+
+export function parseIncidentMetadata(inc: Incident): Record<string, unknown> {
+  try { return JSON.parse(inc.metadata) as Record<string, unknown> } catch { return {} }
+}
+
+export async function fetchIncidents(params?: {
+  status?: string
+  confidence?: string
+  service?: string
+  limit?: number
+}): Promise<IncidentsPage> {
+  const qs = new URLSearchParams()
+  if (params?.status) qs.set('status', params.status)
+  if (params?.confidence) qs.set('confidence', params.confidence)
+  if (params?.service) qs.set('service', params.service)
+  if (params?.limit) qs.set('limit', String(params.limit))
+  const url = '/api/incidents' + (qs.toString() ? '?' + qs.toString() : '')
+  const res = await fetch(url, { credentials: 'include' })
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to fetch incidents'))
+  return res.json() as Promise<IncidentsPage>
+}
+
+export async function fetchIncident(id: string): Promise<IncidentDetail> {
+  const res = await fetch(`/api/incidents/${id}`, { credentials: 'include' })
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to fetch incident'))
+  return res.json() as Promise<IncidentDetail>
 }

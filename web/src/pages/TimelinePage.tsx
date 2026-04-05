@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { createNote, fetchEntries, fetchEntry, fetchEntryServices, fetchNotes } from '../api/client'
+import {
+  createNote,
+  fetchEntries,
+  fetchEntry,
+  fetchEntryServices,
+  fetchIncident,
+  fetchIncidents,
+  fetchNotes,
+} from '../api/client'
 import type { Entry, EntryNote } from '../api/client'
 import { useNodePulse } from '../components/NodePulse'
 import { useWebSocketContext } from '../components/WebSocketProvider'
@@ -747,6 +755,7 @@ function TimelineFeed({
   const [ghostEntry, setGhostEntry] = useState<Entry | null>(null)
   const [tooltip, setTooltip] = useState<TooltipState | null>(null)
   const [sentinelVisible, setSentinelVisible] = useState(false)
+  const [entryIncidentMap, setEntryIncidentMap] = useState<Record<string, { id: string; confidence: string }>>({})
 
   const sentinelRef = useRef<HTMLDivElement>(null)
   const renderedIdsRef = useRef<Set<string>>(new Set())
@@ -762,6 +771,28 @@ function TimelineFeed({
     ghostEntryRef.current = null
     setGhostEntry(null)
     return true
+  })
+
+  const loadIncidentMembership = useEffectEvent(async () => {
+    try {
+      const page = await fetchIncidents({ status: 'open', limit: 50 })
+      const map: Record<string, { id: string; confidence: string }> = {}
+      await Promise.all(
+        page.incidents.map(async inc => {
+          try {
+            const detail = await fetchIncident(inc.id)
+            for (const { link } of detail.entries) {
+              map[link.entry_id] = { id: inc.id, confidence: inc.confidence }
+            }
+          } catch {
+            // ignore
+          }
+        }),
+      )
+      if (mountedRef.current) setEntryIncidentMap(map)
+    } catch {
+      if (mountedRef.current) setEntryIncidentMap({})
+    }
   })
 
   const loadPage = useEffectEvent(async (cursor?: string) => {
@@ -794,6 +825,7 @@ function TimelineFeed({
 
       setNextCursor(page.next_cursor)
       setDone(!page.next_cursor)
+      void loadIncidentMembership()
       onEntriesChanged()
     } catch (err) {
       if (mountedRef.current) {
@@ -844,6 +876,13 @@ function TimelineFeed({
       return mergedEntries
     })
   }, [hideHeartbeat, lastMessage, nodeFilter, onEntriesChanged, qFilter, serviceFilter, sourceFilter])
+
+  useEffect(() => {
+    if (!lastMessage) return
+    if (lastMessage.type === 'incident_opened' || lastMessage.type === 'incident_updated' || lastMessage.type === 'incident_resolved') {
+      void loadIncidentMembership()
+    }
+  }, [lastMessage, loadIncidentMembership])
 
   function handleRowClick(entry: Entry) {
     if (expandedId === entry.id) {
@@ -971,6 +1010,7 @@ function TimelineFeed({
                 isExpanded={expandedId === entry.id}
                 isDimmed={expandedId !== null && expandedId !== entry.id}
                 isGhost={ghostEntry?.id === entry.id}
+                incident={entryIncidentMap[entry.id]}
                 onClick={() => handleRowClick(entry)}
                 onTooltip={setTooltip}
                 onTooltipClear={() => setTooltip(null)}
@@ -1010,6 +1050,7 @@ interface EntryProps {
   isExpanded: boolean
   isDimmed: boolean
   isGhost: boolean
+  incident?: { id: string; confidence: string }
   onClick: () => void
   onTooltip: (tooltip: TooltipState) => void
   onTooltipClear: () => void
@@ -1404,7 +1445,7 @@ function TimelineCard({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip
   )
 }
 
-function TimelineRow({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip, onTooltipClear }: EntryProps) {
+function TimelineRow({ entry, isExpanded, isDimmed, isGhost, incident, onClick, onTooltip, onTooltipClear }: EntryProps) {
   const possibleCause = entry.correlated_id ? parsePossibleCause(entry.metadata) : null
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (isInteractiveEntryTarget(e.target)) return
@@ -1450,9 +1491,31 @@ function TimelineRow({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip,
       }
       onMouseLeave={possibleCause ? onTooltipClear : undefined}
     >
-      <span style={{ color: 'var(--accent)', fontSize: '11px', lineHeight: '20px' }}>
-        {entry.correlated_id ? '^' : ''}
-      </span>
+      <div style={{ width: 20, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {incident ? (
+          <span
+            title={`Incident: ${incident.id}`}
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
+              background: incident.confidence === 'confirmed'
+                ? 'var(--danger)'
+                : 'var(--warning)',
+              cursor: 'pointer',
+              display: 'inline-block',
+            }}
+            onClick={event => {
+              event.stopPropagation()
+              window.location.href = '/incidents'
+            }}
+          />
+        ) : (
+          <span style={{ color: 'var(--accent)', fontSize: '11px', lineHeight: '20px' }}>
+            {entry.correlated_id ? '^' : ''}
+          </span>
+        )}
+      </div>
       <span style={{ color: 'var(--muted)', fontSize: '12px', whiteSpace: 'nowrap' }}>
         {formatTimestamp(entry.timestamp)}
       </span>
