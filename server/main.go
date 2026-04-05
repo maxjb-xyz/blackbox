@@ -71,13 +71,14 @@ func main() {
 				log.Printf("OIDC_ENABLED=true but one or more required env vars are missing; skipping OIDC provider seed")
 			} else {
 				provider := models.OIDCProviderConfig{
-					ID:           ulid.Make().String(),
-					Name:         "SSO",
-					Issuer:       issuer,
-					ClientID:     clientID,
-					ClientSecret: clientSecret,
-					RedirectURL:  redirectURL,
-					Enabled:      models.BoolPtr(true),
+					ID:                   ulid.Make().String(),
+					Name:                 "SSO",
+					Issuer:               issuer,
+					ClientID:             clientID,
+					ClientSecret:         clientSecret,
+					RedirectURL:          redirectURL,
+					RequireVerifiedEmail: models.BoolPtr(true),
+					Enabled:              models.BoolPtr(true),
 				}
 				if err := database.Create(&provider).Error; err != nil {
 					log.Printf("failed to seed OIDC provider from env: %v", err)
@@ -131,7 +132,7 @@ func main() {
 		r.Post("/api/auth/bootstrap", handlers.Bootstrap(database, jwtSecret))
 	})
 	r.Get("/api/auth/oidc/providers", handlers.ListPublicOIDCProviders(database, registry))
-	r.Get("/api/auth/oidc/{provider_id}/login", handlers.OIDCProviderLogin(database, registry))
+	r.With(middleware.RateLimit(time.Minute, 10)).Get("/api/auth/oidc/{provider_id}/login", handlers.OIDCProviderLogin(database, registry))
 	r.Get("/api/auth/oidc/{provider_id}/callback", handlers.OIDCProviderCallback(database, registry, jwtSecret))
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RateLimit(time.Minute, 10))

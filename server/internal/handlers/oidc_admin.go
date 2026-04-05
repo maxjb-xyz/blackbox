@@ -18,15 +18,16 @@ import (
 )
 
 type oidcProviderResponse struct {
-	ID           string    `json:"id"`
-	Name         string    `json:"name"`
-	Issuer       string    `json:"issuer"`
-	ClientID     string    `json:"client_id"`
-	ClientSecret string    `json:"client_secret"`
-	RedirectURL  string    `json:"redirect_url"`
-	Enabled      bool      `json:"enabled"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID                   string    `json:"id"`
+	Name                 string    `json:"name"`
+	Issuer               string    `json:"issuer"`
+	ClientID             string    `json:"client_id"`
+	ClientSecret         string    `json:"client_secret"`
+	RedirectURL          string    `json:"redirect_url"`
+	RequireVerifiedEmail bool      `json:"require_verified_email"`
+	Enabled              bool      `json:"enabled"`
+	CreatedAt            time.Time `json:"created_at"`
+	UpdatedAt            time.Time `json:"updated_at"`
 }
 
 type publicOIDCProviderResponse struct {
@@ -85,13 +86,14 @@ func CreateOIDCProvider(db *gorm.DB, registry *auth.OIDCRegistry) http.HandlerFu
 		}
 
 		var req struct {
-			ID           string `json:"id"`
-			Name         string `json:"name"`
-			Issuer       string `json:"issuer"`
-			ClientID     string `json:"client_id"`
-			ClientSecret string `json:"client_secret"`
-			RedirectURL  string `json:"redirect_url"`
-			Enabled      *bool  `json:"enabled"`
+			ID                   string `json:"id"`
+			Name                 string `json:"name"`
+			Issuer               string `json:"issuer"`
+			ClientID             string `json:"client_id"`
+			ClientSecret         string `json:"client_secret"`
+			RedirectURL          string `json:"redirect_url"`
+			RequireVerifiedEmail *bool  `json:"require_verified_email"`
+			Enabled              *bool  `json:"enabled"`
 		}
 		if !decodeJSONBody(w, r, 8<<10, &req) {
 			return
@@ -100,9 +102,14 @@ func CreateOIDCProvider(db *gorm.DB, registry *auth.OIDCRegistry) http.HandlerFu
 		req.Name = strings.TrimSpace(req.Name)
 		req.Issuer = strings.TrimSpace(req.Issuer)
 		req.ClientID = strings.TrimSpace(req.ClientID)
+		req.ClientSecret = strings.TrimSpace(req.ClientSecret)
 		req.RedirectURL = strings.TrimSpace(req.RedirectURL)
 		if req.Name == "" || req.Issuer == "" || req.ClientID == "" || req.ClientSecret == "" || req.RedirectURL == "" {
 			writeError(w, http.StatusBadRequest, "name, issuer, client_id, client_secret, and redirect_url required")
+			return
+		}
+		if req.ClientSecret == "***" {
+			writeError(w, http.StatusBadRequest, "client_secret placeholder not allowed")
 			return
 		}
 		if req.ID == "" {
@@ -117,15 +124,20 @@ func CreateOIDCProvider(db *gorm.DB, registry *auth.OIDCRegistry) http.HandlerFu
 		if req.Enabled != nil {
 			enabled = *req.Enabled
 		}
+		requireVerified := true
+		if req.RequireVerifiedEmail != nil {
+			requireVerified = *req.RequireVerifiedEmail
+		}
 
 		provider := models.OIDCProviderConfig{
-			ID:           req.ID,
-			Name:         req.Name,
-			Issuer:       req.Issuer,
-			ClientID:     req.ClientID,
-			ClientSecret: req.ClientSecret,
-			RedirectURL:  req.RedirectURL,
-			Enabled:      models.BoolPtr(enabled),
+			ID:                   req.ID,
+			Name:                 req.Name,
+			Issuer:               req.Issuer,
+			ClientID:             req.ClientID,
+			ClientSecret:         req.ClientSecret,
+			RedirectURL:          req.RedirectURL,
+			RequireVerifiedEmail: models.BoolPtr(requireVerified),
+			Enabled:              models.BoolPtr(enabled),
 		}
 		if err := db.Create(&provider).Error; err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to create OIDC provider")
@@ -163,13 +175,14 @@ func UpdateOIDCProvider(db *gorm.DB, registry *auth.OIDCRegistry) http.HandlerFu
 		}
 
 		var req struct {
-			ID           *string `json:"id"`
-			Name         *string `json:"name"`
-			Issuer       *string `json:"issuer"`
-			ClientID     *string `json:"client_id"`
-			ClientSecret *string `json:"client_secret"`
-			RedirectURL  *string `json:"redirect_url"`
-			Enabled      *bool   `json:"enabled"`
+			ID                   *string `json:"id"`
+			Name                 *string `json:"name"`
+			Issuer               *string `json:"issuer"`
+			ClientID             *string `json:"client_id"`
+			ClientSecret         *string `json:"client_secret"`
+			RedirectURL          *string `json:"redirect_url"`
+			RequireVerifiedEmail *bool   `json:"require_verified_email"`
+			Enabled              *bool   `json:"enabled"`
 		}
 		if !decodeJSONBody(w, r, 8<<10, &req) {
 			return
@@ -210,6 +223,18 @@ func UpdateOIDCProvider(db *gorm.DB, registry *auth.OIDCRegistry) http.HandlerFu
 			writeError(w, http.StatusBadRequest, "client_id cannot be empty")
 			return
 		}
+		if req.ClientSecret != nil {
+			trimmed := strings.TrimSpace(*req.ClientSecret)
+			req.ClientSecret = &trimmed
+			if *req.ClientSecret == "" {
+				writeError(w, http.StatusBadRequest, "client_secret cannot be empty")
+				return
+			}
+			if *req.ClientSecret == "***" {
+				writeError(w, http.StatusBadRequest, "client_secret placeholder not allowed")
+				return
+			}
+		}
 		if req.RedirectURL != nil {
 			trimmed := strings.TrimSpace(*req.RedirectURL)
 			req.RedirectURL = &trimmed
@@ -232,11 +257,14 @@ func UpdateOIDCProvider(db *gorm.DB, registry *auth.OIDCRegistry) http.HandlerFu
 		if req.ClientID != nil {
 			updates["client_id"] = *req.ClientID
 		}
-		if req.ClientSecret != nil && *req.ClientSecret != "" && *req.ClientSecret != "***" {
+		if req.ClientSecret != nil {
 			updates["client_secret"] = *req.ClientSecret
 		}
 		if req.RedirectURL != nil {
 			updates["redirect_url"] = *req.RedirectURL
+		}
+		if req.RequireVerifiedEmail != nil {
+			updates["require_verified_email"] = *req.RequireVerifiedEmail
 		}
 		if req.Enabled != nil {
 			updates["enabled"] = *req.Enabled
@@ -396,15 +424,16 @@ func ListPublicOIDCProviders(db *gorm.DB, registry *auth.OIDCRegistry) http.Hand
 
 func toOIDCProviderResponse(provider models.OIDCProviderConfig) oidcProviderResponse {
 	return oidcProviderResponse{
-		ID:           provider.ID,
-		Name:         provider.Name,
-		Issuer:       provider.Issuer,
-		ClientID:     provider.ClientID,
-		ClientSecret: "***",
-		RedirectURL:  provider.RedirectURL,
-		Enabled:      provider.Enabled != nil && *provider.Enabled,
-		CreatedAt:    provider.CreatedAt,
-		UpdatedAt:    provider.UpdatedAt,
+		ID:                   provider.ID,
+		Name:                 provider.Name,
+		Issuer:               provider.Issuer,
+		ClientID:             provider.ClientID,
+		ClientSecret:         "***",
+		RedirectURL:          provider.RedirectURL,
+		RequireVerifiedEmail: provider.RequireVerifiedEmail == nil || *provider.RequireVerifiedEmail,
+		Enabled:              provider.Enabled != nil && *provider.Enabled,
+		CreatedAt:            provider.CreatedAt,
+		UpdatedAt:            provider.UpdatedAt,
 	}
 }
 

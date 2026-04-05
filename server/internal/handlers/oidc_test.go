@@ -2,6 +2,8 @@ package handlers_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -40,7 +42,8 @@ func TestOIDCProviderCallback_ReturnsServiceUnavailableWhenProviderUnavailable(t
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/oidc/provider-1/callback?state=test-state", nil)
-	req.AddCookie(&http.Cookie{Name: "oidc_state", Value: "test-state"})
+	sum := sha256.Sum256([]byte("provider-1"))
+	req.AddCookie(&http.Cookie{Name: "oidc_state_" + hex.EncodeToString(sum[:8]), Value: "test-state"})
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("provider_id", "provider-1")
 	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))

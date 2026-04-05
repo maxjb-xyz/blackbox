@@ -2,10 +2,12 @@ package handlers
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -32,6 +34,7 @@ type oidcIDClaims struct {
 	Nonce             string `json:"nonce"`
 	Sub               string `json:"sub"`
 	Email             string `json:"email"`
+	EmailVerified     bool   `json:"email_verified"`
 	PreferredUsername string `json:"preferred_username"`
 }
 
@@ -167,7 +170,10 @@ func Login(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 
 func OIDCProviderLogin(database *gorm.DB, registry *auth.OIDCRegistry) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		providerID := chi.URLParam(r, "provider_id")
+		providerID, ok := oidcProviderIDFromRequest(w, r)
+		if !ok {
+			return
+		}
 		var oidcProvider *auth.OIDCProvider
 		if registry != nil && registry.IsReady() {
 			oidcProvider = registry.Get(providerID)
@@ -205,7 +211,7 @@ func OIDCProviderLogin(database *gorm.DB, registry *auth.OIDCRegistry) http.Hand
 		}
 
 		stateCookie := &http.Cookie{
-			Name:     "oidc_state",
+			Name:     oidcStateCookieName(providerID),
 			Value:    state,
 			HttpOnly: true,
 			SameSite: http.SameSiteLaxMode,
@@ -223,9 +229,12 @@ func OIDCProviderLogin(database *gorm.DB, registry *auth.OIDCRegistry) http.Hand
 
 func OIDCProviderCallback(database *gorm.DB, registry *auth.OIDCRegistry, jwtSecret string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		providerID := chi.URLParam(r, "provider_id")
+		providerID, ok := oidcProviderIDFromRequest(w, r)
+		if !ok {
+			return
+		}
 
-		cookie, err := r.Cookie("oidc_state")
+		cookie, err := r.Cookie(oidcStateCookieName(providerID))
 		if err != nil {
 			events.LogSystem(database, "auth", "user.login.oidc.failed", "OIDC callback error: missing state cookie")
 			writeError(w, http.StatusBadRequest, "missing state cookie")
@@ -233,7 +242,7 @@ func OIDCProviderCallback(database *gorm.DB, registry *auth.OIDCRegistry, jwtSec
 		}
 
 		if r.URL.Query().Get("state") != cookie.Value {
-			clearOIDCStateCookie(w, r)
+			clearOIDCStateCookie(w, r, providerID)
 			events.LogSystem(database, "auth", "user.login.oidc.failed", "OIDC callback error: state mismatch")
 			writeError(w, http.StatusBadRequest, "state mismatch")
 			return
@@ -241,7 +250,7 @@ func OIDCProviderCallback(database *gorm.DB, registry *auth.OIDCRegistry, jwtSec
 
 		var oidcState models.OIDCState
 		if err := database.First(&oidcState, "state = ?", cookie.Value).Error; err != nil || oidcState.ExpiresAt.Before(time.Now()) {
-			clearOIDCStateCookie(w, r)
+			clearOIDCStateCookie(w, r, providerID)
 			events.LogSystem(database, "auth", "user.login.oidc.failed", "OIDC callback error: invalid or expired state")
 			writeError(w, http.StatusBadRequest, "invalid or expired state")
 			return
@@ -254,7 +263,7 @@ func OIDCProviderCallback(database *gorm.DB, registry *auth.OIDCRegistry, jwtSec
 			}
 			cleanedUp = true
 			_ = database.Delete(&models.OIDCState{}, "id = ?", oidcState.ID).Error
-			clearOIDCStateCookie(w, r)
+			clearOIDCStateCookie(w, r, providerID)
 		}
 
 		if oidcState.ProviderID != providerID {
@@ -318,7 +327,13 @@ func OIDCProviderCallback(database *gorm.DB, registry *auth.OIDCRegistry, jwtSec
 		switch {
 		case err == nil:
 		case errors.Is(err, gorm.ErrRecordNotFound):
-			user, linkExisting, lookupErr := findOIDCUserByEmail(database, issuer, idClaims)
+			providerConfig, configErr := getOIDCProviderConfig(database, providerID)
+			if configErr != nil {
+				cleanupState()
+				writeError(w, http.StatusInternalServerError, "failed to load OIDC provider")
+				return
+			}
+			user, linkExisting, lookupErr := findOIDCUserByEmail(database, issuer, idClaims, requireVerifiedEmail(providerConfig))
 			switch {
 			case lookupErr == nil && linkExisting:
 				if err := database.Model(&user).Updates(map[string]interface{}{
@@ -434,8 +449,11 @@ func handleNewOIDCUser(w http.ResponseWriter, database *gorm.DB, issuer string, 
 	}
 }
 
-func findOIDCUserByEmail(database *gorm.DB, issuer string, idClaims oidcIDClaims) (models.User, bool, error) {
+func findOIDCUserByEmail(database *gorm.DB, issuer string, idClaims oidcIDClaims, requireVerified bool) (models.User, bool, error) {
 	if issuer == "" || strings.TrimSpace(idClaims.Email) == "" {
+		return models.User{}, false, nil
+	}
+	if requireVerified && !idClaims.EmailVerified {
 		return models.User{}, false, nil
 	}
 
@@ -461,6 +479,32 @@ func findOIDCUserByEmail(database *gorm.DB, issuer string, idClaims oidcIDClaims
 	return models.User{}, false, errOIDCEmailAlreadyLinked
 }
 
+func getOIDCProviderConfig(database *gorm.DB, providerID string) (models.OIDCProviderConfig, error) {
+	var provider models.OIDCProviderConfig
+	if err := database.First(&provider, "id = ?", providerID).Error; err != nil {
+		return models.OIDCProviderConfig{}, err
+	}
+	return provider, nil
+}
+
+func requireVerifiedEmail(provider models.OIDCProviderConfig) bool {
+	return provider.RequireVerifiedEmail == nil || *provider.RequireVerifiedEmail
+}
+
+func oidcStateCookieName(providerID string) string {
+	sum := sha256.Sum256([]byte(providerID))
+	return "oidc_state_" + hex.EncodeToString(sum[:8])
+}
+
+func oidcProviderIDFromRequest(w http.ResponseWriter, r *http.Request) (string, bool) {
+	providerID, err := url.PathUnescape(chi.URLParam(r, "provider_id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid provider id")
+		return "", false
+	}
+	return providerID, true
+}
+
 func preferredOIDCUsername(claims oidcIDClaims) string {
 	if claims.PreferredUsername != "" {
 		return claims.PreferredUsername
@@ -471,9 +515,9 @@ func preferredOIDCUsername(claims oidcIDClaims) string {
 	return claims.Sub
 }
 
-func clearOIDCStateCookie(w http.ResponseWriter, r *http.Request) {
+func clearOIDCStateCookie(w http.ResponseWriter, r *http.Request, providerID string) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     "oidc_state",
+		Name:     oidcStateCookieName(providerID),
 		Value:    "",
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,

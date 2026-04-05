@@ -67,8 +67,10 @@ func (r *OIDCRegistry) Reload(ctx context.Context) error {
 	}
 
 	r.mu.Lock()
+	liveProviders := make(map[string]*OIDCProvider, len(r.providers))
 	nextProviders := make(map[string]*OIDCProvider, len(r.providers))
 	for id, provider := range r.providers {
+		liveProviders[id] = provider
 		nextProviders[id] = provider
 	}
 	r.mu.Unlock()
@@ -104,6 +106,11 @@ func (r *OIDCRegistry) Reload(ctx context.Context) error {
 	}
 
 	r.mu.Lock()
+	for id, provider := range r.providers {
+		if liveProviders[id] != provider && nextProviders[id] == liveProviders[id] {
+			nextProviders[id] = provider
+		}
+	}
 	r.providers = nextProviders
 	r.ready = true
 	r.mu.Unlock()
