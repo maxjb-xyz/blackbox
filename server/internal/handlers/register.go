@@ -3,6 +3,8 @@ package handlers
 import (
 	"errors"
 	"net/http"
+	"net/mail"
+	"strings"
 	"time"
 
 	"blackbox/server/internal/auth"
@@ -19,13 +21,20 @@ func Register(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 		var req struct {
 			Username   string `json:"username"`
 			Password   string `json:"password"`
+			Email      string `json:"email"`
 			InviteCode string `json:"invite_code"`
 		}
 		if !decodeJSONBody(w, r, maxCredentialBodyBytes, &req) {
 			return
 		}
-		if req.Username == "" || req.Password == "" || req.InviteCode == "" {
-			writeError(w, http.StatusBadRequest, "username, password, and invite_code required")
+		email := strings.TrimSpace(req.Email)
+		if req.Username == "" || req.Password == "" || email == "" || req.InviteCode == "" {
+			writeError(w, http.StatusBadRequest, "username, password, email, and invite_code required")
+			return
+		}
+		parsedEmail, err := mail.ParseAddress(email)
+		if err != nil || parsedEmail.Address != email {
+			writeError(w, http.StatusBadRequest, "valid email required")
 			return
 		}
 
@@ -55,6 +64,7 @@ func Register(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 			user = models.User{
 				ID:           userID,
 				Username:     req.Username,
+				Email:        email,
 				PasswordHash: hash,
 				IsAdmin:      false,
 				CreatedAt:    time.Now(),
@@ -64,7 +74,7 @@ func Register(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 			}
 
 			var issueErr error
-			token, issueErr = auth.IssueJWT(userID, user.Username, false, user.TokenVersion, jwtSecret, jwtTTL())
+			token, issueErr = auth.IssueJWT(userID, user.Username, user.Email, false, user.TokenVersion, jwtSecret, jwtTTL())
 			return issueErr
 		})
 
@@ -85,6 +95,7 @@ func Register(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 		writeSessionResponse(w, &auth.Claims{
 			UserID:       userID,
 			Username:     req.Username,
+			Email:        user.Email,
 			IsAdmin:      false,
 			TokenVersion: user.TokenVersion,
 		}, http.StatusCreated)

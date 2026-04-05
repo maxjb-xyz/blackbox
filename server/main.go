@@ -7,17 +7,17 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"sync/atomic"
 	"time"
-	"unsafe"
 
 	"blackbox/server/internal/auth"
 	"blackbox/server/internal/db"
 	"blackbox/server/internal/handlers"
 	"blackbox/server/internal/hub"
 	"blackbox/server/internal/middleware"
+	"blackbox/server/internal/models"
 	"blackbox/server/internal/static"
 	"github.com/go-chi/chi/v5"
+	"github.com/oklog/ulid/v2"
 )
 
 //go:embed web/dist
@@ -56,68 +56,90 @@ func main() {
 	log.Printf("database initialized at %s", dbPath)
 	eventHub := hub.New()
 
-	oidcEnabled := os.Getenv("OIDC_ENABLED") == "true"
-	var oidcProviderPtr unsafe.Pointer
+	registry := auth.NewOIDCRegistry(database)
 
-	if oidcEnabled {
-		log.Printf("OIDC enabled, performing discovery against %s", os.Getenv("OIDC_ISSUER"))
-		go func() {
-			const maxAttempts = 5
-			const retryInterval = 10 * time.Second
-			for i := 1; i <= maxAttempts; i++ {
-				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-				provider, err := auth.NewOIDCProvider(
-					ctx,
-					os.Getenv("OIDC_ISSUER"),
-					os.Getenv("OIDC_CLIENT_ID"),
-					os.Getenv("OIDC_CLIENT_SECRET"),
-					os.Getenv("OIDC_REDIRECT_URL"),
-				)
-				cancel()
-				if err == nil {
-					atomic.StorePointer(&oidcProviderPtr, unsafe.Pointer(provider))
-					log.Printf("OIDC provider ready")
-					return
+	if os.Getenv("OIDC_ENABLED") == "true" {
+		var providerCount int64
+		if err := database.Model(&models.OIDCProviderConfig{}).Count(&providerCount).Error; err != nil {
+			log.Printf("failed to count OIDC providers for env migration: %v", err)
+		} else if providerCount == 0 {
+			issuer := strings.TrimSpace(os.Getenv("OIDC_ISSUER"))
+			clientID := strings.TrimSpace(os.Getenv("OIDC_CLIENT_ID"))
+			clientSecret := strings.TrimSpace(os.Getenv("OIDC_CLIENT_SECRET"))
+			redirectURL := strings.TrimSpace(os.Getenv("OIDC_REDIRECT_URL"))
+			if issuer == "" || clientID == "" || clientSecret == "" || redirectURL == "" {
+				log.Printf("OIDC_ENABLED=true but one or more required env vars are missing; skipping OIDC provider seed")
+			} else {
+				provider := models.OIDCProviderConfig{
+					ID:                   ulid.Make().String(),
+					Name:                 "SSO",
+					Issuer:               issuer,
+					ClientID:             clientID,
+					ClientSecret:         clientSecret,
+					RedirectURL:          redirectURL,
+					RequireVerifiedEmail: models.BoolPtr(true),
+					Enabled:              models.BoolPtr(true),
 				}
-				log.Printf("OIDC discovery attempt %d/%d failed: %v", i, maxAttempts, err)
-				if i < maxAttempts {
-					time.Sleep(retryInterval)
+				if err := database.Create(&provider).Error; err != nil {
+					log.Printf("failed to seed OIDC provider from env: %v", err)
+				} else {
+					log.Printf("OIDC_ENABLED env vars detected, seeded 'SSO' provider — migrate to admin UI to manage")
 				}
 			}
-			log.Printf("OIDC provider unavailable after %d attempts, routes will return 503", maxAttempts)
-		}()
+		}
 	}
 
-	oidcProvider := func() *auth.OIDCProvider {
-		return (*auth.OIDCProvider)(atomic.LoadPointer(&oidcProviderPtr))
-	}
+	go func() {
+		const retryInterval = 10 * time.Second
+		for attempt := 1; ; attempt++ {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			err := registry.Reload(ctx)
+			cancel()
+			if err != nil {
+				log.Printf("OIDC registry reload attempt %d failed: %v", attempt, err)
+			} else {
+				providers, listErr := registry.ListEnabled()
+				if listErr != nil {
+					log.Printf("OIDC registry readiness check %d failed: %v", attempt, listErr)
+				} else {
+					live := len(providers) == 0
+					for _, provider := range providers {
+						if registry.Get(provider.ID) != nil {
+							live = true
+							break
+						}
+					}
+					if live {
+						if len(providers) > 0 {
+							log.Printf("OIDC registry ready")
+						}
+					} else {
+						log.Printf("OIDC registry reload attempt %d completed but no providers are currently available", attempt)
+					}
+				}
+			}
+			time.Sleep(retryInterval)
+		}
+	}()
 
 	r := chi.NewRouter()
 	r.Use(middleware.SecurityHeaders())
 
 	r.Get("/api/setup/status", handlers.SetupStatus(database))
-	r.Get("/api/setup/health", func(w http.ResponseWriter, req *http.Request) {
-		handlers.HealthCheck(database, oidcEnabled, oidcProvider() != nil)(w, req)
-	})
+	r.Get("/api/setup/health", handlers.HealthCheck(database, registry))
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RateLimit(10*time.Minute, 3))
 		r.Post("/api/auth/bootstrap", handlers.Bootstrap(database, jwtSecret))
 	})
+	r.Get("/api/auth/oidc/providers", handlers.ListPublicOIDCProviders(database, registry))
+	r.With(middleware.RateLimit(time.Minute, 10)).Get("/api/auth/oidc/{provider_id}/login", handlers.OIDCProviderLogin(database, registry))
+	r.Get("/api/auth/oidc/{provider_id}/callback", handlers.OIDCProviderCallback(database, registry, jwtSecret))
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RateLimit(time.Minute, 10))
 		r.Post("/api/auth/login", handlers.Login(database, jwtSecret))
 		r.Post("/api/auth/register", handlers.Register(database, jwtSecret))
 	})
 	r.Post("/api/auth/logout", handlers.Logout())
-
-	if oidcEnabled {
-		r.Get("/api/auth/oidc/login", func(w http.ResponseWriter, req *http.Request) {
-			handlers.OIDCLogin(database, oidcProvider())(w, req)
-		})
-		r.Get("/api/auth/oidc/callback", func(w http.ResponseWriter, req *http.Request) {
-			handlers.OIDCCallback(database, oidcProvider(), jwtSecret)(w, req)
-		})
-	}
 
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.JWTAuth(jwtSecret))
@@ -127,6 +149,7 @@ func main() {
 		r.Get("/api/auth/invite", handlers.ListInvites(database))
 		r.Get("/api/nodes", handlers.ListNodes(database))
 		r.Get("/api/entries", handlers.ListEntries(database))
+		r.Get("/api/entries/services", handlers.ListEntryServices(database))
 		r.Post("/api/entries", handlers.CreateEntry(database, eventHub))
 		r.Get("/api/entries/{id}", handlers.GetEntry(database))
 		r.Post("/api/entries/{id}/notes", handlers.CreateNote(database))
@@ -142,11 +165,18 @@ func main() {
 		r.Use(middleware.JWTAuth(jwtSecret))
 		r.Use(middleware.TokenVersionCheck(database))
 		r.Use(middleware.RequireAdmin())
+		r.Delete("/api/auth/invite/{id}", handlers.RevokeInvite(database))
 		r.Get("/api/admin/users", handlers.ListAdminUsers(database))
 		r.Patch("/api/admin/users/{id}", handlers.UpdateAdminUser(database, eventHub))
 		r.Post("/api/admin/users/{id}/force-logout", handlers.ForceLogoutUser(database, eventHub))
 		r.Delete("/api/admin/users/{id}", handlers.DeleteAdminUser(database, eventHub))
 		r.Get("/api/admin/config", handlers.AdminConfig(webhookSecret))
+		r.Get("/api/admin/oidc/providers", handlers.ListOIDCProviders(database))
+		r.Post("/api/admin/oidc/providers", handlers.CreateOIDCProvider(database, registry))
+		r.Patch("/api/admin/oidc/providers/{id}", handlers.UpdateOIDCProvider(database, registry))
+		r.Delete("/api/admin/oidc/providers/{id}", handlers.DeleteOIDCProvider(database, registry))
+		r.Get("/api/admin/oidc/policy", handlers.GetOIDCPolicy(database))
+		r.Put("/api/admin/oidc/policy", handlers.SetOIDCPolicy(database))
 	})
 
 	r.Group(func(r chi.Router) {

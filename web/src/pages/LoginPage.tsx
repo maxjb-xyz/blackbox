@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { AlertCircle, Terminal } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { checkHealth, login } from '../api/client'
+import { fetchOIDCProviders, login, type PublicOIDCProvider } from '../api/client'
 import { useSession } from '../session'
 
 function sanitizeRedirectTo(value: string | null) {
@@ -19,12 +19,18 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [oidcEnabled, setOidcEnabled] = useState(false)
+  const [oidcProviders, setOidcProviders] = useState<PublicOIDCProvider[]>([])
+  const [oidcError, setOidcError] = useState<string | null>(null)
 
   useEffect(() => {
-    checkHealth()
-      .then(health => setOidcEnabled(health.oidc_enabled))
-      .catch(err => console.error('Health check failed', err))
+    setOidcError(null)
+    fetchOIDCProviders()
+      .then(data => setOidcProviders(data.providers))
+      .catch(err => {
+        console.error('OIDC provider fetch failed', err)
+        setOidcProviders([])
+        setOidcError(err instanceof Error ? err.message : 'Single sign-on is temporarily unavailable.')
+      })
   }, [])
 
   const redirectTo = sanitizeRedirectTo(searchParams.get('redirect_to'))
@@ -85,6 +91,24 @@ export default function LoginPage() {
         </div>
 
         <form onSubmit={handleSubmit}>
+          {oidcError && (
+            <div
+              role="alert"
+              aria-live="assertive"
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 6,
+                color: 'var(--danger)',
+                fontSize: '12px',
+                marginBottom: 12,
+              }}
+            >
+              <AlertCircle size={14} style={{ marginTop: 1, flexShrink: 0 }} />
+              <span>{oidcError} Use password login or contact your administrator.</span>
+            </div>
+          )}
+
           <div style={{ marginBottom: 12 }}>
             <label
               htmlFor="username"
@@ -164,32 +188,37 @@ export default function LoginPage() {
               fontWeight: 'bold',
               letterSpacing: '0.1em',
               cursor: loading ? 'not-allowed' : 'pointer',
-              marginBottom: oidcEnabled ? 8 : 0,
+              marginBottom: oidcProviders.length > 0 ? 8 : 0,
             }}
           >
             {loading ? 'LOGGING IN...' : 'LOGIN'}
           </button>
 
-          {oidcEnabled && (
-            <a
-              href="/api/auth/oidc/login"
-              style={{
-                display: 'block',
-                width: '100%',
-                textAlign: 'center',
-                background: 'transparent',
-                border: '1px solid var(--border)',
-                color: 'var(--muted)',
-                padding: '10px',
-                fontFamily: 'inherit',
-                fontSize: '12px',
-                letterSpacing: '0.1em',
-                textDecoration: 'none',
-                boxSizing: 'border-box',
-              }}
-            >
-              LOGIN WITH SSO
-            </a>
+          {oidcProviders.length > 0 && (
+            <div style={{ display: 'grid', gap: 8 }}>
+              {oidcProviders.map(provider => (
+                <a
+                  key={provider.id}
+                  href={`/api/auth/oidc/${encodeURIComponent(provider.id)}/login`}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    textAlign: 'center',
+                    background: 'transparent',
+                    border: '1px solid var(--border)',
+                    color: 'var(--muted)',
+                    padding: '10px',
+                    fontFamily: 'inherit',
+                    fontSize: '12px',
+                    letterSpacing: '0.1em',
+                    textDecoration: 'none',
+                    boxSizing: 'border-box',
+                  }}
+                >
+                  {`SIGN IN WITH ${provider.name.toUpperCase()}`}
+                </a>
+              ))}
+            </div>
           )}
         </form>
       </div>

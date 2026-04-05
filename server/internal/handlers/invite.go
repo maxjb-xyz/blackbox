@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"blackbox/server/internal/auth"
 	"blackbox/server/internal/events"
 	"blackbox/server/internal/models"
+	"github.com/go-chi/chi/v5"
 	"github.com/oklog/ulid/v2"
 	"gorm.io/gorm"
 )
@@ -84,5 +86,44 @@ func ListInvites(database *gorm.DB) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(invites)
+	}
+}
+
+func RevokeInvite(database *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := auth.ClaimsFromContext(r.Context())
+		if !ok || !claims.IsAdmin {
+			writeError(w, http.StatusForbidden, "admin required")
+			return
+		}
+
+		inviteID := chi.URLParam(r, "id")
+		result := database.Where("id = ? AND used_by = ''", inviteID).Delete(&models.InviteCode{})
+		if result.Error != nil {
+			writeError(w, http.StatusInternalServerError, "failed to revoke invite")
+			return
+		}
+		if result.RowsAffected == 0 {
+			var invite models.InviteCode
+			if err := database.First(&invite, "id = ?", inviteID).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					writeError(w, http.StatusNotFound, "invite not found")
+					return
+				}
+				writeError(w, http.StatusInternalServerError, "failed to fetch invite")
+				return
+			}
+			if invite.UsedBy != "" {
+				writeError(w, http.StatusConflict, "invite already used")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "failed to revoke invite")
+			return
+		}
+
+		events.LogSystem(database, "auth", "invite.revoked", "invite "+inviteID+" revoked")
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 	}
 }

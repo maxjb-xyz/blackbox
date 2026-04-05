@@ -105,7 +105,7 @@ func TestInit_DropsLegacyTimestampOnlyEntryIndex(t *testing.T) {
 	require.False(t, database.Migrator().HasIndex(&types.Entry{}, "idx_entries_timestamp"))
 }
 
-func TestInit_MigratesInviteCodeAndOIDCState(t *testing.T) {
+func TestInit_MigratesInviteCodeOIDCStateAndOIDCConfig(t *testing.T) {
 	tmp, err := os.CreateTemp("", "blackbox-test-*.db")
 	require.NoError(t, err)
 	require.NoError(t, tmp.Close())
@@ -129,10 +129,30 @@ func TestInit_MigratesInviteCodeAndOIDCState(t *testing.T) {
 		ID:        "01STATEID00000000",
 		State:     "randomstate123456789012345678901234567890123456789012345678901234",
 		Nonce:     "randomnonce123456789012345678901234567890123456789012345678901234",
+		ProviderID: "01PROVIDERID000000",
+		InviteCode: "invite-code-123",
 		ExpiresAt: time.Now().Add(10 * time.Minute),
 		CreatedAt: time.Now(),
 	}
 	assert.NoError(t, database.Create(&state).Error)
+
+	provider := models.OIDCProviderConfig{
+		ID:           "01PROVIDERID000000",
+		Name:         "SSO",
+		Issuer:       "https://issuer.example.com",
+		ClientID:     "client-id",
+		ClientSecret: "client-secret",
+		RedirectURL:  "https://app.example.com/callback",
+		Enabled:      models.BoolPtr(true),
+	}
+	assert.NoError(t, database.Create(&provider).Error)
+
+	setting := models.AppSetting{
+		Key:       "oidc_policy",
+		Value:     "open",
+		UpdatedAt: time.Now(),
+	}
+	assert.NoError(t, database.Create(&setting).Error)
 }
 
 func TestInit_MigratesServiceAliases(t *testing.T) {

@@ -24,7 +24,7 @@ func TestRegister_ValidInvite(t *testing.T) {
 		CreatedAt: time.Now(),
 	})
 
-	body := `{"username":"alice","password":"Hunter2!secure","invite_code":"validinvitecode01234567890123456789012345678901234567890123456789"}`
+	body := `{"username":"alice","password":"Hunter2!secure","email":"alice@example.com","invite_code":"validinvitecode01234567890123456789012345678901234567890123456789"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -39,8 +39,10 @@ func TestRegister_ValidInvite(t *testing.T) {
 	require.True(t, ok)
 	require.NotNil(t, user)
 	assert.Equal(t, "alice", user["username"])
+	assert.Equal(t, "alice@example.com", user["email"])
 	claims := sessionClaimsFromResponse(t, w, "jwt-test-secret")
 	assert.Equal(t, "alice", claims.Username)
+	assert.Equal(t, "alice@example.com", claims.Email)
 
 	var invite models.InviteCode
 	require.NoError(t, database.First(&invite, "code = ?", "validinvitecode01234567890123456789012345678901234567890123456789").Error)
@@ -50,7 +52,7 @@ func TestRegister_ValidInvite(t *testing.T) {
 func TestRegister_InvalidInviteCode(t *testing.T) {
 	database := newTestDB(t)
 
-	body := `{"username":"bob","password":"Hunter2!secure","invite_code":"doesnotexist"}`
+	body := `{"username":"bob","password":"Hunter2!secure","email":"bob@example.com","invite_code":"doesnotexist"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -70,7 +72,7 @@ func TestRegister_ExpiredInvite(t *testing.T) {
 		CreatedAt: time.Now().Add(-73 * time.Hour),
 	})
 
-	body := `{"username":"carol","password":"Hunter2!secure","invite_code":"expiredinvitecode0123456789012345678901234567890123456789012345"}`
+	body := `{"username":"carol","password":"Hunter2!secure","email":"carol@example.com","invite_code":"expiredinvitecode0123456789012345678901234567890123456789012345"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -97,7 +99,7 @@ func TestRegister_ConcurrentClaimOnlyOneSucceeds(t *testing.T) {
 	for i, username := range []string{"eve", "frank"} {
 		i, username := i, username
 		go func() {
-			body := `{"username":"` + username + `","password":"Hunter2!secure","invite_code":"raceinvitecode0123456789012345678901234567890123456789012345678"}`
+			body := `{"username":"` + username + `","password":"Hunter2!secure","email":"` + username + `@example.com","invite_code":"raceinvitecode0123456789012345678901234567890123456789012345678"}`
 			req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewBufferString(body))
 			req.Header.Set("Content-Type", "application/json")
 			w := httptest.NewRecorder()
@@ -134,7 +136,7 @@ func TestRegister_AlreadyUsedInvite(t *testing.T) {
 		CreatedAt: time.Now(),
 	})
 
-	body := `{"username":"dave","password":"Hunter2!secure","invite_code":"usedinvitecode012345678901234567890123456789012345678901234567890"}`
+	body := `{"username":"dave","password":"Hunter2!secure","email":"dave@example.com","invite_code":"usedinvitecode012345678901234567890123456789012345678901234567890"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -142,4 +144,45 @@ func TestRegister_AlreadyUsedInvite(t *testing.T) {
 	handlers.Register(database, "jwt-test-secret")(w, req)
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestRegister_RequiresEmail(t *testing.T) {
+	database := newTestDB(t)
+
+	body := `{"username":"erin","password":"Hunter2!secure","invite_code":"doesnotmatter"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handlers.Register(database, "jwt-test-secret")(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestRegister_RejectsInvalidEmail(t *testing.T) {
+	t.Run("whitespace only", func(t *testing.T) {
+		database := newTestDB(t)
+
+		body := `{"username":"erin","password":"Hunter2!secure","email":"   ","invite_code":"doesnotmatter"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		handlers.Register(database, "jwt-test-secret")(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("malformed", func(t *testing.T) {
+		database := newTestDB(t)
+
+		body := `{"username":"erin","password":"Hunter2!secure","email":"not-an-email","invite_code":"doesnotmatter"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		handlers.Register(database, "jwt-test-secret")(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
 }

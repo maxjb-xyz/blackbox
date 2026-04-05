@@ -6,18 +6,21 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"blackbox/server/internal/auth"
 	"blackbox/server/internal/handlers"
+	"blackbox/server/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestHealthCheck_DatabaseOKOIDCDisabled(t *testing.T) {
 	database := newTestDB(t)
+	registry := auth.NewOIDCRegistry(database)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/setup/health", nil)
 	w := httptest.NewRecorder()
 
-	handlers.HealthCheck(database, false, false)(w, req)
+	handlers.HealthCheck(database, registry)(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	var resp map[string]interface{}
@@ -29,11 +32,22 @@ func TestHealthCheck_DatabaseOKOIDCDisabled(t *testing.T) {
 
 func TestHealthCheck_OIDCReady(t *testing.T) {
 	database := newTestDB(t)
+	registry := auth.NewOIDCRegistry(database)
+	require.NoError(t, database.Create(&models.OIDCProviderConfig{
+		ID:           "provider-1",
+		Name:         "SSO",
+		Issuer:       "https://issuer.example.com",
+		ClientID:     "client-id",
+		ClientSecret: "client-secret",
+		RedirectURL:  "https://app.example.com/callback",
+		Enabled:      models.BoolPtr(true),
+	}).Error)
+	setRegistryProvider(t, registry, "provider-1", &auth.OIDCProvider{})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/setup/health", nil)
 	w := httptest.NewRecorder()
 
-	handlers.HealthCheck(database, true, true)(w, req)
+	handlers.HealthCheck(database, registry)(w, req)
 
 	var resp map[string]interface{}
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
@@ -43,13 +57,28 @@ func TestHealthCheck_OIDCReady(t *testing.T) {
 
 func TestHealthCheck_OIDCEnabledButNotReady(t *testing.T) {
 	database := newTestDB(t)
+	registry := auth.NewOIDCRegistry(database)
+	require.NoError(t, database.Create(&models.OIDCProviderConfig{
+		ID:           "provider-1",
+		Name:         "SSO",
+		Issuer:       "https://issuer.example.com",
+		ClientID:     "client-id",
+		ClientSecret: "client-secret",
+		RedirectURL:  "https://app.example.com/callback",
+		Enabled:      models.BoolPtr(true),
+	}).Error)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/setup/health", nil)
 	w := httptest.NewRecorder()
 
-	handlers.HealthCheck(database, true, false)(w, req)
+	handlers.HealthCheck(database, registry)(w, req)
 
 	var resp map[string]interface{}
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
 	assert.Equal(t, "unavailable", resp["oidc"])
+}
+
+func setRegistryProvider(t *testing.T, registry *auth.OIDCRegistry, id string, provider *auth.OIDCProvider) {
+	t.Helper()
+	registry.SetProvider(id, provider)
 }

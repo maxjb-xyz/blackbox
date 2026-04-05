@@ -2,17 +2,21 @@ package handlers
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"blackbox/server/internal/auth"
 	"blackbox/server/internal/events"
 	"blackbox/server/internal/models"
 	gooidc "github.com/coreos/go-oidc/v3/oidc"
+	"github.com/go-chi/chi/v5"
 	"github.com/oklog/ulid/v2"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -23,6 +27,16 @@ const (
 )
 
 var errAlreadyBootstrapped = errors.New("already bootstrapped")
+var errOIDCEmailAmbiguous = errors.New("oidc email match ambiguous")
+var errOIDCEmailAlreadyLinked = errors.New("oidc email already linked to a different identity")
+
+type oidcIDClaims struct {
+	Nonce             string `json:"nonce"`
+	Sub               string `json:"sub"`
+	Email             string `json:"email"`
+	EmailVerified     bool   `json:"email_verified"`
+	PreferredUsername string `json:"preferred_username"`
+}
 
 func jwtTTL() time.Duration {
 	if v := os.Getenv("JWT_TTL"); v != "" {
@@ -38,6 +52,7 @@ func Bootstrap(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 		var req struct {
 			Username string `json:"username"`
 			Password string `json:"password"`
+			Email    string `json:"email"`
 		}
 		if !decodeJSONBody(w, r, maxCredentialBodyBytes, &req) {
 			return
@@ -56,6 +71,7 @@ func Bootstrap(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 		user := models.User{
 			ID:           ulid.Make().String(),
 			Username:     req.Username,
+			Email:        req.Email,
 			PasswordHash: hash,
 			IsAdmin:      true,
 		}
@@ -83,7 +99,7 @@ func Bootstrap(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 			}
 
 			var issueErr error
-			token, issueErr = auth.IssueJWT(user.ID, user.Username, user.IsAdmin, user.TokenVersion, jwtSecret, jwtTTL())
+			token, issueErr = auth.IssueJWT(user.ID, user.Username, user.Email, user.IsAdmin, user.TokenVersion, jwtSecret, jwtTTL())
 			return issueErr
 		})
 		if txErr == errAlreadyBootstrapped {
@@ -102,6 +118,7 @@ func Bootstrap(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 		writeSessionResponse(w, &auth.Claims{
 			UserID:       user.ID,
 			Username:     user.Username,
+			Email:        user.Email,
 			IsAdmin:      user.IsAdmin,
 			TokenVersion: user.TokenVersion,
 		}, http.StatusCreated)
@@ -131,7 +148,7 @@ func Login(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 			return
 		}
 
-		token, err := auth.IssueJWT(user.ID, user.Username, user.IsAdmin, user.TokenVersion, jwtSecret, jwtTTL())
+		token, err := auth.IssueJWT(user.ID, user.Username, user.Email, user.IsAdmin, user.TokenVersion, jwtSecret, jwtTTL())
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to issue token")
 			return
@@ -144,14 +161,23 @@ func Login(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 		writeSessionResponse(w, &auth.Claims{
 			UserID:       user.ID,
 			Username:     user.Username,
+			Email:        user.Email,
 			IsAdmin:      user.IsAdmin,
 			TokenVersion: user.TokenVersion,
 		}, http.StatusOK)
 	}
 }
 
-func OIDCLogin(database *gorm.DB, oidcProvider *auth.OIDCProvider) http.HandlerFunc {
+func OIDCProviderLogin(database *gorm.DB, registry *auth.OIDCRegistry) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		providerID, ok := oidcProviderIDFromRequest(w, r)
+		if !ok {
+			return
+		}
+		var oidcProvider *auth.OIDCProvider
+		if registry != nil && registry.IsReady() {
+			oidcProvider = registry.Get(providerID)
+		}
 		if oidcProvider == nil {
 			writeError(w, http.StatusServiceUnavailable, "OIDC provider unavailable")
 			return
@@ -171,11 +197,13 @@ func OIDCLogin(database *gorm.DB, oidcProvider *auth.OIDCProvider) http.HandlerF
 		state := hex.EncodeToString(stateBytes)
 		nonce := hex.EncodeToString(nonceBytes)
 		oidcState := models.OIDCState{
-			ID:        ulid.Make().String(),
-			State:     state,
-			Nonce:     nonce,
-			ExpiresAt: time.Now().Add(10 * time.Minute),
-			CreatedAt: time.Now(),
+			ID:         ulid.Make().String(),
+			State:      state,
+			Nonce:      nonce,
+			ProviderID: providerID,
+			InviteCode: r.URL.Query().Get("invite_code"),
+			ExpiresAt:  time.Now().Add(10 * time.Minute),
+			CreatedAt:  time.Now(),
 		}
 		if err := database.Create(&oidcState).Error; err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to store state")
@@ -183,7 +211,7 @@ func OIDCLogin(database *gorm.DB, oidcProvider *auth.OIDCProvider) http.HandlerF
 		}
 
 		stateCookie := &http.Cookie{
-			Name:     "oidc_state",
+			Name:     oidcStateCookieName(providerID),
 			Value:    state,
 			HttpOnly: true,
 			SameSite: http.SameSiteLaxMode,
@@ -199,14 +227,14 @@ func OIDCLogin(database *gorm.DB, oidcProvider *auth.OIDCProvider) http.HandlerF
 	}
 }
 
-func OIDCCallback(database *gorm.DB, oidcProvider *auth.OIDCProvider, jwtSecret string) http.HandlerFunc {
+func OIDCProviderCallback(database *gorm.DB, registry *auth.OIDCRegistry, jwtSecret string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if oidcProvider == nil {
-			writeError(w, http.StatusServiceUnavailable, "OIDC provider unavailable")
+		providerID, ok := oidcProviderIDFromRequest(w, r)
+		if !ok {
 			return
 		}
 
-		cookie, err := r.Cookie("oidc_state")
+		cookie, err := r.Cookie(oidcStateCookieName(providerID))
 		if err != nil {
 			events.LogSystem(database, "auth", "user.login.oidc.failed", "OIDC callback error: missing state cookie")
 			writeError(w, http.StatusBadRequest, "missing state cookie")
@@ -214,6 +242,7 @@ func OIDCCallback(database *gorm.DB, oidcProvider *auth.OIDCProvider, jwtSecret 
 		}
 
 		if r.URL.Query().Get("state") != cookie.Value {
+			clearOIDCStateCookie(w, r, providerID)
 			events.LogSystem(database, "auth", "user.login.oidc.failed", "OIDC callback error: state mismatch")
 			writeError(w, http.StatusBadRequest, "state mismatch")
 			return
@@ -221,13 +250,42 @@ func OIDCCallback(database *gorm.DB, oidcProvider *auth.OIDCProvider, jwtSecret 
 
 		var oidcState models.OIDCState
 		if err := database.First(&oidcState, "state = ?", cookie.Value).Error; err != nil || oidcState.ExpiresAt.Before(time.Now()) {
+			clearOIDCStateCookie(w, r, providerID)
 			events.LogSystem(database, "auth", "user.login.oidc.failed", "OIDC callback error: invalid or expired state")
 			writeError(w, http.StatusBadRequest, "invalid or expired state")
 			return
 		}
 
+		cleanedUp := false
+		cleanupState := func() {
+			if cleanedUp {
+				return
+			}
+			cleanedUp = true
+			_ = database.Delete(&models.OIDCState{}, "id = ?", oidcState.ID).Error
+			clearOIDCStateCookie(w, r, providerID)
+		}
+
+		if oidcState.ProviderID != providerID {
+			cleanupState()
+			events.LogSystem(database, "auth", "user.login.oidc.failed", "OIDC callback error: provider mismatch")
+			writeError(w, http.StatusBadRequest, "invalid or expired state")
+			return
+		}
+
+		var oidcProvider *auth.OIDCProvider
+		if registry != nil && registry.IsReady() {
+			oidcProvider = registry.Get(providerID)
+		}
+		if oidcProvider == nil {
+			cleanupState()
+			writeError(w, http.StatusServiceUnavailable, "OIDC provider unavailable")
+			return
+		}
+
 		oauth2Token, err := oidcProvider.Config.Exchange(r.Context(), r.URL.Query().Get("code"))
 		if err != nil {
+			cleanupState()
 			events.LogSystem(database, "auth", "user.login.oidc.failed", "OIDC callback error: code exchange failed")
 			writeError(w, http.StatusUnauthorized, "code exchange failed")
 			return
@@ -235,6 +293,7 @@ func OIDCCallback(database *gorm.DB, oidcProvider *auth.OIDCProvider, jwtSecret 
 
 		rawIDToken, ok := oauth2Token.Extra("id_token").(string)
 		if !ok {
+			cleanupState()
 			events.LogSystem(database, "auth", "user.login.oidc.failed", "OIDC callback error: missing id_token")
 			writeError(w, http.StatusUnauthorized, "missing id_token")
 			return
@@ -242,61 +301,231 @@ func OIDCCallback(database *gorm.DB, oidcProvider *auth.OIDCProvider, jwtSecret 
 
 		idToken, err := oidcProvider.Verifier.Verify(r.Context(), rawIDToken)
 		if err != nil {
+			cleanupState()
 			events.LogSystem(database, "auth", "user.login.oidc.failed", "OIDC callback error: id_token verification failed")
 			writeError(w, http.StatusUnauthorized, "id_token verification failed")
 			return
 		}
 
-		var claims struct {
-			Nonce string `json:"nonce"`
-			Sub   string `json:"sub"`
-		}
-		if err := idToken.Claims(&claims); err != nil || claims.Nonce != oidcState.Nonce {
+		var idClaims oidcIDClaims
+		if err := idToken.Claims(&idClaims); err != nil || idClaims.Nonce != oidcState.Nonce {
+			cleanupState()
 			events.LogSystem(database, "auth", "user.login.oidc.failed", "OIDC callback error: nonce mismatch")
 			writeError(w, http.StatusBadRequest, "nonce mismatch")
 			return
 		}
-
-		database.Delete(&oidcState)
-
-		var user models.User
-		result := database.First(&user, "oidc_subject = ?", claims.Sub)
-		if result.Error != nil {
-			user = models.User{
-				ID:          ulid.Make().String(),
-				Username:    claims.Sub,
-				OIDCSubject: claims.Sub,
-				IsAdmin:     false,
-				CreatedAt:   time.Now(),
-			}
-			if err := database.Create(&user).Error; err != nil {
-				writeError(w, http.StatusInternalServerError, "failed to create user")
-				return
-			}
+		issuer := strings.TrimSpace(idToken.Issuer)
+		if issuer == "" {
+			cleanupState()
+			events.LogSystem(database, "auth", "user.login.oidc.failed", "OIDC callback error: missing issuer")
+			writeError(w, http.StatusUnauthorized, "invalid id_token issuer")
+			return
 		}
 
-		token, err := auth.IssueJWT(user.ID, user.Username, user.IsAdmin, user.TokenVersion, jwtSecret, jwtTTL())
+		var user models.User
+		err = database.First(&user, "oidc_issuer = ? AND oidc_subject = ?", issuer, idClaims.Sub).Error
+		switch {
+		case err == nil:
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			providerConfig, configErr := getOIDCProviderConfig(database, providerID)
+			if configErr != nil {
+				cleanupState()
+				writeError(w, http.StatusInternalServerError, "failed to load OIDC provider")
+				return
+			}
+			user, linkExisting, lookupErr := findOIDCUserByEmail(database, issuer, idClaims, requireVerifiedEmail(providerConfig))
+			switch {
+			case lookupErr == nil && linkExisting:
+				if err := database.Model(&user).Updates(map[string]interface{}{
+					"oidc_issuer":  issuer,
+					"oidc_subject": idClaims.Sub,
+				}).Error; err != nil {
+					cleanupState()
+					writeError(w, http.StatusInternalServerError, "failed to link account")
+					return
+				}
+				user.OIDCIssuer = issuer
+				user.OIDCSubject = idClaims.Sub
+			case lookupErr == nil:
+				newUser, ok := handleNewOIDCUser(w, database, issuer, idClaims, oidcState, cleanupState)
+				if !ok {
+					return
+				}
+				user = newUser
+			case errors.Is(lookupErr, errOIDCEmailAmbiguous), errors.Is(lookupErr, errOIDCEmailAlreadyLinked):
+				cleanupState()
+				writeError(w, http.StatusConflict, lookupErr.Error())
+				return
+			default:
+				cleanupState()
+				writeError(w, http.StatusInternalServerError, "failed to lookup user")
+				return
+			}
+		default:
+			cleanupState()
+			writeError(w, http.StatusInternalServerError, "failed to lookup user")
+			return
+		}
+
+		token, err := auth.IssueJWT(user.ID, user.Username, user.Email, user.IsAdmin, user.TokenVersion, jwtSecret, jwtTTL())
 		if err != nil {
+			cleanupState()
 			writeError(w, http.StatusInternalServerError, "failed to issue token")
 			return
 		}
 
+		cleanupState()
 		setSessionCookie(w, r, token, jwtTTL())
-		http.SetCookie(w, &http.Cookie{
-			Name:     "oidc_state",
-			Value:    "",
-			HttpOnly: true,
-			SameSite: http.SameSiteLaxMode,
-			Path:     "/",
-			MaxAge:   -1,
-			Expires:  time.Unix(0, 0),
-			Secure:   isSecureRequest(r),
-		})
 
-		events.LogSystem(database, "auth", "user.login.oidc", "user "+claims.Sub+" logged in via OIDC")
+		events.LogSystem(database, "auth", "user.login.oidc", "user "+user.Username+" logged in via OIDC")
 
 		http.Redirect(w, r, "/timeline", http.StatusFound)
 	}
+}
+
+// handleNewOIDCUser applies the OIDC access policy and creates a new user if allowed.
+// Returns the created user and true on success, or writes an error response and returns false.
+func handleNewOIDCUser(w http.ResponseWriter, database *gorm.DB, issuer string, idClaims oidcIDClaims, oidcState models.OIDCState, cleanupState func()) (models.User, bool) {
+	policy, err := getOIDCPolicy(database)
+	if err != nil {
+		cleanupState()
+		writeError(w, http.StatusInternalServerError, "failed to load OIDC policy")
+		return models.User{}, false
+	}
+	switch policy {
+	case "existing_only":
+		cleanupState()
+		writeError(w, http.StatusForbidden, "no account associated with this identity")
+		return models.User{}, false
+	case "invite_required":
+		user := models.User{
+			ID:          ulid.Make().String(),
+			Username:    preferredOIDCUsername(idClaims),
+			Email:       idClaims.Email,
+			OIDCIssuer:  issuer,
+			OIDCSubject: idClaims.Sub,
+			IsAdmin:     false,
+			CreatedAt:   time.Now(),
+		}
+		txErr := database.Transaction(func(tx *gorm.DB) error {
+			result := tx.Model(&models.InviteCode{}).
+				Where("code = ? AND used_by = '' AND expires_at > ?", oidcState.InviteCode, time.Now()).
+				Update("used_by", user.ID)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return errInvalidInvite
+			}
+			return tx.Create(&user).Error
+		})
+		if txErr == errInvalidInvite {
+			cleanupState()
+			writeError(w, http.StatusUnauthorized, "invalid or expired invite code")
+			return models.User{}, false
+		}
+		if txErr != nil {
+			cleanupState()
+			writeError(w, http.StatusInternalServerError, "failed to create user")
+			return models.User{}, false
+		}
+		return user, true
+	default:
+		user := models.User{
+			ID:          ulid.Make().String(),
+			Username:    preferredOIDCUsername(idClaims),
+			Email:       idClaims.Email,
+			OIDCIssuer:  issuer,
+			OIDCSubject: idClaims.Sub,
+			IsAdmin:     false,
+			CreatedAt:   time.Now(),
+		}
+		if err := database.Create(&user).Error; err != nil {
+			cleanupState()
+			writeError(w, http.StatusInternalServerError, "failed to create user")
+			return models.User{}, false
+		}
+		return user, true
+	}
+}
+
+func findOIDCUserByEmail(database *gorm.DB, issuer string, idClaims oidcIDClaims, requireVerified bool) (models.User, bool, error) {
+	if issuer == "" || strings.TrimSpace(idClaims.Email) == "" {
+		return models.User{}, false, nil
+	}
+	if requireVerified && !idClaims.EmailVerified {
+		return models.User{}, false, nil
+	}
+
+	var matches []models.User
+	if err := database.Where("email = ?", idClaims.Email).Limit(2).Find(&matches).Error; err != nil {
+		return models.User{}, false, err
+	}
+	if len(matches) == 0 {
+		return models.User{}, false, nil
+	}
+	if len(matches) > 1 {
+		return models.User{}, false, errOIDCEmailAmbiguous
+	}
+
+	user := matches[0]
+	if user.OIDCIssuer == "" && user.OIDCSubject == "" {
+		return user, true, nil
+	}
+	if user.OIDCIssuer == issuer && user.OIDCSubject == idClaims.Sub {
+		return user, true, nil
+	}
+
+	return models.User{}, false, errOIDCEmailAlreadyLinked
+}
+
+func getOIDCProviderConfig(database *gorm.DB, providerID string) (models.OIDCProviderConfig, error) {
+	var provider models.OIDCProviderConfig
+	if err := database.First(&provider, "id = ?", providerID).Error; err != nil {
+		return models.OIDCProviderConfig{}, err
+	}
+	return provider, nil
+}
+
+func requireVerifiedEmail(provider models.OIDCProviderConfig) bool {
+	return provider.RequireVerifiedEmail == nil || *provider.RequireVerifiedEmail
+}
+
+func oidcStateCookieName(providerID string) string {
+	sum := sha256.Sum256([]byte(providerID))
+	return "oidc_state_" + hex.EncodeToString(sum[:8])
+}
+
+func oidcProviderIDFromRequest(w http.ResponseWriter, r *http.Request) (string, bool) {
+	providerID, err := url.PathUnescape(chi.URLParam(r, "provider_id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid provider id")
+		return "", false
+	}
+	return providerID, true
+}
+
+func preferredOIDCUsername(claims oidcIDClaims) string {
+	if claims.PreferredUsername != "" {
+		return claims.PreferredUsername
+	}
+	if claims.Email != "" {
+		return claims.Email
+	}
+	return claims.Sub
+}
+
+func clearOIDCStateCookie(w http.ResponseWriter, r *http.Request, providerID string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     oidcStateCookieName(providerID),
+		Value:    "",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Path:     "/",
+		MaxAge:   -1,
+		Expires:  time.Unix(0, 0),
+		Secure:   isSecureRequest(r),
+	})
 }
 
 func CurrentUser() http.HandlerFunc {

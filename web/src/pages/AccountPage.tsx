@@ -5,6 +5,7 @@ export default function AccountPage() {
   const navigate = useNavigate()
   const { user, logout } = useSession()
   const username = user?.username ?? ''
+  const email = user ? user.email.trim() || '—' : '—'
 
   function handleLogout() {
     void logout().finally(() => {
@@ -20,6 +21,9 @@ export default function AccountPage() {
       <div style={{ padding: '10px 16px', maxWidth: 960, margin: '0 auto', background: '#0B0B0B', fontFamily: 'JetBrains Mono, Fira Code, Cascadia Code, ui-monospace, monospace' }}>
         <div style={{ marginBottom: 16, fontSize: '12px', color: 'var(--muted)' }}>
           LOGGED IN AS <span style={{ color: 'var(--text)' }}>{username || '—'}</span>
+        </div>
+        <div style={{ marginBottom: 16, fontSize: '12px', color: 'var(--muted)' }}>
+          EMAIL <span style={{ color: 'var(--text)' }}>{email}</span>
         </div>
         <button
           onClick={handleLogout}

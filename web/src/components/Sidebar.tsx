@@ -1,18 +1,29 @@
+import { useState } from 'react'
+import {
+  Activity,
+  ExternalLink,
+  LogOut,
+  Server,
+  Shield,
+  User,
+  Webhook,
+  Wrench,
+} from 'lucide-react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useNodePulse } from './NodePulse'
 import { useWebSocketContext } from './WebSocketProvider'
 import { useSession } from '../session'
 
 const NAV_ITEMS = [
-  { label: 'TIMELINE', to: '/timeline' },
-  { label: 'NODES', to: '/nodes', pulse: true },
+  { label: 'TIMELINE', to: '/timeline', icon: Activity },
+  { label: 'NODES', to: '/nodes', icon: Server, pulse: true },
 ] as const
 
 const ADMIN_ITEMS = [
-  { label: 'WEBHOOKS', to: '/webhooks' },
-  { label: 'ACCOUNT', to: '/account' },
-  { label: 'ADMIN', to: '/admin', adminOnly: true },
-  { label: 'DIAGNOSTICS', to: '/diagnostics' },
+  { label: 'WEBHOOKS', to: '/webhooks', icon: Webhook },
+  { label: 'ACCOUNT', to: '/account', icon: User },
+  { label: 'ADMIN', to: '/admin', icon: Shield, adminOnly: true },
+  { label: 'DIAGNOSTICS', to: '/diagnostics', icon: Wrench },
 ] as const
 
 export default function Sidebar() {
@@ -20,124 +31,151 @@ export default function Sidebar() {
   const { status, lastConnectedAt, reconnect } = useWebSocketContext()
   const navigate = useNavigate()
   const { user, logout } = useSession()
+  const [isLogoutHovered, setIsLogoutHovered] = useState(false)
+
   const username = user?.username ?? ''
   const isAdmin = user?.is_admin === true
-  const connectionStatusLabel = status === 'connected'
-    ? `connected${lastConnectedAt ? ` - last msg ${lastConnectedAt.toLocaleTimeString()}` : ''}`
+  const connectionStatusTitle = status === 'connected'
+    ? `CONNECTED${lastConnectedAt ? ` - LAST MSG ${lastConnectedAt.toLocaleTimeString()}` : ''}`
     : status === 'connecting'
-      ? 'connecting'
-      : 'disconnected - reconnect available'
+      ? 'CONNECTING...'
+      : 'DISCONNECTED - CLICK TO RECONNECT'
+  const wsColorClassName = status === 'connected'
+    ? 'text-[var(--success)]'
+    : status === 'connecting'
+      ? 'text-[#FF9900]'
+      : 'text-[var(--danger)]'
+  const wsLabel = status === 'connected' ? 'CONNECTED' : status === 'connecting' ? 'CONNECTING...' : 'DISCONNECTED'
 
   function navClassName(isActive: boolean) {
     return [
-      'block border-l-2 px-4 py-1 text-xs leading-[1.4] tracking-wider no-underline transition-colors',
+      'flex items-center justify-between gap-2 border-l-2 px-4 py-1 text-[13px] leading-[1.4] tracking-wider no-underline transition-colors',
       isActive ? 'border-l-[var(--accent)] pl-[14px] text-[var(--accent)]' : 'border-l-transparent text-[var(--muted)]',
     ].join(' ')
   }
 
   function nodeBadge() {
     if (loading && !lastUpdated) {
-      return <span className="ml-1 text-[var(--muted)]">[...]</span>
+      return <span className="text-[11px] text-[var(--muted)]">[...]</span>
     }
     if (error) {
       return (
-        <span className="ml-1 text-[var(--danger)]" title={error.message}>
+        <span className="text-[11px] text-[var(--danger)]" title={error.message}>
           [!]
         </span>
       )
     }
-    if (totalCount === 0) return <span className="ml-1 text-[var(--muted)]">[0]</span>
+    if (totalCount === 0) return <span className="text-[11px] text-[var(--muted)]">[0]</span>
     const colorClassName = onlineCount < totalCount ? 'text-[var(--danger)]' : 'text-[var(--success)]'
-    return <span className={`ml-1 ${colorClassName}`}>[{onlineCount}/{totalCount}]</span>
+    return <span className={`text-[11px] ${colorClassName}`}>[{onlineCount}/{totalCount}]</span>
   }
 
   return (
     <div className="flex min-h-screen w-[200px] flex-col border-r border-[var(--border)] bg-[#0B0B0B] font-mono">
-      <div className="flex items-center gap-2 px-4 py-4">
-        <span className="text-xs font-bold tracking-[0.15em] text-[var(--accent)]">BLACKBOX</span>
-        <button
-          type="button"
-          title={connectionStatusLabel}
-          aria-label={connectionStatusLabel}
-          aria-busy={status === 'connecting'}
-          aria-pressed={status === 'disconnected'}
-          disabled={status !== 'disconnected'}
-          onClick={status === 'disconnected' ? reconnect : undefined}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            padding: 0,
-            color: status === 'connected' ? '#00CC44' : status === 'connecting' ? '#FF9900' : '#FF3333',
-            fontSize: 10,
-            cursor: status === 'disconnected' ? 'pointer' : 'default',
-            lineHeight: 1,
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 4,
-          }}
-        >
-          <span aria-hidden="true">●</span>
-          <span style={{
-            position: 'absolute',
-            width: 1,
-            height: 1,
-            padding: 0,
-            margin: -1,
-            overflow: 'hidden',
-            clip: 'rect(0, 0, 0, 0)',
-            whiteSpace: 'nowrap',
-            border: 0,
-          }}
-          >
-            {connectionStatusLabel}
-          </span>
-        </button>
+      <div className="flex items-center px-4 py-4">
+        <span className="text-[12px] font-bold tracking-[0.15em] text-[var(--accent)]">
+          BLACKBOX
+          <span aria-hidden="true" className="cursor-blink">|</span>
+        </span>
       </div>
 
       <div className="border-t border-[var(--border)]" />
 
       <nav className="pt-2">
-        {NAV_ITEMS.map(item => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            className={({ isActive }) => navClassName(isActive)}
-          >
-            {item.label}
-            {'pulse' in item && item.pulse && nodeBadge()}
-          </NavLink>
-        ))}
+        {NAV_ITEMS.map(item => {
+          const Icon = item.icon
+          return (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={({ isActive }) => navClassName(isActive)}
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <Icon size={14} />
+                <span>{item.label}</span>
+              </span>
+              {'pulse' in item && item.pulse && nodeBadge()}
+            </NavLink>
+          )
+        })}
       </nav>
 
       <div className="my-2 border-t border-[var(--border)]" />
 
       <nav>
-        {ADMIN_ITEMS.filter(item => !('adminOnly' in item) || !item.adminOnly || isAdmin).map(item => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            className={({ isActive }) => navClassName(isActive)}
-          >
-            {item.label}
-          </NavLink>
-        ))}
+        {ADMIN_ITEMS.filter(item => !('adminOnly' in item) || !item.adminOnly || isAdmin).map(item => {
+          const Icon = item.icon
+          return (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={({ isActive }) => navClassName(isActive)}
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <Icon size={14} />
+                <span>{item.label}</span>
+              </span>
+            </NavLink>
+          )
+        })}
       </nav>
 
       <div className="flex-1" />
 
-      <div className="border-t border-[var(--border)] px-4 py-[10px]">
+      <div className="border-t border-[var(--border)] py-[10px]">
         <button
           type="button"
-          onClick={() => {
-            void logout().finally(() => {
-              navigate('/login')
-            })
-          }}
-          className="block w-full cursor-pointer border-none bg-transparent px-0 py-0 text-left text-xs leading-[1.4] tracking-wider text-[var(--muted)]"
-          title="Logout"
+          title={connectionStatusTitle}
+          aria-label={connectionStatusTitle}
+          aria-disabled={status !== 'disconnected'}
+          onClick={status === 'disconnected' ? reconnect : undefined}
+          className={[
+            'flex w-full items-center gap-2 border-none bg-transparent px-4 py-1 text-left text-[13px] leading-[1.4] tracking-wider',
+            wsColorClassName,
+            status === 'disconnected' ? 'cursor-pointer' : 'cursor-default',
+          ].join(' ')}
         >
-          {username || 'USER'}
+          <span aria-hidden="true">●</span>
+          <span>{wsLabel}</span>
         </button>
+
+        <a
+          href="https://github.com/maxjb-xyz/blackbox/issues/new"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-2 px-4 py-1 text-xs leading-[1.4] tracking-wider text-[var(--muted)] no-underline transition-colors hover:text-[var(--text)]"
+        >
+          <ExternalLink size={12} />
+          <span>REPORT ISSUE</span>
+        </a>
+
+        <div className="flex items-center justify-between px-4 py-[10px]">
+          <NavLink
+            to="/account"
+            className="text-xs leading-[1.4] tracking-wider text-[var(--muted)] no-underline transition-colors hover:text-[var(--text)]"
+          >
+            {username || 'USER'}
+          </NavLink>
+
+          <button
+            type="button"
+            title="Logout"
+            aria-label="Logout"
+            onMouseEnter={() => setIsLogoutHovered(true)}
+            onMouseLeave={() => setIsLogoutHovered(false)}
+            onClick={() => {
+              void logout().finally(() => {
+                navigate('/login')
+              })
+            }}
+            className={[
+              'flex h-5 w-5 items-center justify-center border-none bg-transparent p-0 transition-colors',
+              isLogoutHovered ? 'text-[var(--danger)]' : 'text-[var(--muted)]',
+            ].join(' ')}
+          >
+            <LogOut size={12} />
+          </button>
+        </div>
       </div>
     </div>
   )

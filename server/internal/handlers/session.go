@@ -16,6 +16,7 @@ type sessionResponse struct {
 type sessionUser struct {
 	UserID   string `json:"user_id"`
 	Username string `json:"username"`
+	Email    string `json:"email"`
 	IsAdmin  bool   `json:"is_admin"`
 }
 
@@ -23,6 +24,7 @@ func sessionUserFromClaims(claims *auth.Claims) sessionUser {
 	return sessionUser{
 		UserID:   claims.UserID,
 		Username: claims.Username,
+		Email:    claims.Email,
 		IsAdmin:  claims.IsAdmin,
 	}
 }

@@ -25,6 +25,7 @@ func ListEntries(database *gorm.DB) http.HandlerFunc {
 		limitStr := r.URL.Query().Get("limit")
 		node := r.URL.Query().Get("node")
 		source := r.URL.Query().Get("source")
+		service := r.URL.Query().Get("service")
 		q := r.URL.Query().Get("q")
 
 		limit := 50
@@ -53,6 +54,9 @@ func ListEntries(database *gorm.DB) http.HandlerFunc {
 		}
 		if source != "" {
 			tx = tx.Where("source = ?", source)
+		}
+		if service != "" {
+			tx = tx.Where("service = ?", service)
 		}
 		if q != "" {
 			like := "%" + q + "%"
@@ -86,6 +90,28 @@ func ListEntries(database *gorm.DB) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(resp); err != nil {
 			log.Printf("ListEntries encode: %v", err)
+		}
+	}
+}
+
+func ListEntryServices(database *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var services []string
+		if err := database.Model(&types.Entry{}).
+			Distinct().
+			Where("service != ''").
+			Order("service ASC").
+			Pluck("service", &services).Error; err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to list services")
+			return
+		}
+		if services == nil {
+			services = []string{}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(map[string][]string{"services": services}); err != nil {
+			log.Printf("ListEntryServices encode: %v", err)
 		}
 	}
 }
