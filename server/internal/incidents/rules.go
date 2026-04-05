@@ -196,23 +196,39 @@ func (m *Manager) handleWatchtowerUpdate(entry types.Entry) {
 
 func (m *Manager) openSuspectedIncident(trigger types.Entry, reason string) {
 	svc := trigger.Service
+
+	candidates, err := correlation.ScoreCauses(m.db, []string{svc}, trigger.Timestamp)
+	if err != nil {
+		log.Printf("incidents: ScoreCauses error for %s: %v", svc, err)
+	}
+	correlation.ApplyNodeBonus(candidates, trigger.NodeName)
+
+	rootCauseID := ""
+	if len(candidates) > 0 {
+		rootCauseID = candidates[0].Entry.ID
+	}
+
 	incidentID := ulid.Make().String()
 	incident := models.Incident{
-		ID:         incidentID,
-		OpenedAt:   trigger.Timestamp,
-		Status:     "open",
-		Confidence: "suspected",
-		Title:      svc + " — " + reason,
-		Services:   jsonStrings([]string{svc}),
-		TriggerID:  trigger.ID,
-		NodeNames:  jsonStrings([]string{trigger.NodeName}),
-		Metadata:   "{}",
+		ID:          incidentID,
+		OpenedAt:    trigger.Timestamp,
+		Status:      "open",
+		Confidence:  "suspected",
+		Title:       svc + " — " + reason,
+		Services:    jsonStrings([]string{svc}),
+		RootCauseID: rootCauseID,
+		TriggerID:   trigger.ID,
+		NodeNames:   jsonStrings([]string{trigger.NodeName}),
+		Metadata:    "{}",
 	}
 	if err := m.db.Create(&incident).Error; err != nil {
 		log.Printf("incidents: create suspected incident error: %v", err)
 		return
 	}
 	m.linkEntry(incidentID, trigger.ID, "trigger", 0)
+	for _, c := range candidates {
+		m.linkEntry(incidentID, c.Entry.ID, "cause", c.Score)
+	}
 	m.openIncidents[svc] = incidentID
 	m.broadcastOpened(incident)
 }
