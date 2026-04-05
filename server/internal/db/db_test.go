@@ -45,6 +45,14 @@ func TestInit_CreatesTablesAndMigrates(t *testing.T) {
 	assert.NoError(t, database.Create(&entry).Error)
 }
 
+func TestIncidentTablesExist(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	assert.True(t, database.Migrator().HasTable(&models.Incident{}))
+	assert.True(t, database.Migrator().HasTable(&models.IncidentEntry{}))
+}
+
 func TestInit_CreatesCompositeEntryCursorIndex(t *testing.T) {
 	tmp, err := os.CreateTemp("", "blackbox-test-*.db")
 	require.NoError(t, err)
