@@ -276,6 +276,15 @@ export async function updateFileWatcherSettings(redactSecrets: boolean): Promise
   return res.json()
 }
 
+export async function updateOllamaSettings(ollamaUrl: string, ollamaModel: string): Promise<void> {
+  const res = await apiFetch('/api/admin/settings/ollama', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ollama_url: ollamaUrl, ollama_model: ollamaModel }),
+  })
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to update Ollama settings'))
+}
+
 export async function revokeInvite(id: string): Promise<void> {
   const res = await apiFetch(`/api/auth/invite/${encodeURIComponent(id)}`, { method: 'DELETE' })
   if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to revoke invite'))

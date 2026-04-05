@@ -12,6 +12,7 @@ import {
   listAdminUsers,
   revokeInvite,
   setOIDCPolicy,
+  updateOllamaSettings,
   updateFileWatcherSettings,
   updateAdminOIDCProvider,
   updateAdminUser,
@@ -869,6 +870,7 @@ function SettingsTab() {
   const [ollamaSaving, setOllamaSaving] = useState(false)
   const [ollamaError, setOllamaError] = useState<string | null>(null)
   const [ollamaSuccess, setOllamaSuccess] = useState(false)
+  const ollamaSuccessTimerRef = useRef<number | null>(null)
 
   const loadSettings = useCallback(async () => {
     setLoading(true)
@@ -888,6 +890,14 @@ function SettingsTab() {
   useEffect(() => {
     void loadSettings()
   }, [loadSettings])
+
+  useEffect(() => {
+    return () => {
+      if (ollamaSuccessTimerRef.current !== null) {
+        window.clearTimeout(ollamaSuccessTimerRef.current)
+      }
+    }
+  }, [])
 
   async function handleSave() {
     setSaving(true)
@@ -910,14 +920,15 @@ function SettingsTab() {
     setOllamaError(null)
     setOllamaSuccess(false)
     try {
-      const res = await fetch('/api/admin/settings/ollama', {
-        method: 'PUT',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ollama_url: ollamaURL, ollama_model: ollamaModel }),
-      })
-      if (!res.ok) throw new Error(await readErrorMessage(res, 'Save failed'))
+      await updateOllamaSettings(ollamaURL, ollamaModel)
+      if (ollamaSuccessTimerRef.current !== null) {
+        window.clearTimeout(ollamaSuccessTimerRef.current)
+      }
       setOllamaSuccess(true)
+      ollamaSuccessTimerRef.current = window.setTimeout(() => {
+        setOllamaSuccess(false)
+        ollamaSuccessTimerRef.current = null
+      }, 2500)
     } catch (err) {
       setOllamaError(err instanceof Error ? err.message : 'Save failed')
     } finally {
@@ -1082,7 +1093,7 @@ const FILTER_CONTROL_STYLE: CSSProperties = {
   border: '1px solid var(--border)',
   color: 'var(--text)',
   fontSize: '12px',
-  padding: '2px 6px',
+  padding: '8px 10px',
   fontFamily: 'inherit',
   outline: 'none',
 }

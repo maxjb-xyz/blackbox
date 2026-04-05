@@ -66,9 +66,10 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
   const [detail, setDetail] = useState<IncidentDetail | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
 
-  const services = parseIncidentServices(incident)
-  const nodes = parseIncidentNodes(incident)
-  const meta = parseIncidentMetadata(incident)
+  const detailIncident = detail?.incident ?? incident
+  const services = parseIncidentServices(detailIncident)
+  const nodes = parseIncidentNodes(detailIncident)
+  const meta = parseIncidentMetadata(detailIncident)
 
   const toggle = useCallback(async () => {
     if (!expanded && !detail) {
@@ -164,7 +165,7 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
                     >
                       <span style={{ color: roleColor(link.role) }}>
                         {link.role.toUpperCase()}
-                        {link.role === 'cause' && incident.root_cause_id === link.entry_id && ' ★'}
+                        {link.role === 'cause' && detailIncident.root_cause_id === link.entry_id && ' ★'}
                       </span>
                       <span style={{ color: 'var(--muted)' }}>{formatTs(entry.timestamp)}</span>
                       <span style={{ color: 'var(--muted)' }}>{entry.source}</span>

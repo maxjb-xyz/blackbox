@@ -10,7 +10,7 @@ import {
   fetchIncidents,
   fetchNotes,
 } from '../api/client'
-import type { Entry, EntryNote } from '../api/client'
+import type { Entry, EntryNote, IncidentDetail } from '../api/client'
 import { useNodePulse } from '../components/NodePulse'
 import { useWebSocketContext } from '../components/WebSocketProvider'
 
@@ -106,6 +106,21 @@ interface TooltipState {
   text: string
   x: number
   y: number
+}
+
+function getIncidentDetailCached(
+  incidentId: string,
+  cache: Map<string, Promise<IncidentDetail>>,
+): Promise<IncidentDetail> {
+  const cached = cache.get(incidentId)
+  if (cached) return cached
+
+  const pending = fetchIncident(incidentId).catch(err => {
+    cache.delete(incidentId)
+    throw err
+  })
+  cache.set(incidentId, pending)
+  return pending
 }
 
 interface FileDiffMetadata {
@@ -762,6 +777,7 @@ function TimelineFeed({
   const expandedIdRef = useRef<string | null>(null)
   const ghostEntryRef = useRef<Entry | null>(null)
   const mountedRef = useRef(true)
+  const incidentDetailCacheRef = useRef<Map<string, Promise<IncidentDetail>>>(new Map())
 
   const consumeMaterializedGhost = useEffectEvent((incoming: Entry[]) => {
     const ghost = ghostEntryRef.current
@@ -780,7 +796,7 @@ function TimelineFeed({
       await Promise.all(
         page.incidents.map(async inc => {
           try {
-            const detail = await fetchIncident(inc.id)
+            const detail = await getIncidentDetailCached(inc.id, incidentDetailCacheRef.current)
             for (const { link } of detail.entries) {
               map[link.entry_id] = { id: inc.id, confidence: inc.confidence }
             }
@@ -880,6 +896,10 @@ function TimelineFeed({
   useEffect(() => {
     if (!lastMessage) return
     if (lastMessage.type === 'incident_opened' || lastMessage.type === 'incident_updated' || lastMessage.type === 'incident_resolved') {
+      const incident = lastMessage.data as { id?: string }
+      if (incident.id) {
+        incidentDetailCacheRef.current.delete(incident.id)
+      }
       void loadIncidentMembership()
     }
   }, [lastMessage, loadIncidentMembership])

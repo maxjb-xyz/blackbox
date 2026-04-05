@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   Activity,
   AlertTriangle,
@@ -36,6 +36,7 @@ export default function Sidebar() {
   const { user, logout } = useSession()
   const [isLogoutHovered, setIsLogoutHovered] = useState(false)
   const [openCount, setOpenCount] = useState(0)
+  const [hasMoreOpen, setHasMoreOpen] = useState(false)
   const [hasConfirmed, setHasConfirmed] = useState(false)
 
   const username = user?.username ?? ''
@@ -75,32 +76,30 @@ export default function Sidebar() {
     return <span className={`text-[11px] ${colorClassName}`}>[{onlineCount}/{totalCount}]</span>
   }
 
-  useEffect(() => {
+  const refreshOpenIncidentSummary = useCallback(() => {
     fetchIncidents({ status: 'open', limit: 200 })
       .then(page => {
         setOpenCount(page.incidents.length)
+        setHasMoreOpen(page.has_more)
         setHasConfirmed(page.incidents.some(i => i.confidence === 'confirmed'))
       })
       .catch(() => {})
   }, [])
 
   useEffect(() => {
+    refreshOpenIncidentSummary()
+  }, [refreshOpenIncidentSummary])
+
+  useEffect(() => {
     if (!lastMessage) return
     const { type, data } = lastMessage
-    if (type === 'incident_opened') {
+    if (type === 'incident_opened' || type === 'incident_updated' || type === 'incident_resolved') {
       const inc = data as Incident
-      setOpenCount(c => c + 1)
-      if (inc.confidence === 'confirmed') setHasConfirmed(true)
-    } else if (type === 'incident_updated') {
-      const inc = data as Incident
-      if (inc.status === 'open' && inc.confidence === 'confirmed') setHasConfirmed(true)
-    } else if (type === 'incident_resolved') {
-      setOpenCount(c => Math.max(0, c - 1))
-      fetchIncidents({ status: 'open', limit: 200 })
-        .then(page => setHasConfirmed(page.incidents.some(i => i.confidence === 'confirmed')))
-        .catch(() => {})
+      if (inc.id) {
+        refreshOpenIncidentSummary()
+      }
     }
-  }, [lastMessage])
+  }, [lastMessage, refreshOpenIncidentSummary])
 
   return (
     <div className="flex min-h-screen w-[200px] flex-col border-r border-[var(--border)] bg-[#0B0B0B] font-mono">
@@ -133,7 +132,7 @@ export default function Sidebar() {
                     color: hasConfirmed ? 'var(--danger)' : 'var(--warning)',
                   }}
                 >
-                  [{openCount}]
+                  [{hasMoreOpen ? '200+' : openCount}]
                 </span>
               )}
               {'pulse' in item && item.pulse && nodeBadge()}
