@@ -14,18 +14,20 @@ type sessionResponse struct {
 }
 
 type sessionUser struct {
-	UserID   string `json:"user_id"`
-	Username string `json:"username"`
-	Email    string `json:"email"`
-	IsAdmin  bool   `json:"is_admin"`
+	UserID     string `json:"user_id"`
+	Username   string `json:"username"`
+	Email      string `json:"email"`
+	OIDCLinked bool   `json:"oidc_linked"`
+	IsAdmin    bool   `json:"is_admin"`
 }
 
 func sessionUserFromClaims(claims *auth.Claims) sessionUser {
 	return sessionUser{
-		UserID:   claims.UserID,
-		Username: claims.Username,
-		Email:    claims.Email,
-		IsAdmin:  claims.IsAdmin,
+		UserID:     claims.UserID,
+		Username:   claims.Username,
+		Email:      claims.Email,
+		OIDCLinked: claims.OIDCLinked,
+		IsAdmin:    claims.IsAdmin,
 	}
 }
 

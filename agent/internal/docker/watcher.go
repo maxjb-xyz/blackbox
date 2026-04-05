@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strings"
 	"time"
 
 	dockerevents "github.com/docker/docker/api/types/events"
@@ -137,9 +138,11 @@ func buildEntry(nodeName string, msg dockerevents.Message) types.Entry {
 	}
 
 	metaBytes, _ := json.Marshal(attrs)
-	service := name
+	var service string
 	if action == "pull" || action == "delete" {
-		service = msg.Actor.ID
+		service = cleanImageService(msg.Actor.ID)
+	} else {
+		service = cleanContainerService(attrs, name)
 	}
 
 	return types.Entry{
@@ -231,8 +234,14 @@ func (c *eventCollapser) FlushExpired(now time.Time) []types.Entry {
 }
 
 func buildCollapsedContainerEntry(nodeName, event string, rawEvents []dockerevents.Message) types.Entry {
-	service := containerName(rawEvents)
-	if service == "" && len(rawEvents) > 0 {
+	rawName := containerName(rawEvents)
+	var attrs map[string]string
+	if len(rawEvents) > 0 {
+		attrs = rawEvents[len(rawEvents)-1].Actor.Attributes
+	}
+
+	service := cleanContainerService(attrs, rawName)
+	if rawName == "" && service == "" && len(rawEvents) > 0 {
 		service = rawEvents[len(rawEvents)-1].Actor.ID
 	}
 
@@ -309,6 +318,49 @@ func exitCodeFromRawEvents(rawEvents []dockerevents.Message) string {
 		}
 	}
 	return ""
+}
+
+func cleanContainerService(attrs map[string]string, rawName string) string {
+	if service := attrs["com.docker.compose.service"]; service != "" {
+		return service
+	}
+	return sanitizeContainerName(rawName)
+}
+
+func sanitizeContainerName(name string) string {
+	underscore := strings.IndexByte(name, '_')
+	if underscore == -1 {
+		return name
+	}
+
+	prefix := name[:underscore]
+	if len(prefix) < 8 || len(prefix) > 16 {
+		return name
+	}
+
+	for i := 0; i < len(prefix); i++ {
+		ch := prefix[i]
+		if (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') {
+			return name
+		}
+	}
+
+	return name[underscore+1:]
+}
+
+func cleanImageService(ref string) string {
+	if strings.HasPrefix(ref, "sha256:") {
+		return ""
+	}
+
+	if idx := strings.LastIndex(ref, ":"); idx != -1 {
+		ref = ref[:idx]
+	}
+	if idx := strings.LastIndex(ref, "/"); idx != -1 {
+		ref = ref[idx+1:]
+	}
+
+	return ref
 }
 
 func messageTimestamp(msg dockerevents.Message) time.Time {

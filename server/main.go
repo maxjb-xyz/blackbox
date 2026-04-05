@@ -145,6 +145,7 @@ func main() {
 		r.Use(middleware.JWTAuth(jwtSecret))
 		r.Use(middleware.TokenVersionCheck(database))
 		r.Get("/api/auth/me", handlers.CurrentUser())
+		r.Patch("/api/auth/me", handlers.UpdateAccount(database, jwtSecret))
 		r.Post("/api/auth/invite", handlers.CreateInvite(database))
 		r.Get("/api/auth/invite", handlers.ListInvites(database))
 		r.Get("/api/nodes", handlers.ListNodes(database))

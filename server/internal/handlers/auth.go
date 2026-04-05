@@ -99,7 +99,7 @@ func Bootstrap(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 			}
 
 			var issueErr error
-			token, issueErr = auth.IssueJWT(user.ID, user.Username, user.Email, user.IsAdmin, user.TokenVersion, jwtSecret, jwtTTL())
+			token, issueErr = auth.IssueJWT(user.ID, user.Username, user.Email, user.OIDCIssuer != "", user.IsAdmin, user.TokenVersion, jwtSecret, jwtTTL())
 			return issueErr
 		})
 		if txErr == errAlreadyBootstrapped {
@@ -119,6 +119,7 @@ func Bootstrap(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 			UserID:       user.ID,
 			Username:     user.Username,
 			Email:        user.Email,
+			OIDCLinked:   user.OIDCIssuer != "",
 			IsAdmin:      user.IsAdmin,
 			TokenVersion: user.TokenVersion,
 		}, http.StatusCreated)
@@ -148,7 +149,7 @@ func Login(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 			return
 		}
 
-		token, err := auth.IssueJWT(user.ID, user.Username, user.Email, user.IsAdmin, user.TokenVersion, jwtSecret, jwtTTL())
+		token, err := auth.IssueJWT(user.ID, user.Username, user.Email, user.OIDCIssuer != "", user.IsAdmin, user.TokenVersion, jwtSecret, jwtTTL())
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to issue token")
 			return
@@ -162,6 +163,7 @@ func Login(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 			UserID:       user.ID,
 			Username:     user.Username,
 			Email:        user.Email,
+			OIDCLinked:   user.OIDCIssuer != "",
 			IsAdmin:      user.IsAdmin,
 			TokenVersion: user.TokenVersion,
 		}, http.StatusOK)
@@ -367,7 +369,7 @@ func OIDCProviderCallback(database *gorm.DB, registry *auth.OIDCRegistry, jwtSec
 			return
 		}
 
-		token, err := auth.IssueJWT(user.ID, user.Username, user.Email, user.IsAdmin, user.TokenVersion, jwtSecret, jwtTTL())
+		token, err := auth.IssueJWT(user.ID, user.Username, user.Email, true, user.IsAdmin, user.TokenVersion, jwtSecret, jwtTTL())
 		if err != nil {
 			cleanupState()
 			writeError(w, http.StatusInternalServerError, "failed to issue token")

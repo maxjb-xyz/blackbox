@@ -10,7 +10,7 @@ import (
 )
 
 func TestIssueAndVerifyJWT_RoundTrip(t *testing.T) {
-	token, err := auth.IssueJWT("user-123", "alice", "alice@example.com", true, 0, "test-secret", time.Hour)
+	token, err := auth.IssueJWT("user-123", "alice", "alice@example.com", false, true, 0, "test-secret", time.Hour)
 	require.NoError(t, err)
 	assert.NotEmpty(t, token)
 
@@ -19,19 +19,40 @@ func TestIssueAndVerifyJWT_RoundTrip(t *testing.T) {
 	assert.Equal(t, "user-123", claims.UserID)
 	assert.Equal(t, "alice", claims.Username)
 	assert.Equal(t, "alice@example.com", claims.Email)
+	assert.False(t, claims.OIDCLinked)
 	assert.True(t, claims.IsAdmin)
 	assert.Equal(t, 0, claims.TokenVersion)
 }
 
+func TestIssueAndVerifyJWT_OIDCLinked(t *testing.T) {
+	before := time.Now()
+	token, err := auth.IssueJWT("user-456", "bob", "bob@example.com", true, false, 2, "test-secret", time.Hour)
+	require.NoError(t, err)
+	assert.NotEmpty(t, token)
+	after := time.Now()
+
+	claims, err := auth.VerifyJWT(token, "test-secret")
+	require.NoError(t, err)
+	assert.Equal(t, "user-456", claims.UserID)
+	assert.Equal(t, "bob", claims.Username)
+	assert.Equal(t, "bob@example.com", claims.Email)
+	assert.True(t, claims.OIDCLinked)
+	assert.False(t, claims.IsAdmin)
+	assert.Equal(t, 2, claims.TokenVersion)
+	require.NotNil(t, claims.ExpiresAt)
+	assert.WithinDuration(t, before.Add(time.Hour), claims.ExpiresAt.Time, time.Second)
+	assert.False(t, claims.ExpiresAt.After(after.Add(time.Hour).Add(time.Second)))
+}
+
 func TestVerifyJWT_WrongSecret(t *testing.T) {
-	token, err := auth.IssueJWT("user-123", "alice", "", false, 0, "secret-a", time.Hour)
+	token, err := auth.IssueJWT("user-123", "alice", "", false, false, 0, "secret-a", time.Hour)
 	require.NoError(t, err)
 	_, err = auth.VerifyJWT(token, "secret-b")
 	assert.Error(t, err)
 }
 
 func TestVerifyJWT_Expired(t *testing.T) {
-	token, err := auth.IssueJWT("user-123", "alice", "", false, 0, "secret", -time.Second)
+	token, err := auth.IssueJWT("user-123", "alice", "", false, false, 0, "secret", -time.Second)
 	require.NoError(t, err)
 	_, err = auth.VerifyJWT(token, "secret")
 	assert.Error(t, err)
