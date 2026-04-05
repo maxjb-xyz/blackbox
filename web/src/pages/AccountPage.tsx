@@ -5,7 +5,7 @@ export default function AccountPage() {
   const navigate = useNavigate()
   const { user, logout } = useSession()
   const username = user?.username ?? ''
-  const email = user?.email?.trim() ? user.email : '—'
+  const email = user ? user.email.trim() || '—' : '—'
 
   function handleLogout() {
     void logout().finally(() => {

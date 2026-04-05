@@ -9,7 +9,7 @@ interface OIDCProvider { id: string; name: string }
 export default function RegisterPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const { refreshSession } = useSession()
+  const { user, loading: sessionLoading, refreshSession } = useSession()
   const inviteCodeFromUrl = searchParams.get('code')?.trim() ?? ''
   const inviteCodeReadonly = inviteCodeFromUrl.length > 0
 
@@ -22,14 +22,24 @@ export default function RegisterPage() {
   const [oidcProviders, setOIDCProviders] = useState<OIDCProvider[]>([])
 
   useEffect(() => {
-    if (inviteCodeReadonly) setInviteCode(inviteCodeFromUrl)
+    setInviteCode(inviteCodeReadonly ? inviteCodeFromUrl || '' : '')
   }, [inviteCodeFromUrl, inviteCodeReadonly])
+
+  useEffect(() => {
+    if (!sessionLoading && user) {
+      navigate('/', { replace: true })
+    }
+  }, [navigate, sessionLoading, user])
 
   useEffect(() => {
     fetchOIDCProviders()
       .then(data => setOIDCProviders(data.providers))
       .catch(() => { /* OIDC providers are optional */ })
   }, [])
+
+  if (sessionLoading || user) {
+    return null
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -153,6 +163,9 @@ export default function RegisterPage() {
 
           {error && (
             <div
+              role="alert"
+              aria-live="assertive"
+              aria-atomic="true"
               style={{
                 display: 'flex',
                 alignItems: 'center',

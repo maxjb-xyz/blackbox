@@ -50,6 +50,13 @@ body {
   animation: terminal-startup 0.3s ease-out;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .cursor-blink,
+  .terminal-startup {
+    animation: none;
+  }
+}
+
 /* Timeline row transitions */
 .timeline-row {
   transition: filter 0.2s ease;

@@ -20,11 +20,17 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [oidcProviders, setOidcProviders] = useState<PublicOIDCProvider[]>([])
+  const [oidcError, setOidcError] = useState<string | null>(null)
 
   useEffect(() => {
+    setOidcError(null)
     fetchOIDCProviders()
       .then(data => setOidcProviders(data.providers))
-      .catch(err => console.error('OIDC provider fetch failed', err))
+      .catch(err => {
+        console.error('OIDC provider fetch failed', err)
+        setOidcProviders([])
+        setOidcError(err instanceof Error ? err.message : 'Single sign-on is temporarily unavailable.')
+      })
   }, [])
 
   const redirectTo = sanitizeRedirectTo(searchParams.get('redirect_to'))
@@ -85,6 +91,24 @@ export default function LoginPage() {
         </div>
 
         <form onSubmit={handleSubmit}>
+          {oidcError && (
+            <div
+              role="alert"
+              aria-live="assertive"
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 6,
+                color: 'var(--danger)',
+                fontSize: '12px',
+                marginBottom: 12,
+              }}
+            >
+              <AlertCircle size={14} style={{ marginTop: 1, flexShrink: 0 }} />
+              <span>{oidcError} Use password login or contact your administrator.</span>
+            </div>
+          )}
+
           <div style={{ marginBottom: 12 }}>
             <label
               htmlFor="username"

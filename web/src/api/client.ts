@@ -268,6 +268,17 @@ export interface OIDCProviderConfig {
   redirect_url: string
   enabled: boolean
   created_at: string
+  updated_at: string
+}
+
+export interface AdminOIDCProviderInput {
+  id: string
+  name: string
+  issuer: string
+  client_id: string
+  client_secret: string
+  redirect_url: string
+  enabled: boolean
 }
 
 export async function listAdminOIDCProviders(): Promise<OIDCProviderConfig[]> {
@@ -277,7 +288,7 @@ export async function listAdminOIDCProviders(): Promise<OIDCProviderConfig[]> {
 }
 
 export async function createAdminOIDCProvider(
-  data: Omit<OIDCProviderConfig, 'id' | 'created_at'>,
+  data: AdminOIDCProviderInput,
 ): Promise<OIDCProviderConfig> {
   const res = await apiFetch('/api/admin/oidc/providers', {
     method: 'POST',
@@ -290,7 +301,7 @@ export async function createAdminOIDCProvider(
 
 export async function updateAdminOIDCProvider(
   id: string,
-  data: Partial<Omit<OIDCProviderConfig, 'id' | 'created_at'>>,
+  data: Partial<AdminOIDCProviderInput>,
 ): Promise<OIDCProviderConfig> {
   const res = await apiFetch(`/api/admin/oidc/providers/${encodeURIComponent(id)}`, {
     method: 'PATCH',

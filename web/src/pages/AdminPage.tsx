@@ -26,11 +26,11 @@ interface InviteCode {
 }
 
 interface OIDCProviderFormState {
+  id: string
   name: string
   issuer: string
   client_id: string
   client_secret: string
-  redirect_url: string
   enabled: boolean
 }
 
@@ -79,13 +79,19 @@ function formatInviteTimestamp(value: string): string {
 
 function emptyOIDCProviderForm(): OIDCProviderFormState {
   return {
+    id: '',
     name: '',
     issuer: '',
     client_id: '',
     client_secret: '',
-    redirect_url: '',
     enabled: true,
   }
+}
+
+function oidcCallbackURL(providerID: string): string {
+  const trimmed = providerID.trim()
+  if (!trimmed) return ''
+  return `${window.location.origin}/api/auth/oidc/${encodeURIComponent(trimmed)}/callback`
 }
 
 export default function AdminPage() {
@@ -493,11 +499,11 @@ function OIDCTab() {
     setProviderFormMode('edit')
     setEditingProviderId(provider.id)
     setProviderForm({
+      id: provider.id,
       name: provider.name,
       issuer: provider.issuer,
       client_id: provider.client_id,
       client_secret: '',
-      redirect_url: provider.redirect_url,
       enabled: provider.enabled,
     })
     setProviderError(null)
@@ -514,14 +520,15 @@ function OIDCTab() {
     e.preventDefault()
     if (!providerFormMode) return
 
+    const providerID = providerForm.id.trim()
     const name = providerForm.name.trim()
     const issuer = providerForm.issuer.trim()
     const clientID = providerForm.client_id.trim()
     const clientSecret = providerForm.client_secret.trim()
-    const redirectURL = providerForm.redirect_url.trim()
+    const redirectURL = oidcCallbackURL(providerID)
 
-    if (!name || !issuer || !clientID || !redirectURL) {
-      setProviderError('All provider fields except existing secret must be filled')
+    if (!providerID || !name || !issuer || !clientID || !redirectURL) {
+      setProviderError('Provider ID, name, issuer, and client ID are required')
       return
     }
     if (providerFormMode === 'create' && !clientSecret) {
@@ -536,6 +543,7 @@ function OIDCTab() {
     try {
       if (providerFormMode === 'create') {
         await createAdminOIDCProvider({
+          id: providerID,
           name,
           issuer,
           client_id: clientID,
@@ -546,6 +554,7 @@ function OIDCTab() {
         setProviderMessage('OIDC provider created')
       } else if (editingProviderId) {
         await updateAdminOIDCProvider(editingProviderId, {
+          id: providerID,
           name,
           issuer,
           client_id: clientID,
@@ -615,6 +624,17 @@ function OIDCTab() {
           <form onSubmit={handleProviderSubmit} style={{ border: '1px solid var(--border)', padding: 16, marginBottom: 16 }}>
             <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
               <label style={fieldWrapperStyle}>
+                <span style={fieldLabelStyle}>PROVIDER ID</span>
+                <input
+                  type="text"
+                  value={providerForm.id}
+                  onChange={e => setProviderForm(prev => ({ ...prev, id: e.target.value }))}
+                  required
+                  style={inputStyle}
+                />
+              </label>
+
+              <label style={fieldWrapperStyle}>
                 <span style={fieldLabelStyle}>NAME</span>
                 <input
                   type="text"
@@ -660,14 +680,16 @@ function OIDCTab() {
               </label>
 
               <label style={{ ...fieldWrapperStyle, gridColumn: '1 / -1' }}>
-                <span style={fieldLabelStyle}>REDIRECT URL</span>
+                <span style={fieldLabelStyle}>CALLBACK URL</span>
                 <input
-                  type="url"
-                  value={providerForm.redirect_url}
-                  onChange={e => setProviderForm(prev => ({ ...prev, redirect_url: e.target.value }))}
-                  required
-                  style={inputStyle}
+                  type="text"
+                  value={oidcCallbackURL(providerForm.id)}
+                  readOnly
+                  style={{ ...inputStyle, color: 'var(--muted)' }}
                 />
+                <span style={{ color: 'var(--muted)', fontSize: '11px' }}>
+                  Update the provider ID to change the callback URL you register with your identity provider.
+                </span>
               </label>
 
               <label style={{ ...fieldWrapperStyle, gridColumn: '1 / -1', flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -714,6 +736,7 @@ function OIDCTab() {
             <thead>
               <tr style={{ color: 'var(--muted)', fontSize: '10px', letterSpacing: '0.1em' }}>
                 <th style={{ textAlign: 'left', padding: '4px 8px 4px 0', borderBottom: '1px solid var(--border)' }}>NAME</th>
+                <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid var(--border)' }}>ID</th>
                 <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid var(--border)' }}>ISSUER</th>
                 <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid var(--border)' }}>STATUS</th>
                 <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid var(--border)' }}>CREATED</th>
@@ -724,6 +747,7 @@ function OIDCTab() {
               {providers.map(provider => (
                 <tr key={provider.id}>
                   <td style={{ padding: '8px 8px 8px 0', color: 'var(--text)' }}>{provider.name}</td>
+                  <td style={{ padding: '8px', color: 'var(--muted)' }}>{provider.id}</td>
                   <td style={{ padding: '8px', color: 'var(--muted)', maxWidth: 320 }}>
                     <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={provider.issuer}>
                       {provider.issuer}
