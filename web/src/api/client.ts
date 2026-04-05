@@ -9,6 +9,7 @@ export interface SessionUser {
   username: string
   is_admin: boolean
   email: string
+  oidc_linked: boolean
 }
 
 export interface HealthStatus {
@@ -135,6 +136,20 @@ export async function fetchOIDCProviders(): Promise<{ providers: PublicOIDCProvi
 export async function fetchCurrentUser(): Promise<SessionUser> {
   const res = await apiFetch('/api/auth/me')
   if (!res.ok) throw new Error('Failed to fetch current user')
+  const data = (await res.json()) as { user: SessionUser }
+  return data.user
+}
+
+export async function updateAccountEmail(email: string): Promise<SessionUser> {
+  const res = await apiFetch('/api/auth/me', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error((data as { error?: string }).error ?? 'Failed to update email')
+  }
   const data = (await res.json()) as { user: SessionUser }
   return data.user
 }

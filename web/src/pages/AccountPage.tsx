@@ -1,45 +1,256 @@
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
+import { updateAccountEmail } from '../api/client'
 import { useSession } from '../session'
 
-export default function AccountPage() {
-  const navigate = useNavigate()
-  const { user, logout } = useSession()
-  const username = user?.username ?? ''
-  const email = user ? user.email.trim() || '—' : '—'
+const fontFamily = 'JetBrains Mono, Fira Code, Cascadia Code, ui-monospace, monospace'
 
-  function handleLogout() {
-    void logout().finally(() => {
-      navigate('/login', { replace: true })
-    })
+const pageStyle: CSSProperties = {
+  minHeight: '100%',
+  background: '#0B0B0B',
+  fontFamily,
+}
+
+const headerStyle: CSSProperties = {
+  padding: '8px 10px',
+  borderBottom: '1px solid var(--border)',
+  background: '#0B0B0B',
+}
+
+const headerLabelStyle: CSSProperties = {
+  color: 'var(--muted)',
+  fontSize: '11px',
+  letterSpacing: '0.1em',
+}
+
+const contentStyle: CSSProperties = {
+  padding: '14px 16px 24px',
+  maxWidth: 960,
+  margin: '0 auto',
+}
+
+const panelStyle: CSSProperties = {
+  border: '1px solid var(--border)',
+  background: '#0B0B0B',
+}
+
+const rowStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'flex-start',
+  gap: 24,
+  flexWrap: 'wrap',
+  padding: '14px 16px',
+  borderBottom: '1px solid var(--border)',
+}
+
+const lastRowStyle: CSSProperties = {
+  ...rowStyle,
+  borderBottom: 'none',
+}
+
+const labelStyle: CSSProperties = {
+  width: 120,
+  color: 'var(--muted)',
+  fontSize: '11px',
+  letterSpacing: '0.08em',
+  flexShrink: 0,
+}
+
+const valueStyle: CSSProperties = {
+  color: 'var(--text)',
+  fontSize: '13px',
+  lineHeight: 1.5,
+}
+
+const fieldStyle: CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 6,
+}
+
+const buttonStyle: CSSProperties = {
+  background: 'transparent',
+  border: '1px solid var(--border)',
+  color: 'var(--text)',
+  padding: '5px 10px',
+  fontFamily,
+  fontSize: '11px',
+  letterSpacing: '0.08em',
+  cursor: 'pointer',
+}
+
+const mutedNoteStyle: CSSProperties = {
+  color: 'var(--muted)',
+  fontSize: '11px',
+}
+
+const errorStyle: CSSProperties = {
+  color: 'var(--danger)',
+  fontSize: '12px',
+}
+
+const inputStyle: CSSProperties = {
+  width: '100%',
+  maxWidth: 360,
+  background: 'var(--surface)',
+  border: '1px solid var(--border)',
+  color: 'var(--text)',
+  padding: '8px 10px',
+  fontFamily,
+  fontSize: '13px',
+  boxSizing: 'border-box',
+}
+
+export default function AccountPage() {
+  const { user, refreshSession } = useSession()
+  const [editingEmail, setEditingEmail] = useState(false)
+  const [emailInput, setEmailInput] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const username = user?.username ?? '—'
+  const currentEmail = user?.email ?? ''
+  const displayEmail = currentEmail.trim() || '—'
+  const role = user ? (user.is_admin ? 'ADMIN' : 'USER') : '—'
+  const oidcLinked = user?.oidc_linked === true
+  const canEditEmail = user !== null && !oidcLinked
+
+  useEffect(() => {
+    if (!editingEmail) {
+      setEmailInput(currentEmail)
+    }
+  }, [currentEmail, editingEmail])
+
+  useEffect(() => {
+    if (oidcLinked) {
+      setEditingEmail(false)
+      setSaving(false)
+      setError(null)
+    }
+  }, [oidcLinked])
+
+  function handleStartEdit() {
+    setEmailInput(currentEmail)
+    setError(null)
+    setEditingEmail(true)
+  }
+
+  function handleCancelEdit() {
+    setEmailInput(currentEmail)
+    setError(null)
+    setEditingEmail(false)
+  }
+
+  async function handleSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!user || oidcLinked) {
+      return
+    }
+
+    const nextEmail = emailInput.trim()
+    if (nextEmail === currentEmail) {
+      setError(null)
+      setEditingEmail(false)
+      return
+    }
+
+    setSaving(true)
+    setError(null)
+    try {
+      await updateAccountEmail(nextEmail)
+      const nextUser = await refreshSession()
+      if (!nextUser) {
+        setError('Email updated, but session refresh failed. Reload the page.')
+        return
+      }
+      setEditingEmail(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update email')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
-    <div style={{ minHeight: '100%', background: '#0B0B0B', fontFamily: 'JetBrains Mono, Fira Code, Cascadia Code, ui-monospace, monospace' }}>
-      <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', background: '#0B0B0B' }}>
-        <span style={{ color: 'var(--muted)', fontSize: '11px', letterSpacing: '0.1em' }}>ACCOUNT</span>
+    <div style={pageStyle}>
+      <div style={headerStyle}>
+        <span style={headerLabelStyle}>ACCOUNT</span>
       </div>
-      <div style={{ padding: '10px 16px', maxWidth: 960, margin: '0 auto', background: '#0B0B0B', fontFamily: 'JetBrains Mono, Fira Code, Cascadia Code, ui-monospace, monospace' }}>
-        <div style={{ marginBottom: 16, fontSize: '12px', color: 'var(--muted)' }}>
-          LOGGED IN AS <span style={{ color: 'var(--text)' }}>{username || '—'}</span>
+
+      <div style={contentStyle}>
+        <div style={panelStyle}>
+          <div style={rowStyle}>
+            <div style={labelStyle}>USERNAME</div>
+            <div style={fieldStyle}>
+              <span style={valueStyle}>{username}</span>
+            </div>
+          </div>
+
+          <div style={rowStyle}>
+            <div style={labelStyle}>EMAIL</div>
+            <div style={fieldStyle}>
+              {oidcLinked ? (
+                <>
+                  <span style={valueStyle}>{displayEmail}</span>
+                  <span style={mutedNoteStyle}>managed by SSO provider</span>
+                </>
+              ) : canEditEmail && editingEmail ? (
+                <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <input
+                    type="email"
+                    value={emailInput}
+                    onChange={event => setEmailInput(event.target.value)}
+                    disabled={saving}
+                    autoFocus
+                    style={inputStyle}
+                  />
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <button
+                      type="submit"
+                      disabled={saving}
+                      style={{ ...buttonStyle, color: saving ? 'var(--muted)' : 'var(--accent)' }}
+                    >
+                      {saving ? '[SAVING]' : '[SAVE]'}
+                    </button>
+                    <button type="button" onClick={handleCancelEdit} disabled={saving} style={buttonStyle}>
+                      [CANCEL]
+                    </button>
+                  </div>
+                  {error && <div style={errorStyle}>{error}</div>}
+                </form>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={valueStyle}>{displayEmail}</span>
+                    {canEditEmail && (
+                      <button type="button" onClick={handleStartEdit} style={buttonStyle}>
+                        [EDIT]
+                      </button>
+                    )}
+                  </div>
+                  {error && <div style={errorStyle}>{error}</div>}
+                </>
+              )}
+            </div>
+          </div>
+
+          <div style={oidcLinked ? rowStyle : lastRowStyle}>
+            <div style={labelStyle}>ROLE</div>
+            <div style={fieldStyle}>
+              <span style={valueStyle}>{role}</span>
+            </div>
+          </div>
+
+          {oidcLinked && (
+            <div style={lastRowStyle}>
+              <div style={labelStyle}>SSO</div>
+              <div style={fieldStyle}>
+                <span style={valueStyle}>account linked via OIDC</span>
+              </div>
+            </div>
+          )}
         </div>
-        <div style={{ marginBottom: 16, fontSize: '12px', color: 'var(--muted)' }}>
-          EMAIL <span style={{ color: 'var(--text)' }}>{email}</span>
-        </div>
-        <button
-          onClick={handleLogout}
-          style={{
-            background: 'transparent',
-            border: '1px solid var(--border)',
-            color: 'var(--danger)',
-            padding: '8px 16px',
-            fontFamily: 'JetBrains Mono, Fira Code, Cascadia Code, ui-monospace, monospace',
-            fontSize: '12px',
-            letterSpacing: '0.1em',
-            cursor: 'pointer',
-          }}
-        >
-          LOGOUT
-        </button>
       </div>
     </div>
   )

@@ -12,6 +12,7 @@ type Claims struct {
 	UserID       string `json:"user_id"`
 	Username     string `json:"username"`
 	Email        string `json:"email"`
+	OIDCLinked   bool   `json:"oidc_linked"`
 	IsAdmin      bool   `json:"is_admin"`
 	TokenVersion int    `json:"tv"`
 	jwt.RegisteredClaims
@@ -26,11 +27,12 @@ func ClaimsFromContext(ctx context.Context) (*Claims, bool) {
 	return c, ok
 }
 
-func IssueJWT(userID string, username string, email string, isAdmin bool, tokenVersion int, secret string, ttl time.Duration) (string, error) {
+func IssueJWT(userID string, username string, email string, oidcLinked bool, isAdmin bool, tokenVersion int, secret string, ttl time.Duration) (string, error) {
 	claims := Claims{
 		UserID:       userID,
 		Username:     username,
 		Email:        email,
+		OIDCLinked:   oidcLinked,
 		IsAdmin:      isAdmin,
 		TokenVersion: tokenVersion,
 		RegisteredClaims: jwt.RegisteredClaims{
