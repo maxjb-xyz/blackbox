@@ -2,6 +2,7 @@ package docker
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	dockerevents "github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/api/types/filters"
 	dockerclient "github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/oklog/ulid/v2"
 
 	"blackbox/shared/types"
@@ -419,15 +421,21 @@ func (r *serviceResolver) captureContainerLogs(containerID string) []string {
 	}
 	defer func() { _ = rc.Close() }()
 
+	var stdoutBuf, stderrBuf bytes.Buffer
+	if _, err := stdcopy.StdCopy(&stdoutBuf, &stderrBuf, rc); err != nil {
+		return nil
+	}
+
+	lines := scanLogLines(&stdoutBuf)
+	lines = append(lines, scanLogLines(&stderrBuf)...)
+	return lines
+}
+
+func scanLogLines(r io.Reader) []string {
 	var lines []string
-	scanner := bufio.NewScanner(rc)
+	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
-		line := scanner.Text()
-		// Docker multiplexed stream: strip 8-byte header if present
-		if len(line) > 8 && (line[0] == 1 || line[0] == 2) && line[1] == 0 && line[2] == 0 && line[3] == 0 {
-			line = line[8:]
-		}
-		if trimmed := strings.TrimSpace(line); trimmed != "" {
+		if trimmed := strings.TrimSpace(scanner.Text()); trimmed != "" {
 			lines = append(lines, trimmed)
 		}
 	}

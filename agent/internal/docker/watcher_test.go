@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -9,6 +10,7 @@ import (
 
 	dockercontainer "github.com/docker/docker/api/types/container"
 	dockerevents "github.com/docker/docker/api/types/events"
+	"github.com/docker/docker/pkg/stdcopy"
 
 	"blackbox/shared/types"
 )
@@ -197,6 +199,30 @@ func TestResolveImageService_FallsBackWhenContainerListFails(t *testing.T) {
 	}
 }
 
+func TestCaptureContainerLogs_DemuxesDockerFrames(t *testing.T) {
+	var mux bytes.Buffer
+	_, err := stdcopy.NewStdWriter(&mux, stdcopy.Stdout).Write([]byte("stdout line\n"))
+	if err != nil {
+		t.Fatalf("write stdout frame: %v", err)
+	}
+	_, err = stdcopy.NewStdWriter(&mux, stdcopy.Stderr).Write([]byte("stderr line\n"))
+	if err != nil {
+		t.Fatalf("write stderr frame: %v", err)
+	}
+
+	resolver := newServiceResolver(context.Background(), fakeDockerResolverClient{
+		logData: mux.Bytes(),
+	})
+
+	lines := resolver.captureContainerLogs("abc123")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 log lines, got %d (%v)", len(lines), lines)
+	}
+	if lines[0] != "stdout line" || lines[1] != "stderr line" {
+		t.Fatalf("unexpected log lines: %v", lines)
+	}
+}
+
 func TestBuildCollapsedContainerEntry_UsesSwarmServiceLabel(t *testing.T) {
 	base := time.Now().UTC()
 	entry := buildCollapsedContainerEntry("node-1", "restart", []dockerevents.Message{
@@ -362,6 +388,8 @@ type fakeDockerResolverClient struct {
 	inspectErr      error
 	containers      []dockercontainer.Summary
 	containerErr    error
+	logData         []byte
+	logErr          error
 }
 
 func (f fakeDockerResolverClient) ContainerInspect(_ context.Context, _ string) (dockercontainer.InspectResponse, error) {
@@ -373,7 +401,13 @@ func (f fakeDockerResolverClient) ContainerList(_ context.Context, _ dockerconta
 }
 
 func (f fakeDockerResolverClient) ContainerLogs(_ context.Context, _ string, _ dockercontainer.LogsOptions) (io.ReadCloser, error) {
-	return nil, nil
+	if f.logErr != nil {
+		return nil, f.logErr
+	}
+	if f.logData == nil {
+		return nil, nil
+	}
+	return io.NopCloser(bytes.NewReader(f.logData)), nil
 }
 
 type assertiveResolverError string

@@ -228,8 +228,15 @@ func serviceFromPath(filePath string, roots []watchRoot) string {
 
 	prefixes := []string{"/etc/", "/opt/", "/var/lib/"}
 	for _, prefix := range prefixes {
+		base := strings.TrimSuffix(prefix, "/")
+		if logical == base || logical == prefix {
+			return ""
+		}
 		if strings.HasPrefix(logical, prefix) {
 			rest := strings.TrimPrefix(logical, prefix)
+			if rest == "" || rest == "/" {
+				return ""
+			}
 			parts := strings.SplitN(rest, "/", 2)
 			if parts[0] != "" {
 				return parts[0]

@@ -34,6 +34,27 @@ func TestScoreCauses_DieNonZeroExit(t *testing.T) {
 	assert.Equal(t, 100, candidates[0].Score)
 }
 
+func TestScoreCauses_DieNonZeroNumericExit(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	now := time.Now().UTC()
+	cause := types.Entry{
+		ID:        ulid.Make().String(),
+		Timestamp: now.Add(-10 * time.Second),
+		Service:   "nginx",
+		Source:    "docker",
+		Event:     "die",
+		Metadata:  `{"exitCode":137}`,
+	}
+	require.NoError(t, database.Create(&cause).Error)
+
+	candidates, err := correlation.ScoreCauses(database, []string{"nginx"}, now)
+	require.NoError(t, err)
+	require.Len(t, candidates, 1)
+	assert.Equal(t, 100, candidates[0].Score)
+}
+
 func TestScoreCauses_ExcludesWebhooks(t *testing.T) {
 	database, err := db.Init(":memory:")
 	require.NoError(t, err)
@@ -114,4 +135,44 @@ func TestApplyNodeBonus(t *testing.T) {
 	correlation.ApplyNodeBonus(candidates, "node-01")
 
 	assert.Equal(t, 100, candidates[0].Score)
+}
+
+func TestScoreCauses_TieBreaksByTimestampThenID(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	now := time.Now().UTC()
+	older := types.Entry{
+		ID:        "01OLDER",
+		Timestamp: now.Add(-20 * time.Second),
+		Service:   "nginx",
+		Source:    "docker",
+		Event:     "restart",
+		Metadata:  `{}`,
+	}
+	newer := types.Entry{
+		ID:        "01NEWER",
+		Timestamp: now.Add(-10 * time.Second),
+		Service:   "nginx",
+		Source:    "docker",
+		Event:     "restart",
+		Metadata:  `{}`,
+	}
+	require.NoError(t, database.Create(&older).Error)
+	require.NoError(t, database.Create(&newer).Error)
+
+	candidates, err := correlation.ScoreCauses(database, []string{"nginx"}, now)
+	require.NoError(t, err)
+	require.Len(t, candidates, 2)
+	assert.Equal(t, newer.ID, candidates[0].Entry.ID)
+	assert.Equal(t, older.ID, candidates[1].Entry.ID)
+
+	// Equal score and timestamp should fall back to ID ordering.
+	candidates = []correlation.CauseCandidate{
+		{Entry: &types.Entry{ID: "02B", Timestamp: now, NodeName: "node-01"}, Score: 80},
+		{Entry: &types.Entry{ID: "02A", Timestamp: now}, Score: 80},
+	}
+	correlation.ApplyNodeBonus(candidates, "")
+	assert.Equal(t, "02A", candidates[0].Entry.ID)
+	assert.Equal(t, "02B", candidates[1].Entry.ID)
 }

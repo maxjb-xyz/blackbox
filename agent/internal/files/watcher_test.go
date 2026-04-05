@@ -20,17 +20,23 @@ func TestServiceFromPath(t *testing.T) {
 		{configured: "/home/user/docker/redis", resolved: "/home/user/docker/redis"},
 	}
 	cases := []struct {
+		name string
 		path string
 		want string
 	}{
-		{"/etc/nginx/sites-available/foo.conf", "nginx"},
-		{"/opt/myapp/config.yml", "myapp"},
-		{"/home/user/docker/redis/redis.conf", "redis"},
-		{"/etc/nginx", "nginx"},
-		{"/opt/myapp", "myapp"},
+		{"etc child", "/etc/nginx/sites-available/foo.conf", "nginx"},
+		{"opt child", "/opt/myapp/config.yml", "myapp"},
+		{"docker home child", "/home/user/docker/redis/redis.conf", "redis"},
+		{"etc exact service", "/etc/nginx", "nginx"},
+		{"opt exact service", "/opt/myapp", "myapp"},
+		{"var lib child", "/var/lib/foo/bar.conf", "foo"},
+		{"unmatched path falls back to root dir", "/custom/path/config.yml", "/custom/path"},
+		{"empty path falls back deterministically", "", "."},
+		{"trailing slash still resolves service", "/etc/nginx/", "nginx"},
+		{"exact prefix returns empty service", "/etc", ""},
 	}
 	for _, tc := range cases {
-		t.Run(tc.path, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			got := serviceFromPath(tc.path, roots)
 			if got != tc.want {
 				t.Fatalf("serviceFromPath(%q) = %q, want %q", tc.path, got, tc.want)

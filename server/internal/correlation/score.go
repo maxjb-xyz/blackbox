@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"time"
 
 	"blackbox/shared/types"
@@ -76,9 +77,7 @@ func ScoreCauses(db *gorm.DB, services []string, at time.Time) ([]CauseCandidate
 		})
 	}
 
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].Score > results[j].Score
-	})
+	sort.Slice(results, func(i, j int) bool { return causeCandidateLess(results[i], results[j]) })
 	return results, nil
 }
 
@@ -93,9 +92,25 @@ func ApplyNodeBonus(candidates []CauseCandidate, triggerNode string) {
 			candidates[i].Score += 20
 		}
 	}
-	sort.Slice(candidates, func(i, j int) bool {
-		return candidates[i].Score > candidates[j].Score
-	})
+	sort.Slice(candidates, func(i, j int) bool { return causeCandidateLess(candidates[i], candidates[j]) })
+}
+
+func causeCandidateLess(left, right CauseCandidate) bool {
+	if left.Score != right.Score {
+		return left.Score > right.Score
+	}
+	if left.Entry != nil && right.Entry != nil && !left.Entry.Timestamp.Equal(right.Entry.Timestamp) {
+		return left.Entry.Timestamp.After(right.Entry.Timestamp)
+	}
+	leftID := ""
+	if left.Entry != nil {
+		leftID = left.Entry.ID
+	}
+	rightID := ""
+	if right.Entry != nil {
+		rightID = right.Entry.ID
+	}
+	return leftID < rightID
 }
 
 func baseScore(e *types.Entry) int {
@@ -129,6 +144,10 @@ func extractExitCode(e *types.Entry) string {
 		var code string
 		if err := json.Unmarshal(raw, &code); err == nil {
 			return code
+		}
+		var numeric int
+		if err := json.Unmarshal(raw, &numeric); err == nil {
+			return strconv.Itoa(numeric)
 		}
 	}
 
