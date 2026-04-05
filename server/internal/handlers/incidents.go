@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"blackbox/server/internal/models"
 	"blackbox/shared/types"
@@ -34,7 +35,12 @@ func ListIncidents(database *gorm.DB) http.HandlerFunc {
 			tx = tx.Where("confidence = ?", confidence)
 		}
 		if service != "" {
-			tx = tx.Where("services LIKE ?", "%\""+service+"\"%")
+			escapedService := strings.NewReplacer(
+				"\\", "\\\\",
+				"%", "\\%",
+				"_", "\\_",
+			).Replace(service)
+			tx = tx.Where(`services LIKE ? ESCAPE '\'`, "%\""+escapedService+"\"%")
 		}
 
 		var incidents []models.Incident

@@ -37,11 +37,12 @@ func TestConfirmedIncident_OpenOnDown(t *testing.T) {
 	entry := makeEntry("nginx", "webhook", "down", `{"monitor":"nginx"}`)
 	require.NoError(t, database.Create(&entry).Error)
 	ch <- entry
-	time.Sleep(100 * time.Millisecond)
 
 	var incident models.Incident
-	err = database.Where("status = ? AND confidence = ?", "open", "confirmed").First(&incident).Error
-	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		err = database.Where("status = ? AND confidence = ?", "open", "confirmed").First(&incident).Error
+		return err == nil
+	}, time.Second, 10*time.Millisecond)
 	assert.Equal(t, "open", incident.Status)
 	assert.Equal(t, "confirmed", incident.Confidence)
 	assert.Equal(t, entry.ID, incident.TriggerID)
@@ -58,15 +59,40 @@ func TestConfirmedIncident_ResolveOnUp(t *testing.T) {
 	downEntry := makeEntry("nginx", "webhook", "down", `{"monitor":"nginx"}`)
 	require.NoError(t, database.Create(&downEntry).Error)
 	ch <- downEntry
-	time.Sleep(100 * time.Millisecond)
 
 	upEntry := makeEntry("nginx", "webhook", "up", `{"monitor":"nginx"}`)
 	require.NoError(t, database.Create(&upEntry).Error)
 	ch <- upEntry
-	time.Sleep(100 * time.Millisecond)
 
 	var incident models.Incident
-	require.NoError(t, database.First(&incident).Error)
+	require.Eventually(t, func() bool {
+		if err := database.First(&incident).Error; err != nil {
+			return false
+		}
+		return incident.Status == "resolved" && incident.ResolvedAt != nil
+	}, time.Second, 10*time.Millisecond)
 	assert.Equal(t, "resolved", incident.Status)
 	assert.NotNil(t, incident.ResolvedAt)
+}
+
+func TestSuspectedIncident_OpensOnNumericExitCode(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	mgr := incidents.NewManager(database, hub.New())
+	ch := incidents.NewChannel()
+	go mgr.Run(t.Context(), ch)
+
+	entry := makeEntry("nginx", "docker", "die", `{"exitCode":137}`)
+	require.NoError(t, database.Create(&entry).Error)
+	ch <- entry
+
+	var incident models.Incident
+	require.Eventually(t, func() bool {
+		if err := database.Where("confidence = ?", "suspected").First(&incident).Error; err != nil {
+			return false
+		}
+		return incident.TriggerID == entry.ID
+	}, time.Second, 10*time.Millisecond)
+	assert.Equal(t, "suspected", incident.Confidence)
 }

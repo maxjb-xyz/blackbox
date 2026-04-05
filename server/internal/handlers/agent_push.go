@@ -49,21 +49,15 @@ func AgentPush(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry) htt
 			return
 		}
 		entry.Service = serviceName
-		if err := database.Create(&entry).Error; err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to save entry")
-			return
-		}
-		go func(e types.Entry) {
-			select {
-			case incidentCh <- e:
-			case <-time.After(30 * time.Second):
-				log.Printf("incidents: channel stalled >30s, skipping incident processing for entry %s (service %s)", e.ID, e.Service)
+			if err := database.Create(&entry).Error; err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to save entry")
+				return
 			}
-		}(entry)
-		if h != nil {
-			if msg := MarshalWSMessage("entry", entry); msg != nil {
-				h.Broadcast(msg)
-			}
+			dispatchToIncidentChannel(incidentCh, entry)
+			if h != nil {
+				if msg := MarshalWSMessage("entry", entry); msg != nil {
+					h.Broadcast(msg)
+				}
 		}
 		if upsertNode(database, entry) {
 			broadcastNodeStatus(database, h)

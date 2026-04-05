@@ -144,7 +144,7 @@ func TestCreateEntry(t *testing.T) {
 			rr := httptest.NewRecorder()
 
 			before := time.Now().UTC()
-			handlers.CreateEntry(database, nil, nil)(rr, req)
+			handlers.CreateEntry(database, nil, testIncidentChannel(t))(rr, req)
 			after := time.Now().UTC()
 
 			require.Equal(t, tt.wantStatus, rr.Code, rr.Body.String())

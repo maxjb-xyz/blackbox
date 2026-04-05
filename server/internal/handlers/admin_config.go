@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -52,9 +53,18 @@ func UpdateOllamaSettings(db *gorm.DB) http.HandlerFunc {
 			return
 		}
 
+		ollamaURL := strings.TrimSpace(req.OllamaURL)
+		if ollamaURL != "" {
+			parsed, err := url.ParseRequestURI(ollamaURL)
+			if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+				writeError(w, http.StatusBadRequest, "ollama_url must be a valid absolute URL")
+				return
+			}
+		}
+
 		now := time.Now()
 		settings := []models.AppSetting{
-			{Key: ollamaURLKey, Value: strings.TrimSpace(req.OllamaURL), UpdatedAt: now},
+			{Key: ollamaURLKey, Value: ollamaURL, UpdatedAt: now},
 			{Key: ollamaModelKey, Value: strings.TrimSpace(req.OllamaModel), UpdatedAt: now},
 		}
 		for _, s := range settings {

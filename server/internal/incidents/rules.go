@@ -3,6 +3,7 @@ package incidents
 import (
 	"encoding/json"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
@@ -137,7 +138,10 @@ func (m *Manager) handleMonitorUp(entry types.Entry) {
 		}
 		delete(m.openIncidents, key)
 		var updated models.Incident
-		_ = m.db.First(&updated, "id = ?", incidentID)
+		if err := m.db.First(&updated, "id = ?", incidentID).Error; err != nil {
+			log.Printf("incidents: reload resolved incident %s: %v", incidentID, err)
+			continue
+		}
 		m.broadcastResolved(updated)
 	}
 }
@@ -182,6 +186,7 @@ func (m *Manager) handleContainerStart(entry types.Entry) {
 
 	var inc models.Incident
 	if err := m.db.First(&inc, "id = ?", incidentID).Error; err != nil {
+		log.Printf("incidents: load incident %s: %v", incidentID, err)
 		return
 	}
 	if inc.Confidence != "suspected" {
@@ -189,14 +194,20 @@ func (m *Manager) handleContainerStart(entry types.Entry) {
 	}
 
 	m.linkEntry(incidentID, entry.ID, "recovery", 0)
-	_ = m.db.Model(&models.Incident{}).Where("id = ?", incidentID).Updates(map[string]interface{}{
+	if err := m.db.Model(&models.Incident{}).Where("id = ?", incidentID).Updates(map[string]interface{}{
 		"status":      "resolved",
 		"resolved_at": entry.Timestamp,
-	})
-	delete(m.openIncidents, key)
+	}).Error; err != nil {
+		log.Printf("incidents: resolve suspected incident %s: %v", incidentID, err)
+		return
+	}
 
 	var updated models.Incident
-	_ = m.db.First(&updated, "id = ?", incidentID)
+	if err := m.db.First(&updated, "id = ?", incidentID).Error; err != nil {
+		log.Printf("incidents: reload resolved incident %s: %v", incidentID, err)
+		return
+	}
+	delete(m.openIncidents, key)
 	m.broadcastResolved(updated)
 }
 
@@ -273,12 +284,18 @@ func (m *Manager) openSuspectedIncidentWithCause(trigger, cause types.Entry, rea
 }
 
 func (m *Manager) upgradeToConfirmed(incidentID string, downEntry types.Entry) {
-	_ = m.db.Model(&models.IncidentEntry{}).
+	if err := m.db.Model(&models.IncidentEntry{}).
 		Where("incident_id = ? AND role = ?", incidentID, "trigger").
-		Update("role", "evidence")
+		Update("role", "evidence").Error; err != nil {
+		log.Printf("incidents: mark trigger as evidence for %s via %s: %v", incidentID, downEntry.ID, err)
+		return
+	}
 
 	svc := downEntry.Service
-	candidates, _ := correlation.ScoreCauses(m.db, []string{svc}, downEntry.Timestamp)
+	candidates, err := correlation.ScoreCauses(m.db, []string{svc}, downEntry.Timestamp)
+	if err != nil {
+		log.Printf("incidents: ScoreCauses while upgrading %s via %s: %v", incidentID, downEntry.ID, err)
+	}
 	correlation.ApplyNodeBonus(candidates, downEntry.NodeName)
 
 	rootCauseID := ""
@@ -293,7 +310,10 @@ func (m *Manager) upgradeToConfirmed(incidentID string, downEntry types.Entry) {
 	if rootCauseID != "" {
 		updates["root_cause_id"] = rootCauseID
 	}
-	_ = m.db.Model(&models.Incident{}).Where("id = ?", incidentID).Updates(updates)
+	if err := m.db.Model(&models.Incident{}).Where("id = ?", incidentID).Updates(updates).Error; err != nil {
+		log.Printf("incidents: update incident %s while upgrading via %s: %v", incidentID, downEntry.ID, err)
+		return
+	}
 	m.linkEntry(incidentID, downEntry.ID, "trigger", 0)
 	for _, c := range candidates {
 		m.linkEntry(incidentID, c.Entry.ID, "cause", c.Score)
@@ -303,18 +323,33 @@ func (m *Manager) upgradeToConfirmed(incidentID string, downEntry types.Entry) {
 }
 
 func sweepExpiredSuspectedLocked(m *Manager) {
-	cutoff := time.Now().Add(-suspectedAutoCloseTTL)
-	var stale []models.Incident
-	m.db.Where("status = ? AND confidence = ? AND opened_at < ?", "open", "suspected", cutoff).Find(&stale)
 	now := time.Now().UTC()
+	cutoff := now.Add(-suspectedAutoCloseTTL)
+	var stale []models.Incident
+	if err := m.db.Where("status = ? AND confidence = ? AND opened_at < ?", "open", "suspected", cutoff).Find(&stale).Error; err != nil {
+		log.Printf("incidents: load stale suspected incidents: %v", err)
+		return
+	}
 	for _, inc := range stale {
 		meta := map[string]interface{}{"auto_closed": true}
-		metaBytes, _ := json.Marshal(meta)
-		_ = m.db.Model(&models.Incident{}).Where("id = ?", inc.ID).Updates(map[string]interface{}{
+		metaBytes, err := json.Marshal(meta)
+		if err != nil {
+			log.Printf("incidents: encode auto-close metadata for %s: %v", inc.ID, err)
+			continue
+		}
+		result := m.db.Model(&models.Incident{}).Where("id = ?", inc.ID).Updates(map[string]interface{}{
 			"status":      "resolved",
 			"resolved_at": now,
 			"metadata":    string(metaBytes),
 		})
+		if result.Error != nil {
+			log.Printf("incidents: auto-resolve suspected incident %s: %v", inc.ID, result.Error)
+			continue
+		}
+		if result.RowsAffected == 0 {
+			log.Printf("incidents: auto-resolve suspected incident %s: no rows updated", inc.ID)
+			continue
+		}
 		for key, id := range m.openIncidents {
 			if id == inc.ID {
 				delete(m.openIncidents, key)
@@ -322,8 +357,20 @@ func sweepExpiredSuspectedLocked(m *Manager) {
 			}
 		}
 		var updated models.Incident
-		_ = m.db.First(&updated, "id = ?", inc.ID)
+		if err := m.db.First(&updated, "id = ?", inc.ID).Error; err != nil {
+			log.Printf("incidents: reload auto-resolved incident %s: %v", inc.ID, err)
+			continue
+		}
 		m.broadcastResolved(updated)
+	}
+	sweepExpiredPendingWTLocked(m, now)
+}
+
+func sweepExpiredPendingWTLocked(m *Manager, now time.Time) {
+	for svc, pending := range m.pendingWT {
+		if !pending.deadline.After(now) {
+			delete(m.pendingWT, svc)
+		}
 	}
 }
 
@@ -389,7 +436,11 @@ func buildDownTitle(svc string, candidates []correlation.CauseCandidate) string 
 }
 
 func jsonStrings(ss []string) string {
-	b, _ := json.Marshal(ss)
+	b, err := json.Marshal(ss)
+	if err != nil {
+		log.Printf("incidents: marshal string slice: %v", err)
+		return "[]"
+	}
 	return string(b)
 }
 
@@ -402,6 +453,10 @@ func extractExitCodeFromEntry(e types.Entry) string {
 		var code string
 		if err := json.Unmarshal(raw, &code); err == nil {
 			return code
+		}
+		var numeric int
+		if err := json.Unmarshal(raw, &numeric); err == nil {
+			return strconv.Itoa(numeric)
 		}
 	}
 	if rawEventsRaw, ok := meta["raw_events"]; ok {

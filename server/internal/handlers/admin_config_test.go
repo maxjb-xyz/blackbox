@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"blackbox/server/internal/auth"
@@ -62,4 +63,21 @@ func TestAdminConfig_EmptyWebhookSecret(t *testing.T) {
 	assert.Equal(t, false, resp["file_watcher_redact_secrets"])
 	assert.Equal(t, "http://localhost:11434", resp["ollama_url"])
 	assert.Equal(t, "llama3.2", resp["ollama_model"])
+}
+
+func TestUpdateOllamaSettings_RejectsInvalidURL(t *testing.T) {
+	t.Parallel()
+
+	database := newTestDB(t)
+	req := httptest.NewRequest(http.MethodPut, "/api/admin/settings/ollama", strings.NewReader(`{"ollama_url":"not a url","ollama_model":"llama3.2"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handlers.UpdateOllamaSettings(database)(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	var count int64
+	require.NoError(t, database.Model(&models.AppSetting{}).Count(&count).Error)
+	assert.Zero(t, count)
 }

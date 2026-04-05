@@ -3,6 +3,7 @@ package incidents
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -121,13 +122,13 @@ func (e *OllamaEnricher) loadOllamaConfig() (url, model string) {
 func buildPrompt(inc models.Incident, entries []enrichEntry) string {
 	var b strings.Builder
 	b.WriteString("You are analyzing a server incident. Provide a concise root cause analysis.\n\n")
-	fmt.Fprintf(&b, "Incident: %s\n", inc.Title)
+	fmt.Fprintf(&b, "Incident: %s\n", sanitizeExternalText(inc.Title))
 	fmt.Fprintf(&b, "Status: %s | Confidence: %s\n\n", inc.Status, inc.Confidence)
 	b.WriteString("Events (chronological):\n")
 	for _, e := range entries {
-		fmt.Fprintf(&b, "- [%s] %s/%s: %s\n", e.Role, e.Source, e.Event, e.Content)
+		fmt.Fprintf(&b, "- [%s] %s/%s: %s\n", e.Role, e.Source, e.Event, sanitizeExternalText(e.Content))
 		if e.Log != "" {
-			fmt.Fprintf(&b, "  Log: %s\n", truncate(e.Log, 300))
+			fmt.Fprintf(&b, "  Log: %s\n", sanitizeExternalText(truncate(e.Log, 300)))
 		}
 	}
 	b.WriteString("\nProvide: 1) Root cause in one sentence. 2) Why you think so. 3) A better incident title if applicable.\n")
@@ -146,11 +147,18 @@ func callOllama(baseURL, model, prompt string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return "", fmt.Errorf("ollama responded with %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	}
 	var result ollamaResponse
 	if err := json.Unmarshal(body, &result); err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(result.Response), nil
+	response := strings.TrimSpace(result.Response)
+	if response == "" {
+		return "", errors.New("ollama response was empty")
+	}
+	return response, nil
 }
 
 func truncate(s string, n int) string {
@@ -158,4 +166,42 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "..."
+}
+
+func sanitizeExternalText(text string) string {
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		lines[i] = redactSensitiveAssignment(strings.TrimSpace(line))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func redactSensitiveAssignment(line string) string {
+	for _, separator := range []string{"=", ":"} {
+		idx := strings.Index(line, separator)
+		if idx == -1 {
+			continue
+		}
+		key := normalizeSensitiveKey(line[:idx])
+		if key == "" || !looksSensitiveKey(key) {
+			continue
+		}
+		return strings.TrimSpace(line[:idx+1]) + " [REDACTED]"
+	}
+	return line
+}
+
+func normalizeSensitiveKey(value string) string {
+	value = strings.TrimSpace(strings.ToLower(value))
+	replacer := strings.NewReplacer(" ", "", "-", "", "_", "", ".", "")
+	return replacer.Replace(value)
+}
+
+func looksSensitiveKey(key string) bool {
+	for _, fragment := range []string{"token", "secret", "password", "apikey", "clientsecret", "authorization", "bearer"} {
+		if strings.Contains(key, fragment) {
+			return true
+		}
+	}
+	return false
 }
