@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { CheckCircle, Copy, Eye, EyeOff } from 'lucide-react'
 import { useSession } from '../session'
 import { fetchAdminConfig } from '../api/client'
+import PageHeader from '../components/PageHeader'
 
 function CopyRow({ label, path }: { label: string; path: string }) {
   const [copied, setCopied] = useState(false)
@@ -120,9 +121,7 @@ export default function WebhooksPage() {
 
   return (
     <div>
-      <div style={{ padding: '18px 24px', borderBottom: '1px solid var(--border)', background: 'var(--surface)' }}>
-        <span style={{ color: 'var(--muted)', fontSize: '11px', letterSpacing: '0.1em' }}>WEBHOOKS / ENDPOINTS</span>
-      </div>
+      <PageHeader title="WEBHOOKS / ENDPOINTS" />
       <div style={{ padding: '24px', maxWidth: 960, margin: '0 auto' }}>
         <p style={{ color: 'var(--muted)', fontSize: '12px', marginBottom: 16 }}>
           Configure your webhook providers to POST to these endpoints. Set{' '}

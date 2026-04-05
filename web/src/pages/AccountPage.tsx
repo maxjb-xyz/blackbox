@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
 import { updateAccountEmail } from '../api/client'
 import { useSession } from '../session'
+import PageHeader from '../components/PageHeader'
 
 const fontFamily = 'JetBrains Mono, Fira Code, Cascadia Code, ui-monospace, monospace'
 
@@ -8,18 +9,6 @@ const pageStyle: CSSProperties = {
   minHeight: '100%',
   background: '#0B0B0B',
   fontFamily,
-}
-
-const headerStyle: CSSProperties = {
-  padding: '8px 10px',
-  borderBottom: '1px solid var(--border)',
-  background: '#0B0B0B',
-}
-
-const headerLabelStyle: CSSProperties = {
-  color: 'var(--muted)',
-  fontSize: '11px',
-  letterSpacing: '0.1em',
 }
 
 const contentStyle: CSSProperties = {
@@ -170,9 +159,7 @@ export default function AccountPage() {
 
   return (
     <div style={pageStyle}>
-      <div style={headerStyle}>
-        <span style={headerLabelStyle}>ACCOUNT</span>
-      </div>
+      <PageHeader title="ACCOUNT" />
 
       <div style={contentStyle}>
         <div style={panelStyle}>

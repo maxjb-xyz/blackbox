@@ -253,9 +253,24 @@ export async function deleteAdminUser(id: string): Promise<void> {
   if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to delete user'))
 }
 
-export async function fetchAdminConfig(): Promise<{ webhook_secret: string }> {
+export interface AdminConfig {
+  webhook_secret: string
+  file_watcher_redact_secrets: boolean
+}
+
+export async function fetchAdminConfig(): Promise<AdminConfig> {
   const res = await apiFetch('/api/admin/config')
   if (!res.ok) throw new Error('Failed to fetch admin config')
+  return res.json()
+}
+
+export async function updateFileWatcherSettings(redactSecrets: boolean): Promise<{ redact_secrets: boolean }> {
+  const res = await apiFetch('/api/admin/settings/file-watcher', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ redact_secrets: redactSecrets }),
+  })
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to update file watcher settings'))
   return res.json()
 }
 

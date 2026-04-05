@@ -1,4 +1,5 @@
 import { useNodePulse } from '../components/NodePulse'
+import PageHeader from '../components/PageHeader'
 
 function formatTimestamp(ts?: string | null) {
   if (!ts) return '-'
@@ -12,11 +13,7 @@ export default function NodesPage() {
 
   return (
     <div style={{ padding: 0 }}>
-      <div style={{ padding: '18px 24px', borderBottom: '1px solid var(--border)', background: 'var(--surface)' }}>
-        <span style={{ color: 'var(--muted)', fontSize: '11px', letterSpacing: '0.1em' }}>
-          NODES / AGENT REGISTRY
-        </span>
-      </div>
+      <PageHeader title="NODES / AGENT REGISTRY" />
 
       <div style={{ maxWidth: 960, margin: '0 auto' }}>
         {(loading || error || lastUpdated) && (

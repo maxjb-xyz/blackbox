@@ -66,6 +66,23 @@ function formatMetadata(metadata: string) {
   }
 }
 
+function parseMetadataObject(metadata: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(metadata || '{}')
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null
+  } catch {
+    return null
+  }
+}
+
+function formatMetadataWithoutDiff(metadata: string) {
+  const parsed = parseMetadataObject(metadata)
+  if (!parsed || typeof parsed.diff !== 'string') return formatMetadata(metadata)
+  const clone = { ...parsed }
+  delete clone.diff
+  return JSON.stringify(clone, null, 2)
+}
+
 type ViewMode = 'cards' | 'rows'
 
 function getStoredViewMode(): ViewMode {
@@ -81,6 +98,91 @@ interface TooltipState {
   text: string
   x: number
   y: number
+}
+
+interface FileDiffMetadata {
+  path: string
+  op: string
+  diff: string
+  diffRedacted: boolean
+}
+
+interface DiffRow {
+  kind: 'separator' | 'content'
+  text?: string
+  left?: string
+  right?: string
+  leftType?: 'context' | 'remove' | 'empty'
+  rightType?: 'context' | 'add' | 'empty'
+}
+
+function extractFileDiffMetadata(entry: Entry): FileDiffMetadata | null {
+  if (entry.source !== 'files') return null
+  const parsed = parseMetadataObject(entry.metadata)
+  if (!parsed) return null
+  if (typeof parsed.path !== 'string' || typeof parsed.op !== 'string' || typeof parsed.diff_status !== 'string') return null
+  if (parsed.diff_status !== 'included' || typeof parsed.diff !== 'string' || !parsed.diff.trim()) return null
+  return {
+    path: parsed.path,
+    op: parsed.op,
+    diff: parsed.diff,
+    diffRedacted: parsed.diff_redacted !== false,
+  }
+}
+
+function buildDiffRows(diff: string): DiffRow[] {
+  const sourceLines = diff.split('\n')
+  const rows: DiffRow[] = []
+
+  for (let i = 0; i < sourceLines.length; i++) {
+    const line = sourceLines[i]
+    if (!line || line === '--- before' || line === '+++ after') continue
+    if (line.startsWith('@@')) {
+      rows.push({ kind: 'separator', text: line })
+      continue
+    }
+    if (line.startsWith(' ')) {
+      const value = line.slice(1)
+      rows.push({ kind: 'content', left: value, right: value, leftType: 'context', rightType: 'context' })
+      continue
+    }
+
+    const removed: string[] = []
+    const added: string[] = []
+    while (i < sourceLines.length) {
+      const current = sourceLines[i]
+      if (!current || current === '--- before' || current === '+++ after') {
+        i++
+        continue
+      }
+      if (current.startsWith('@@') || current.startsWith(' ')) {
+        i--
+        break
+      }
+      if (current.startsWith('-')) removed.push(current.slice(1))
+      if (current.startsWith('+')) added.push(current.slice(1))
+      i++
+    }
+
+    const lineCount = Math.max(removed.length, added.length)
+    for (let index = 0; index < lineCount; index++) {
+      rows.push({
+        kind: 'content',
+        left: removed[index] ?? '',
+        right: added[index] ?? '',
+        leftType: removed[index] !== undefined ? 'remove' : 'empty',
+        rightType: added[index] !== undefined ? 'add' : 'empty',
+      })
+    }
+  }
+
+  return rows
+}
+
+function isInteractiveEntryTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  const interactiveAncestor = target.closest('input, textarea, button, select, option, a, [contenteditable="true"], [role="dialog"]')
+  return interactiveAncestor !== null
 }
 
 function entryTimestampMs(entry: Entry): number {
@@ -940,6 +1042,7 @@ function ExpandedDetails({ entry }: { entry: Entry }) {
   const [noteInput, setNoteInput] = useState('')
   const [noteLoading, setNoteLoading] = useState(false)
   const [metaExpanded, setMetaExpanded] = useState(false)
+  const [diffOpen, setDiffOpen] = useState(false)
 
   useEffect(() => {
     fetchNotes(entry.id)
@@ -961,10 +1064,44 @@ function ExpandedDetails({ entry }: { entry: Entry }) {
     }
   }
 
-  const formattedMeta = entry.metadata && entry.metadata !== '{}' ? formatMetadata(entry.metadata) : null
+  const fileDiff = extractFileDiffMetadata(entry)
+  const formattedMeta = entry.metadata && entry.metadata !== '{}'
+    ? formatMetadataWithoutDiff(entry.metadata)
+    : null
 
   return (
     <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+      {fileDiff && (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ color: 'var(--muted)', fontSize: '11px', letterSpacing: '0.1em', marginBottom: 4 }}>FILE DIFF</div>
+              <div style={{ color: 'var(--text)', fontSize: '12px', wordBreak: 'break-all' }}>{fileDiff.path}</div>
+            </div>
+            <button
+              type="button"
+              onClick={e => { e.stopPropagation(); setDiffOpen(true) }}
+              style={{
+                background: 'none',
+                border: '1px solid var(--accent)',
+                color: 'var(--accent)',
+                padding: '6px 10px',
+                fontFamily: 'inherit',
+                fontSize: '11px',
+                letterSpacing: '0.08em',
+                cursor: 'pointer',
+              }}
+            >
+              OPEN DIFF
+            </button>
+          </div>
+          <div style={{ color: 'var(--muted)', fontSize: '11px', marginTop: 6 }}>
+            {fileDiff.diffRedacted ? 'diff is redacted per current agent setting' : 'diff captured without redaction'}
+          </div>
+          <DiffModal entry={entry} diff={fileDiff} open={diffOpen} onClose={() => setDiffOpen(false)} />
+        </div>
+      )}
+
       {formattedMeta && (
         <div style={{ marginBottom: 12 }}>
           <div style={{ color: 'var(--muted)', fontSize: '11px', letterSpacing: '0.1em', marginBottom: 4 }}>METADATA</div>
@@ -1064,9 +1201,113 @@ function ExpandedDetails({ entry }: { entry: Entry }) {
   )
 }
 
+function DiffModal({ entry, diff, open, onClose }: { entry: Entry; diff: FileDiffMetadata; open: boolean; onClose: () => void }) {
+  if (!open) return null
+  const rows = buildDiffRows(diff.diff)
+
+  return (
+    <div
+      onClick={e => { e.stopPropagation(); onClose() }}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0, 0, 0, 0.72)',
+        zIndex: 1000,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 24,
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          width: 'min(1200px, 100%)',
+          height: 'min(760px, 100%)',
+          background: 'var(--bg)',
+          border: '1px solid var(--border)',
+          display: 'grid',
+          gridTemplateRows: 'auto auto 1fr',
+          overflow: 'hidden',
+          boxShadow: '0 18px 80px rgba(0, 0, 0, 0.45)',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
+          <div>
+            <div style={{ color: 'var(--muted)', fontSize: '10px', letterSpacing: '0.12em' }}>DIFF WINDOW</div>
+            <div style={{ color: 'var(--text)', fontSize: '13px', marginTop: 4 }}>{entry.content}</div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              background: 'none',
+              border: '1px solid var(--border)',
+              color: 'var(--muted)',
+              padding: '6px 10px',
+              fontFamily: 'inherit',
+              fontSize: '11px',
+              letterSpacing: '0.08em',
+              cursor: 'pointer',
+            }}
+          >
+            CLOSE
+          </button>
+        </div>
+
+        <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 16, flexWrap: 'wrap', color: 'var(--muted)', fontSize: '11px' }}>
+          <span>{diff.path}</span>
+          <span>op: {diff.op}</span>
+          <span>{diff.diffRedacted ? 'redaction: on' : 'redaction: off'}</span>
+        </div>
+
+        <div style={{ overflow: 'auto', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', fontSize: '12px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, background: 'var(--surface)', zIndex: 1 }}>
+            <div style={{ padding: '8px 12px', borderRight: '1px solid var(--border)', color: 'var(--danger)' }}>BEFORE</div>
+            <div style={{ padding: '8px 12px', color: 'var(--success)' }}>AFTER</div>
+          </div>
+
+          {rows.map((row, index) => {
+            if (row.kind === 'separator') {
+              return (
+                <div key={`${row.text}-${index}`} style={{ padding: '6px 12px', borderBottom: '1px solid var(--border)', color: 'var(--muted)', background: 'rgba(255,255,255,0.03)' }}>
+                  {row.text}
+                </div>
+              )
+            }
+
+            const leftBackground = row.leftType === 'remove'
+              ? 'rgba(255, 80, 80, 0.16)'
+              : row.leftType === 'context'
+                ? 'transparent'
+                : 'rgba(255,255,255,0.02)'
+            const rightBackground = row.rightType === 'add'
+              ? 'rgba(80, 220, 120, 0.16)'
+              : row.rightType === 'context'
+                ? 'transparent'
+                : 'rgba(255,255,255,0.02)'
+
+            return (
+              <div key={`row-${index}`} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                <pre style={{ margin: 0, padding: '6px 12px', whiteSpace: 'pre-wrap', wordBreak: 'break-word', borderRight: '1px solid var(--border)', background: leftBackground, color: row.leftType === 'remove' ? '#ff9b9b' : 'var(--text)', minHeight: 32 }}>
+                  {row.left}
+                </pre>
+                <pre style={{ margin: 0, padding: '6px 12px', whiteSpace: 'pre-wrap', wordBreak: 'break-word', background: rightBackground, color: row.rightType === 'add' ? '#9cffb4' : 'var(--text)', minHeight: 32 }}>
+                  {row.right}
+                </pre>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function TimelineCard({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip, onTooltipClear }: EntryProps) {
   const possibleCause = entry.correlated_id ? parsePossibleCause(entry.metadata) : null
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (isInteractiveEntryTarget(e.target)) return
     if (e.key !== 'Enter' && e.key !== ' ') return
     e.preventDefault()
     onClick()
@@ -1166,6 +1407,7 @@ function TimelineCard({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip
 function TimelineRow({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip, onTooltipClear }: EntryProps) {
   const possibleCause = entry.correlated_id ? parsePossibleCause(entry.metadata) : null
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (isInteractiveEntryTarget(e.target)) return
     if (e.key !== 'Enter' && e.key !== ' ') return
     e.preventDefault()
     onClick()

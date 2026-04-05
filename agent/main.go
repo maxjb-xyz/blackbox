@@ -63,7 +63,9 @@ func main() {
 	go docker.Watch(ctx, nodeName, out)
 
 	if len(watchPaths) > 0 {
-		count := files.Watch(ctx, nodeName, watchPaths, watchIgnore, out)
+		fileWatcherSettings := files.NewSettings(loadFileWatcherRedactSecrets(ctx, c))
+		go refreshFileWatcherSettings(ctx, c, fileWatcherSettings)
+		count := files.Watch(ctx, nodeName, watchPaths, watchIgnore, fileWatcherSettings, out)
 		log.Printf("file watcher: watching %d directories across %d root paths", count, len(watchPaths))
 		if count == 0 {
 			log.Printf("file watcher: WARNING — no directories registered; check WATCH_PATHS and system max_user_watches")
@@ -112,6 +114,36 @@ func main() {
 	cancel()
 	<-s.Done()
 	log.Println("shutdown complete")
+}
+
+func loadFileWatcherRedactSecrets(ctx context.Context, c *client.Client) bool {
+	configCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	config, err := c.GetAgentConfig(configCtx)
+	if err != nil {
+		log.Printf("file watcher: failed to load server config, defaulting redact_secrets=true: %v", err)
+		return true
+	}
+	return config.FileWatcherRedactSecrets
+}
+
+func refreshFileWatcherSettings(ctx context.Context, c *client.Client, settings *files.Settings) {
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			redactSecrets := loadFileWatcherRedactSecrets(ctx, c)
+			if settings.RedactSecrets() != redactSecrets {
+				log.Printf("file watcher: updated redact_secrets=%t from server config", redactSecrets)
+			}
+			settings.SetRedactSecrets(redactSecrets)
+		}
+	}
 }
 
 type nodeInfo struct {

@@ -91,8 +91,8 @@ export default function RegisterPage() {
     >
       <div style={{ width: '100%', maxWidth: 320, border: '1px solid var(--border)', padding: '2rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24 }}>
-          <Terminal size={16} style={{ color: 'var(--accent)' }} />
-          <span style={{ color: 'var(--accent)', fontSize: '11px', letterSpacing: '0.1em' }}>
+          <Terminal size={16} style={{ color: 'var(--muted)' }} />
+          <span style={{ color: 'var(--muted)', fontSize: '12px', letterSpacing: '0.1em' }}>
             BLACKBOX / REGISTER
           </span>
         </div>
