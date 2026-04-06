@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"syscall"
@@ -19,6 +20,7 @@ import (
 	"blackbox/agent/internal/docker"
 	"blackbox/agent/internal/files"
 	"blackbox/agent/internal/sender"
+	"blackbox/agent/internal/systemd"
 	"blackbox/shared/types"
 	"github.com/oklog/ulid/v2"
 )
@@ -72,6 +74,20 @@ func main() {
 		}
 	} else {
 		log.Println("file watcher: WATCH_PATHS not set, file watching disabled")
+	}
+
+	if os.Getenv("WATCH_SYSTEMD") == "true" {
+		if !systemd.Supported() {
+			log.Println("systemd watcher: disabled in this build; rebuild on Linux with cgo, libsystemd headers, and -tags systemd to enable")
+		} else {
+			initialUnits := loadSystemdUnits(ctx, c)
+			systemdSettings := systemd.NewSettings(initialUnits)
+			go refreshSystemdSettings(ctx, c, systemdSettings)
+			go systemd.Watch(ctx, nodeName, systemdSettings, out)
+			log.Printf("systemd watcher: started, watching %d units", len(initialUnits))
+		}
+	} else {
+		log.Println("systemd watcher: WATCH_SYSTEMD not set, systemd watching disabled")
 	}
 
 	out <- types.Entry{
@@ -144,6 +160,54 @@ func refreshFileWatcherSettings(ctx context.Context, c *client.Client, settings 
 			settings.SetRedactSecrets(redactSecrets)
 		}
 	}
+}
+
+func loadSystemdUnits(ctx context.Context, c *client.Client) []string {
+	configCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	config, err := c.GetAgentConfig(configCtx)
+	if err != nil {
+		log.Printf("systemd watcher: failed to load units from server, starting with empty list: %v", err)
+		return nil
+	}
+	return config.SystemdUnits
+}
+
+func refreshSystemdSettings(ctx context.Context, c *client.Client, settings *systemd.Settings) {
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+	prevUnits := settings.Units()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			newUnits := loadSystemdUnits(ctx, c)
+			if !slices.Equal(prevUnits, newUnits) {
+				log.Printf("systemd watcher: refreshed units (%d total, added: %s, removed: %s)", len(newUnits), summarizeUnitDiff(newUnits, prevUnits), summarizeUnitDiff(prevUnits, newUnits))
+			}
+			settings.SetUnits(newUnits)
+			prevUnits = newUnits
+		}
+	}
+}
+
+func summarizeUnitDiff(current, previous []string) string {
+	var changed []string
+	for _, unit := range current {
+		if !slices.Contains(previous, unit) {
+			changed = append(changed, unit)
+		}
+	}
+	if len(changed) == 0 {
+		return "none"
+	}
+	if len(changed) > 3 {
+		return strings.Join(changed[:3], ", ") + ", ..."
+	}
+	return strings.Join(changed, ", ")
 }
 
 type nodeInfo struct {

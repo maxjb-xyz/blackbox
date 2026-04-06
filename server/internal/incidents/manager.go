@@ -19,16 +19,25 @@ type pendingWatchtower struct {
 	deadline time.Time
 }
 
+// pendingSystemdRecovery tracks a started event that may resolve a suspected
+// systemd incident once the unit stays healthy for a short window.
+type pendingSystemdRecovery struct {
+	entry    types.Entry
+	deadline time.Time
+}
+
 // Manager evaluates incoming entries and manages the incident lifecycle.
 type Manager struct {
 	db       *gorm.DB
 	hub      *hub.Hub
 	enricher *OllamaEnricher
 
-	mu            sync.Mutex
-	openIncidents map[string]string            // "service|node" -> incidentID
-	pendingWT     map[string]pendingWatchtower // normalizedService -> pending (watchtower has no node)
-	recentDies    map[string][]time.Time       // "service|node" -> die timestamps
+	mu                    sync.Mutex
+	openIncidents         map[string]string                 // "service|node" -> incidentID
+	pendingWT             map[string]pendingWatchtower      // normalizedService -> pending (watchtower has no node)
+	pendingSystemdRecover map[string]pendingSystemdRecovery // "service|node" -> started event waiting for stability
+	recentDies            map[string][]time.Time            // "service|node" -> die timestamps
+	recentSystemdEvents   map[string][]time.Time            // "service|node" -> failed/restart timestamps
 }
 
 // incidentKey returns the composite lookup key for open incidents and recent-die
@@ -40,11 +49,13 @@ func incidentKey(svc, node string) string {
 // NewManager creates a Manager. Call Run in a goroutine.
 func NewManager(db *gorm.DB, h *hub.Hub) *Manager {
 	m := &Manager{
-		db:            db,
-		hub:           h,
-		openIncidents: make(map[string]string),
-		pendingWT:     make(map[string]pendingWatchtower),
-		recentDies:    make(map[string][]time.Time),
+		db:                    db,
+		hub:                   h,
+		openIncidents:         make(map[string]string),
+		pendingWT:             make(map[string]pendingWatchtower),
+		pendingSystemdRecover: make(map[string]pendingSystemdRecovery),
+		recentDies:            make(map[string][]time.Time),
+		recentSystemdEvents:   make(map[string][]time.Time),
 	}
 	m.enricher = NewOllamaEnricher(db, m.broadcastUpdated)
 	return m

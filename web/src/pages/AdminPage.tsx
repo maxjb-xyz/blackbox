@@ -6,6 +6,8 @@ import {
   deleteAdminOIDCProvider,
   deleteAdminUser,
   fetchAdminConfig,
+  fetchNodes,
+  fetchSystemdSettings,
   forceLogoutUser,
   getOIDCPolicy,
   listAdminOIDCProviders,
@@ -16,8 +18,9 @@ import {
   updateFileWatcherSettings,
   updateAdminOIDCProvider,
   updateAdminUser,
+  updateSystemdSettings,
 } from '../api/client'
-import type { AdminUser, OIDCProviderConfig } from '../api/client'
+import type { AdminUser, Node, OIDCProviderConfig } from '../api/client'
 import { readErrorMessage } from '../api/errorUtils'
 import { useSession } from '../session'
 import PageHeader from '../components/PageHeader'
@@ -40,7 +43,7 @@ interface OIDCProviderFormState {
   enabled: boolean
 }
 
-type Tab = 'invites' | 'users' | 'oidc' | 'settings'
+type Tab = 'invites' | 'users' | 'oidc' | 'settings' | 'systemd'
 type OIDCPolicy = 'open' | 'existing_only' | 'invite_required'
 
 const OIDC_POLICY_OPTIONS: Array<{ value: OIDCPolicy; description: string }> = [
@@ -93,6 +96,47 @@ export default function AdminPage() {
   const { user } = useSession()
   const isAdmin = user?.is_admin === true
   const [tab, setTab] = useState<Tab>('invites')
+  const [nodes, setNodes] = useState<Node[]>([])
+  const [systemdSettings, setSystemdSettings] = useState<Record<string, string[]>>({})
+  const [systemdInputs, setSystemdInputs] = useState<Record<string, string>>({})
+  const [systemdSaving, setSystemdSaving] = useState<Record<string, boolean>>({})
+  const [systemdSaveError, setSystemdSaveError] = useState<Record<string, string | null>>({})
+  const [nodesError, setNodesError] = useState<string | null>(null)
+  const [systemdError, setSystemdError] = useState<string | null>(null)
+
+  const handleAddUnit = useCallback((nodeName: string) => {
+    const units = systemdSettings[nodeName] ?? []
+    const val = (systemdInputs[nodeName] ?? '').trim()
+    if (!val || units.includes(val)) return
+
+    setSystemdSettings(prev => ({ ...prev, [nodeName]: [...units, val] }))
+    setSystemdInputs(prev => ({ ...prev, [nodeName]: '' }))
+    setSystemdSaveError(prev => ({ ...prev, [nodeName]: null }))
+  }, [systemdInputs, systemdSettings])
+
+  useEffect(() => {
+    if (tab !== 'systemd') return
+    void fetchNodes()
+      .then(data => {
+        setNodesError(null)
+        setNodes(data)
+      })
+      .catch(err => {
+        setNodesError(err instanceof Error ? err.message : 'Failed to fetch nodes')
+      })
+  }, [tab])
+
+  useEffect(() => {
+    if (tab !== 'systemd') return
+    void fetchSystemdSettings()
+      .then(data => {
+        setSystemdError(null)
+        setSystemdSettings(data)
+      })
+      .catch(err => {
+        setSystemdError(err instanceof Error ? err.message : 'Failed to fetch systemd settings')
+      })
+  }, [tab])
 
   if (!isAdmin) return <Navigate to="/timeline" replace />
 
@@ -100,7 +144,7 @@ export default function AdminPage() {
     <div>
       <PageHeader
         title="ADMIN /"
-        actions={(['invites', 'users', 'oidc', 'settings'] as Tab[]).map(t => (
+        actions={(['invites', 'users', 'oidc', 'settings', 'systemd'] as Tab[]).map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -126,6 +170,160 @@ export default function AdminPage() {
         {tab === 'users' && <UsersTab currentUserId={user?.user_id ?? ''} />}
         {tab === 'oidc' && <OIDCTab />}
         {tab === 'settings' && <SettingsTab />}
+        {tab === 'systemd' && (
+          <div>
+            <div
+              style={{
+                marginBottom: 16,
+                fontSize: 11,
+                color: 'var(--muted)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.08em',
+              }}
+            >
+              Per-Node Systemd Units
+            </div>
+            {nodesError && (
+              <div style={{ color: 'var(--danger)', fontSize: 11, marginBottom: 8 }}>
+                Failed to load nodes: {nodesError}
+              </div>
+            )}
+            {systemdError && (
+              <div style={{ color: 'var(--danger)', fontSize: 11, marginBottom: 8 }}>
+                Failed to load systemd settings: {systemdError}
+              </div>
+            )}
+            {nodes.length === 0 && (
+              <div style={{ color: 'var(--muted)', fontSize: 12 }}>No nodes registered yet.</div>
+            )}
+            {[...nodes].sort((a, b) => a.name.localeCompare(b.name)).map(node => {
+              const units = systemdSettings[node.name] ?? []
+              const inputVal = systemdInputs[node.name] ?? ''
+              const saving = systemdSaving[node.name] ?? false
+              const saveError = systemdSaveError[node.name]
+
+              return (
+                <div
+                  key={node.name}
+                  style={{ border: '1px solid var(--border)', marginBottom: 12, padding: 12 }}
+                >
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: 'var(--text)',
+                      marginBottom: 8,
+                      fontWeight: 'bold',
+                    }}
+                  >
+                    {node.name}
+                  </div>
+                  {units.length === 0 && (
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>
+                      No units configured.
+                    </div>
+                  )}
+                  {units.map(unit => (
+                    <div
+                      key={unit}
+                      style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}
+                    >
+                      <span style={{ fontSize: 12, color: 'var(--text)', flex: 1 }}>{unit}</span>
+                      <button
+                        onClick={() => {
+                          const next = units.filter(u => u !== unit)
+                          setSystemdSettings(prev => ({ ...prev, [node.name]: next }))
+                        }}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: 'var(--muted)',
+                          cursor: 'pointer',
+                          fontSize: 14,
+                          padding: '0 4px',
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                    <input
+                      type="text"
+                      placeholder="e.g. nginx.service"
+                      value={inputVal}
+                      onChange={e =>
+                        setSystemdInputs(prev => ({ ...prev, [node.name]: e.target.value }))
+                      }
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          handleAddUnit(node.name)
+                        }
+                      }}
+                      style={{
+                        flex: 1,
+                        background: 'var(--surface)',
+                        border: '1px solid var(--border)',
+                        color: 'var(--text)',
+                        fontFamily: 'inherit',
+                        fontSize: 12,
+                        padding: '4px 8px',
+                      }}
+                    />
+                    <button
+                      onClick={() => handleAddUnit(node.name)}
+                      style={{
+                        background: 'transparent',
+                        border: '1px solid var(--border)',
+                        color: 'var(--muted)',
+                        cursor: 'pointer',
+                        fontFamily: 'inherit',
+                        fontSize: 12,
+                        padding: '4px 10px',
+                      }}
+                    >
+                      Add
+                    </button>
+                  </div>
+                  {saveError && (
+                    <div style={{ color: 'var(--danger)', fontSize: 11, marginTop: 8 }}>
+                      Failed to save {node.name}: {saveError}
+                    </div>
+                  )}
+                  <button
+                    disabled={saving}
+                    onClick={async () => {
+                      setSystemdSaveError(prev => ({ ...prev, [node.name]: null }))
+                      setSystemdSaving(prev => ({ ...prev, [node.name]: true }))
+                      try {
+                        await updateSystemdSettings(node.name, systemdSettings[node.name] ?? [])
+                      } catch (err) {
+                        setSystemdSaveError(prev => ({
+                          ...prev,
+                          [node.name]:
+                            err instanceof Error ? err.message : `Failed to update systemd settings for ${node.name}`,
+                        }))
+                      } finally {
+                        setSystemdSaving(prev => ({ ...prev, [node.name]: false }))
+                      }
+                    }}
+                    style={{
+                      marginTop: 8,
+                      background: 'transparent',
+                      border: '1px solid var(--border)',
+                      color: saving ? 'var(--muted)' : 'var(--text)',
+                      cursor: saving ? 'not-allowed' : 'pointer',
+                      fontFamily: 'inherit',
+                      fontSize: 12,
+                      padding: '4px 12px',
+                    }}
+                  >
+                    {saving ? 'Saving…' : 'Save'}
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
     </div>
   )

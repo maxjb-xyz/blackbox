@@ -3,6 +3,7 @@ module blackbox/agent
 go 1.26
 
 require (
+	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/oklog/ulid/v2 v2.1.1
@@ -37,3 +38,4 @@ require (
 	golang.org/x/time v0.15.0 // indirect
 	gotest.tools/v3 v3.5.2 // indirect
 )
+

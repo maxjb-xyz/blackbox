@@ -65,6 +65,7 @@ func Init(path string) (*gorm.DB, error) {
 		&models.ServiceAlias{},
 		&models.Incident{},
 		&models.IncidentEntry{},
+		&models.SystemdUnitConfig{},
 	); err != nil {
 		return nil, err
 	}

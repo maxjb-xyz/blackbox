@@ -21,13 +21,16 @@ type CauseCandidate struct {
 const MinCauseScore = 40
 
 var eventWindows = map[string]time.Duration{
-	"die":     60 * time.Second,
-	"restart": 60 * time.Second,
-	"stop":    120 * time.Second,
-	"update":  300 * time.Second,
-	"pull":    300 * time.Second,
-	"write":   120 * time.Second,
-	"create":  120 * time.Second,
+	"die":      60 * time.Second,
+	"restart":  60 * time.Second,
+	"stop":     120 * time.Second,
+	"failed":   120 * time.Second,
+	"stopped":  120 * time.Second,
+	"oom_kill": 120 * time.Second,
+	"update":   300 * time.Second,
+	"pull":     300 * time.Second,
+	"write":    120 * time.Second,
+	"create":   120 * time.Second,
 }
 
 const maxLookbackWindow = 300 * time.Second
@@ -123,9 +126,15 @@ func baseScore(e *types.Entry) int {
 		}
 		return 60
 	case "restart":
-		return 90
+		return 80
 	case "stop":
 		return 80
+	case "failed":
+		return 90
+	case "stopped":
+		return 70
+	case "oom_kill":
+		return 100
 	case "update":
 		return 70
 	case "pull":

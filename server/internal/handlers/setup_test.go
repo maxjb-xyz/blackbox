@@ -2,6 +2,7 @@ package handlers_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 	"blackbox/server/internal/middleware"
 	"blackbox/server/internal/models"
 	"blackbox/shared/types"
+	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -56,6 +58,12 @@ func testIncidentChannel(t *testing.T) chan types.Entry {
 		}
 	})
 	return ch
+}
+
+func withChiParam(r *http.Request, key, value string) *http.Request {
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add(key, value)
+	return r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
 }
 
 func TestSetupStatus_NotBootstrapped(t *testing.T) {
