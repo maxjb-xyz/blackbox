@@ -1,4 +1,4 @@
-package incidents_test
+package incidents
 
 import (
 	"testing"
@@ -6,7 +6,6 @@ import (
 
 	"blackbox/server/internal/db"
 	"blackbox/server/internal/hub"
-	"blackbox/server/internal/incidents"
 	"blackbox/server/internal/models"
 	"blackbox/shared/types"
 	"github.com/oklog/ulid/v2"
@@ -15,9 +14,13 @@ import (
 )
 
 func makeEntry(service, source, event, metadata string) types.Entry {
+	return makeEntryAt(service, source, event, metadata, time.Now().UTC())
+}
+
+func makeEntryAt(service, source, event, metadata string, ts time.Time) types.Entry {
 	return types.Entry{
 		ID:        ulid.Make().String(),
-		Timestamp: time.Now().UTC(),
+		Timestamp: ts,
 		NodeName:  "node-01",
 		Service:   service,
 		Source:    source,
@@ -30,8 +33,8 @@ func TestConfirmedIncident_OpenOnDown(t *testing.T) {
 	database, err := db.Init(":memory:")
 	require.NoError(t, err)
 
-	mgr := incidents.NewManager(database, hub.New())
-	ch := incidents.NewChannel()
+	mgr := NewManager(database, hub.New())
+	ch := NewChannel()
 	go mgr.Run(t.Context(), ch)
 
 	entry := makeEntry("nginx", "webhook", "down", `{"monitor":"nginx"}`)
@@ -52,8 +55,8 @@ func TestConfirmedIncident_ResolveOnUp(t *testing.T) {
 	database, err := db.Init(":memory:")
 	require.NoError(t, err)
 
-	mgr := incidents.NewManager(database, hub.New())
-	ch := incidents.NewChannel()
+	mgr := NewManager(database, hub.New())
+	ch := NewChannel()
 	go mgr.Run(t.Context(), ch)
 
 	downEntry := makeEntry("nginx", "webhook", "down", `{"monitor":"nginx"}`)
@@ -79,8 +82,8 @@ func TestSuspectedIncident_OpensOnNumericExitCode(t *testing.T) {
 	database, err := db.Init(":memory:")
 	require.NoError(t, err)
 
-	mgr := incidents.NewManager(database, hub.New())
-	ch := incidents.NewChannel()
+	mgr := NewManager(database, hub.New())
+	ch := NewChannel()
 	go mgr.Run(t.Context(), ch)
 
 	entry := makeEntry("nginx", "docker", "die", `{"exitCode":137}`)
@@ -108,8 +111,8 @@ func TestConfirmedIncident_UpgradeSkipsAlreadyLinkedCauseEntries(t *testing.T) {
 	database, err := db.Init(":memory:")
 	require.NoError(t, err)
 
-	mgr := incidents.NewManager(database, hub.New())
-	ch := incidents.NewChannel()
+	mgr := NewManager(database, hub.New())
+	ch := NewChannel()
 	go mgr.Run(t.Context(), ch)
 
 	crashEntry := makeEntry("radarr", "docker", "die", `{"exitCode":137}`)
@@ -143,4 +146,135 @@ func TestConfirmedIncident_UpgradeSkipsAlreadyLinkedCauseEntries(t *testing.T) {
 	assert.Equal(t, "evidence", links[0].Role)
 	assert.Equal(t, downEntry.ID, links[1].EntryID)
 	assert.Equal(t, "trigger", links[1].Role)
+}
+
+func TestSystemdFailed_OpensSuspectedIncident(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	mgr := NewManager(database, hub.New())
+	ch := NewChannel()
+	go mgr.Run(t.Context(), ch)
+
+	entry := makeEntry("nginx.service", "systemd", "failed", `{}`)
+	require.NoError(t, database.Create(&entry).Error)
+	ch <- entry
+
+	var incident models.Incident
+	require.Eventually(t, func() bool {
+		if err := database.Where("confidence = ?", "suspected").First(&incident).Error; err != nil {
+			return false
+		}
+		return incident.TriggerID == entry.ID
+	}, time.Second, 10*time.Millisecond)
+	assert.Equal(t, "nginx.service — systemd unit failed", incident.Title)
+}
+
+func TestSystemdOOMKill_OpensSuspectedIncident(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	mgr := NewManager(database, hub.New())
+	ch := NewChannel()
+	go mgr.Run(t.Context(), ch)
+
+	entry := makeEntry("kernel", "systemd", "oom_kill", `{"killed_process":"nginx"}`)
+	require.NoError(t, database.Create(&entry).Error)
+	ch <- entry
+
+	var incident models.Incident
+	require.Eventually(t, func() bool {
+		if err := database.Where("confidence = ?", "suspected").First(&incident).Error; err != nil {
+			return false
+		}
+		return incident.TriggerID == entry.ID
+	}, time.Second, 10*time.Millisecond)
+	assert.Equal(t, "kernel — systemd OOM kill", incident.Title)
+}
+
+func TestSystemdRestartLoop_OpensSuspectedIncident(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	mgr := NewManager(database, hub.New())
+	now := time.Now().UTC()
+
+	for i := 0; i < crashLoopThreshold; i++ {
+		entry := makeEntryAt("nginx.service", "systemd", "restart", `{}`, now.Add(time.Duration(i)*time.Second))
+		require.NoError(t, database.Create(&entry).Error)
+		mgr.processEntry(entry)
+	}
+
+	var incident models.Incident
+	require.NoError(t, database.Where("confidence = ?", "suspected").First(&incident).Error)
+	assert.Equal(t, "nginx.service — systemd restart/failure loop", incident.Title)
+}
+
+func TestSystemdLoneRestart_DoesNotOpenIncident(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	mgr := NewManager(database, hub.New())
+	entry := makeEntry("nginx.service", "systemd", "restart", `{}`)
+	require.NoError(t, database.Create(&entry).Error)
+
+	mgr.processEntry(entry)
+
+	var count int64
+	require.NoError(t, database.Model(&models.Incident{}).Count(&count).Error)
+	assert.Zero(t, count)
+}
+
+func TestSystemdStarted_ResolvesAfterStabilityWindow(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	mgr := NewManager(database, hub.New())
+	base := time.Now().UTC()
+
+	failed := makeEntryAt("nginx.service", "systemd", "failed", `{}`, base)
+	require.NoError(t, database.Create(&failed).Error)
+	mgr.processEntry(failed)
+
+	started := makeEntryAt("nginx.service", "systemd", "started", `{}`, base.Add(time.Second))
+	require.NoError(t, database.Create(&started).Error)
+	mgr.processEntry(started)
+
+	sweepExpiredSystemdRecoveriesLocked(mgr, started.Timestamp.Add(systemdStabilityTTL+time.Second))
+
+	var incident models.Incident
+	require.NoError(t, database.First(&incident).Error)
+	require.Equal(t, "resolved", incident.Status)
+	require.NotNil(t, incident.ResolvedAt)
+
+	var recovery models.IncidentEntry
+	require.NoError(t, database.Where("incident_id = ? AND role = ?", incident.ID, "recovery").First(&recovery).Error)
+	assert.Equal(t, started.ID, recovery.EntryID)
+}
+
+func TestSystemdFailureDuringRecoveryWindow_KeepsIncidentOpen(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	mgr := NewManager(database, hub.New())
+	base := time.Now().UTC()
+
+	failed := makeEntryAt("nginx.service", "systemd", "failed", `{}`, base)
+	require.NoError(t, database.Create(&failed).Error)
+	mgr.processEntry(failed)
+
+	started := makeEntryAt("nginx.service", "systemd", "started", `{}`, base.Add(time.Second))
+	require.NoError(t, database.Create(&started).Error)
+	mgr.processEntry(started)
+
+	restarted := makeEntryAt("nginx.service", "systemd", "restart", `{}`, base.Add(30*time.Second))
+	require.NoError(t, database.Create(&restarted).Error)
+	mgr.processEntry(restarted)
+
+	sweepExpiredSystemdRecoveriesLocked(mgr, started.Timestamp.Add(systemdStabilityTTL+time.Second))
+
+	var incident models.Incident
+	require.NoError(t, database.First(&incident).Error)
+	assert.Equal(t, "open", incident.Status)
+	assert.Nil(t, incident.ResolvedAt)
 }

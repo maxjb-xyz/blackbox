@@ -69,6 +69,7 @@ services:
       AGENT_TOKEN: "change-me-to-a-secret-agent-token"
       NODE_NAME: "my-homelab"
       WATCH_PATHS: "/watch/etc"
+      WATCH_SYSTEMD: "true"
     networks:
       - blackbox
 
@@ -107,7 +108,7 @@ docker compose up -d
 - **Manual entries** — Post arbitrary events from the UI or via the API.
 
 ### Incidents & Correlation
-- **Incident lifecycle** — Blackbox opens confirmed incidents from monitor-down events and suspected incidents from crash loops, unexpected container exits, and update-triggered restarts.
+- **Incident lifecycle** — Blackbox opens confirmed incidents from monitor-down events and suspected incidents from crash loops, unexpected container exits, watched systemd failures/OOM kills/restart loops, and update-triggered restarts.
 - **Weighted cause scoring** — Likely causes are ranked from recent Docker, file, systemd, and update entries using event-specific lookback windows, same-node bonuses, and log-snippet bonuses.
 - **Event chain view** — The Incidents page shows open and resolved incidents, duration, linked trigger/cause/recovery events, and the chosen root-cause entry.
 - **Optional AI enrichment** — If Ollama is configured, Blackbox stores an AI-generated root-cause summary and suggested incident title in incident metadata.
@@ -176,6 +177,7 @@ docker compose up -d
 - Configure the watched units from **Admin > Systemd**. Settings are stored per node and the agent refreshes them from the server every minute.
 - The watcher emits `started`, `stopped`, `restart`, and `failed` events for configured units, plus `oom_kill` events from the kernel journal.
 - Failed unit entries include a recent journal snippet in entry metadata, which Blackbox also uses as a correlation scoring bonus.
+- A watched unit `failed` or `oom_kill` opens a suspected incident immediately. Repeated watched `restart`/`failed` events within 5 minutes also open a suspected incident, while a lone `restart` does not.
 - For containerized agents, mount the host journal read-only so the agent can read systemd entries. Typical mounts are:
 
 ```yaml
@@ -186,7 +188,8 @@ volumes:
 
 ### Incident Enrichment
 
-- Incident detection works without extra configuration. Confirmed incidents come from Uptime Kuma Down/Up pairs; suspected incidents come from crash loops, non-zero exits, and watchtower-triggered restarts.
+- Incident detection works without extra configuration. Confirmed incidents come from Uptime Kuma Down/Up pairs; suspected incidents come from Docker crash loops and non-zero exits, watched systemd `failed` and `oom_kill` events, watched systemd restart/failure loops, and watchtower-triggered restarts.
+- Systemd-sourced suspected incidents resolve immediately on matching monitor `up` events, or automatically after a watched unit emits `started` and stays stable for 2 minutes without another failure/restart.
 - Ollama enrichment is optional and configured in **Admin > Settings** with an absolute Ollama base URL such as `http://192.168.1.10:11434` and a model name such as `llama3.2`.
 - Leaving the Ollama URL or model blank disables AI enrichment while keeping the incident engine and correlation scoring active.
 - The same Admin settings page also controls whether newly captured file diffs redact obvious secret-bearing keys before upload.
@@ -243,6 +246,7 @@ services:
       SERVER_URL: "http://blackbox-server:8080"
       AGENT_TOKEN: "token-for-node-01"
       NODE_NAME: "node-01"
+      WATCH_SYSTEMD: "true"
 
 volumes:
   blackbox-data:
@@ -264,6 +268,7 @@ services:
       AGENT_TOKEN: "token-for-node-02"
       NODE_NAME: "node-02"
       WATCH_PATHS: "/watch/appdata"
+      WATCH_SYSTEMD: "true"
 ```
 
 ---
