@@ -1,4 +1,4 @@
-//go:build !linux
+//go:build !linux || !cgo || !systemd
 
 package systemd
 
@@ -15,3 +15,5 @@ func watch(ctx context.Context, _ string, _ *Settings, _ chan<- types.Entry) err
 }
 
 func closeCachedJournal() {}
+
+func Supported() bool { return false }

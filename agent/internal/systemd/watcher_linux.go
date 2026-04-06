@@ -1,4 +1,4 @@
-//go:build linux
+//go:build linux && cgo && systemd
 
 package systemd
 
@@ -266,3 +266,5 @@ func closeCachedJournal() {
 		cachedJournal = nil
 	}
 }
+
+func Supported() bool { return true }

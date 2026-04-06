@@ -77,11 +77,15 @@ func main() {
 	}
 
 	if os.Getenv("WATCH_SYSTEMD") == "true" {
-		initialUnits := loadSystemdUnits(ctx, c)
-		systemdSettings := systemd.NewSettings(initialUnits)
-		go refreshSystemdSettings(ctx, c, systemdSettings)
-		go systemd.Watch(ctx, nodeName, systemdSettings, out)
-		log.Printf("systemd watcher: started, watching %d units", len(initialUnits))
+		if !systemd.Supported() {
+			log.Println("systemd watcher: disabled in this build; rebuild on Linux with cgo, libsystemd headers, and -tags systemd to enable")
+		} else {
+			initialUnits := loadSystemdUnits(ctx, c)
+			systemdSettings := systemd.NewSettings(initialUnits)
+			go refreshSystemdSettings(ctx, c, systemdSettings)
+			go systemd.Watch(ctx, nodeName, systemdSettings, out)
+			log.Printf("systemd watcher: started, watching %d units", len(initialUnits))
+		}
 	} else {
 		log.Println("systemd watcher: WATCH_SYSTEMD not set, systemd watching disabled")
 	}
