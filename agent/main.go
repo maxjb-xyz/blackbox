@@ -19,6 +19,7 @@ import (
 	"blackbox/agent/internal/docker"
 	"blackbox/agent/internal/files"
 	"blackbox/agent/internal/sender"
+	"blackbox/agent/internal/systemd"
 	"blackbox/shared/types"
 	"github.com/oklog/ulid/v2"
 )
@@ -72,6 +73,16 @@ func main() {
 		}
 	} else {
 		log.Println("file watcher: WATCH_PATHS not set, file watching disabled")
+	}
+
+	if os.Getenv("WATCH_SYSTEMD") == "true" {
+		initialUnits := loadSystemdUnits(ctx, c)
+		systemdSettings := systemd.NewSettings(initialUnits)
+		go refreshSystemdSettings(ctx, c, systemdSettings)
+		go systemd.Watch(ctx, nodeName, systemdSettings, out)
+		log.Printf("systemd watcher: started, watching %d units", len(initialUnits))
+	} else {
+		log.Println("systemd watcher: WATCH_SYSTEMD not set, systemd watching disabled")
 	}
 
 	out <- types.Entry{
@@ -142,6 +153,33 @@ func refreshFileWatcherSettings(ctx context.Context, c *client.Client, settings 
 				log.Printf("file watcher: updated redact_secrets=%t from server config", redactSecrets)
 			}
 			settings.SetRedactSecrets(redactSecrets)
+		}
+	}
+}
+
+func loadSystemdUnits(ctx context.Context, c *client.Client) []string {
+	configCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	config, err := c.GetAgentConfig(configCtx)
+	if err != nil {
+		log.Printf("systemd watcher: failed to load units from server, starting with empty list: %v", err)
+		return nil
+	}
+	return config.SystemdUnits
+}
+
+func refreshSystemdSettings(ctx context.Context, c *client.Client, settings *systemd.Settings) {
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			units := loadSystemdUnits(ctx, c)
+			settings.SetUnits(units)
 		}
 	}
 }

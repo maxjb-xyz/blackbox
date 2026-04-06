@@ -21,7 +21,8 @@ type Client struct {
 }
 
 type AgentConfig struct {
-	FileWatcherRedactSecrets bool `json:"file_watcher_redact_secrets"`
+	FileWatcherRedactSecrets bool     `json:"file_watcher_redact_secrets"`
+	SystemdUnits             []string `json:"systemd_units"`
 }
 
 // PermanentError signals that retrying the request will not help.
