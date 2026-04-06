@@ -552,6 +552,7 @@ The database is automatically migrated on startup — no manual schema managemen
 - [ ] Grafana data source plugin
 - [ ] Optional AI-Enhanced correlation engine
 - [ ] Mobile-friendly view
+- [ ] Dynamic notifications to Discord
 
 ---
 
