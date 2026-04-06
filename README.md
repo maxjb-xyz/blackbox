@@ -20,7 +20,7 @@
 
 ## What is Blackbox?
 
-Blackbox is a lightweight, self-hosted event correlation platform built for homelabbers who want to understand their infrastructure at a glance. It collects events from Docker, config file changes, uptime monitors, and container update tools, correlates them into a single chronological timeline, and groups likely outages into incidents with scored cause candidates and optional local-AI summaries.
+Blackbox is a lightweight, self-hosted event correlation platform built for homelabbers who want to understand their infrastructure at a glance. It collects events from Docker, config file changes, uptime monitors, and container update tools, correlates them into a single chronological timeline, and groups likely outages into incidents with scored cause candidates and optional local-AI analysis or AI-enhanced correlation.
 
 When your homelab breaks, Blackbox tells you what happened. You don't need to lift a finger.
 
@@ -88,7 +88,7 @@ docker compose up -d
 
 **3. Open `http://your-server:8080` and complete the setup wizard.**
 
-**4. Optional: open Admin > Settings to configure file-diff redaction and Ollama-based incident enrichment.**
+**4. Optional: open Admin > Settings to configure file-diff redaction and Ollama-based incident analysis.**
 
 ---
 
@@ -107,8 +107,9 @@ docker compose up -d
 ### Incidents & Correlation
 - **Incident lifecycle** — Blackbox opens confirmed incidents from monitor-down events and suspected incidents from crash loops, unexpected container exits, and update-triggered restarts.
 - **Weighted cause scoring** — Likely causes are ranked from recent entries using event-specific lookback windows, same-node bonuses, and log-snippet bonuses.
-- **Event chain view** — The Incidents page shows open and resolved incidents, duration, linked trigger/cause/recovery events, and the chosen root-cause entry.
-- **Optional AI enrichment** — If Ollama is configured, Blackbox stores an AI-generated root-cause summary and suggested incident title in incident metadata.
+- **Event chain view** — The Incidents page shows open and resolved incidents, duration, linked trigger/cause/evidence/recovery events, AI-derived causes when enabled, and the chosen root-cause entry.
+- **Optional Ollama modes** — If Ollama is configured, Blackbox can run either plain AI analysis or an AI-enhanced correlation mode from the same Admin settings page.
+- **AI across suspected incidents too** — Suspected incidents get the same log-backed AI treatment as confirmed incidents, including crash-log context and the selected Ollama mode.
 
 ### Timeline
 - Chronological, paginated event feed across all nodes
@@ -169,8 +170,11 @@ docker compose up -d
 ### Incident Enrichment
 
 - Incident detection works without extra configuration. Confirmed incidents come from Uptime Kuma Down/Up pairs; suspected incidents come from crash loops, non-zero exits, and watchtower-triggered restarts.
-- Ollama enrichment is optional and configured in **Admin > Settings** with an absolute Ollama base URL such as `http://192.168.1.10:11434` and a model name such as `llama3.2`.
-- Leaving the Ollama URL or model blank disables AI enrichment while keeping the incident engine and correlation scoring active.
+- Ollama is optional and configured in **Admin > Settings** with an absolute base URL such as `http://192.168.1.10:11434`, a model name such as `llama3.2`, and an AI mode.
+- `analysis` mode stores a concise AI-written incident summary in incident metadata.
+- `enhanced` mode asks Ollama to analyze the deterministic incident chain plus recent same-node events, then writes validated `ai_cause` links and an AI summary back onto the incident.
+- AI mode applies to both confirmed and suspected incidents. Suspected incidents still pull in captured crash logs and run the same selected Ollama path.
+- Leaving the Ollama URL or model blank disables all optional AI behavior while keeping the incident engine and deterministic correlation active.
 - The same Admin settings page also controls whether newly captured file diffs redact obvious secret-bearing keys before upload.
 
 ### Agent Tokens
@@ -261,7 +265,7 @@ http://blackbox.example.com/api/webhooks/uptime
 
 Add a header: `X-Webhook-Secret: your-webhook-secret`
 
-When a monitor goes down, Blackbox will automatically query the 120-second window before the incident and surface correlated events (e.g., a container that died, a config file that changed).
+When a monitor goes down, Blackbox will automatically query the 120-second window before the incident and surface correlated events (e.g., a container that died, a config file that changed). If Ollama is enabled, the resulting incident can also receive an AI summary or AI-derived cause links, depending on the selected mode.
 
 ### Watchtower
 
@@ -432,7 +436,7 @@ All protected endpoints require an authenticated session cookie (obtained via lo
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/incidents` | List incidents. Query params: `status`, `confidence`, `service`, `limit` (1-200). |
-| `GET` | `/api/incidents/{id}` | Get a single incident with linked trigger/cause/evidence/recovery entries. |
+| `GET` | `/api/incidents/{id}` | Get a single incident with linked trigger/cause/evidence/recovery entries and any `ai_cause` links. |
 
 ### Timeline
 
@@ -463,9 +467,9 @@ All protected endpoints require an authenticated session cookie (obtained via lo
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/admin/config` | Load admin-visible runtime config, including webhook secret, file-watcher settings, and Ollama settings. |
+| `GET` | `/api/admin/config` | Load admin-visible runtime config, including webhook secret, file-watcher settings, Ollama URL/model, and `ollama_mode`. |
 | `PUT` | `/api/admin/settings/file-watcher` | Update file-diff secret redaction behavior for newly uploaded diffs. |
-| `PUT` | `/api/admin/settings/ollama` | Update the Ollama URL and model used for optional incident enrichment. |
+| `PUT` | `/api/admin/settings/ollama` | Update the Ollama URL, model, and `ollama_mode` (`analysis` or `enhanced`) used for optional incident analysis. |
 
 ### Agent Ingestion
 
@@ -512,11 +516,11 @@ The database is automatically migrated on startup — no manual schema managemen
 - [x] Service aliases
 - [x] Incident lifecycle engine
 - [x] Improved correlation engine (automatic causation for downtime events)
-- [x] Optional local AI enrichment via Ollama
+- [x] Optional local AI analysis via Ollama
 - [x] Incidents UI + sidebar badge
+- [x] Optional AI-enhanced correlation engine
 - [ ] Timeline UI polish and interaction improvements
 - [ ] Grafana data source plugin
-- [ ] Optional AI-Enhanced correlation engine
 - [ ] Support tracking systemd services
 - [ ] Mobile-friendly view
 

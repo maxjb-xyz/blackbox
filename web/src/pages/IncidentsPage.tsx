@@ -98,6 +98,34 @@ interface IncidentCardProps {
   defaultOpen?: boolean
 }
 
+function ConfidenceBar({ score }: { score: number }) {
+  const clampedScore = Math.max(0, Math.min(100, score))
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+      <div
+        style={{
+          flex: 1,
+          height: 3,
+          background: '#222',
+          overflow: 'hidden',
+        }}
+      >
+        <div
+          style={{
+            width: `${clampedScore}%`,
+            height: '100%',
+            background: '#a855f7',
+          }}
+        />
+      </div>
+      <span style={{ color: '#a855f7', fontSize: 10, lineHeight: 1 }}>
+        {clampedScore}%
+      </span>
+    </div>
+  )
+}
+
 function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
   const [expanded, setExpanded] = useState(defaultOpen)
   const [detail, setDetail] = useState<IncidentDetail | null>(null)
@@ -157,6 +185,8 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
   }, [expanded, detail, incident.id])
 
   const borderColor = incidentBorderColor(incident)
+  const deterministicEntries = detail?.entries.filter(({ link }) => link.role !== 'ai_cause') ?? []
+  const aiCauseEntries = detail?.entries.filter(({ link }) => link.role === 'ai_cause') ?? []
 
   return (
     <div
@@ -227,7 +257,7 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
                   EVENT CHAIN
                 </div>
                 <div style={{ borderTop: '1px solid var(--border)', paddingTop: 4 }}>
-                  {detail.entries.map(({ link, entry }) => (
+                  {deterministicEntries.map(({ link, entry }) => (
                     <div
                       key={link.entry_id}
                       style={{
@@ -254,26 +284,91 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
                 </div>
               </div>
 
+              {aiCauseEntries.length > 0 && (
+                <div style={{ marginBottom: 8 }}>
+                  <div
+                    style={{
+                      borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                      paddingTop: 8,
+                      marginBottom: 6,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                    }}
+                  >
+                    <div style={{ color: 'var(--muted)', letterSpacing: '0.1em' }}>
+                      AI CORRELATION
+                    </div>
+                    <span
+                      style={{
+                        border: '1px solid #a855f7',
+                        color: '#a855f7',
+                        fontSize: 10,
+                        lineHeight: 1,
+                        padding: '2px 5px',
+                        borderRadius: 999,
+                        letterSpacing: '0.08em',
+                      }}
+                    >
+                      AI
+                    </span>
+                  </div>
+                  <div style={{ display: 'grid', gap: 8 }}>
+                    {aiCauseEntries.map(({ link, entry }) => (
+                      <div
+                        key={link.entry_id}
+                        style={{
+                          borderLeft: '2px solid #a855f7',
+                          padding: '2px 0 2px 10px',
+                        }}
+                      >
+                        <div style={{ color: 'var(--text)', marginBottom: 4 }}>
+                          {entry.service || 'unknown service'}
+                          {' / '}
+                          {entry.source || 'unknown source'}
+                          {' / '}
+                          {entry.event || 'unknown event'}
+                        </div>
+                        <div style={{ color: 'var(--muted)', lineHeight: 1.5 }}>
+                          {entry.content}
+                        </div>
+                        {link.reason && (
+                          <div style={{ color: 'var(--muted)', fontStyle: 'italic', marginTop: 4 }}>
+                            {link.reason}
+                          </div>
+                        )}
+                        <ConfidenceBar score={link.score} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {(() => {
-                const causeWithLog = detail.entries.reduce<{
+                const logSourceRoles = ['cause', 'trigger', 'evidence', 'ai_cause', 'recovery']
+                const entryWithLog = logSourceRoles.reduce<{
                   entry: IncidentDetail['entries'][number]['entry']
                   logLines: string[]
-                } | null>((match, { link, entry }) => {
-                  if (match || link.role !== 'cause') return match
-                  try {
-                    const metadata = JSON.parse(entry.metadata) as Record<string, unknown>
-                    const logLines = Array.isArray(metadata.log_snippet) ? metadata.log_snippet as string[] : []
-                    if (logLines.length === 0) return match
-                    return { entry, logLines }
-                  } catch {
-                    return match
+                } | null>((match, role) => {
+                  if (match) return match
+                  for (const { link, entry } of detail.entries) {
+                    if (link.role !== role) continue
+                    try {
+                      const metadata = JSON.parse(entry.metadata) as Record<string, unknown>
+                      const logLines = Array.isArray(metadata.log_snippet) ? metadata.log_snippet as string[] : []
+                      if (logLines.length === 0) continue
+                      return { entry, logLines }
+                    } catch {
+                      continue
+                    }
                   }
+                  return match
                 }, null)
-                if (!causeWithLog) return null
+                if (!entryWithLog) return null
                 return (
                   <div style={{ marginBottom: 8 }}>
                     <div style={{ color: 'var(--muted)', marginBottom: 4, letterSpacing: '0.1em' }}>
-                      LOG SNIPPET ({causeWithLog.entry.node_name} · last {causeWithLog.logLines.length} lines)
+                      LOG SNIPPET ({entryWithLog.entry.node_name} · last {entryWithLog.logLines.length} lines)
                     </div>
                     <div
                       style={{
@@ -286,7 +381,7 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
                         overflowY: 'auto',
                       }}
                     >
-                      {causeWithLog.logLines.slice(-10).join('\n')}
+                      {entryWithLog.logLines.slice(-10).join('\n')}
                     </div>
                   </div>
                 )

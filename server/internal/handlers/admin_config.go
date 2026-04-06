@@ -14,6 +14,7 @@ import (
 
 const ollamaURLKey = "ollama_url"
 const ollamaModelKey = "ollama_model"
+const ollamaModeKey = "ollama_mode"
 
 func AdminConfig(db *gorm.DB, webhookSecret string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -22,7 +23,7 @@ func AdminConfig(db *gorm.DB, webhookSecret string) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "failed to load admin config")
 			return
 		}
-		ollamaURL, ollamaModel, err := getOllamaSettings(db)
+		ollamaURL, ollamaModel, ollamaMode, err := getOllamaSettings(db)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to load admin config")
 			return
@@ -37,6 +38,7 @@ func AdminConfig(db *gorm.DB, webhookSecret string) http.HandlerFunc {
 			"file_watcher_redact_secrets": redactSecrets,
 			"ollama_url":                  ollamaURL,
 			"ollama_model":                ollamaModel,
+			"ollama_mode":                 ollamaMode,
 		}); err != nil {
 			log.Printf("AdminConfig encode: %v", err)
 		}
@@ -48,6 +50,7 @@ func UpdateOllamaSettings(db *gorm.DB) http.HandlerFunc {
 		var req struct {
 			OllamaURL   string `json:"ollama_url"`
 			OllamaModel string `json:"ollama_model"`
+			OllamaMode  string `json:"ollama_mode"`
 		}
 		if !decodeJSONBody(w, r, 1<<20, &req) {
 			return
@@ -61,11 +64,20 @@ func UpdateOllamaSettings(db *gorm.DB) http.HandlerFunc {
 				return
 			}
 		}
+		ollamaMode := strings.TrimSpace(req.OllamaMode)
+		if ollamaMode != "" && ollamaMode != "analysis" && ollamaMode != "enhanced" {
+			writeError(w, http.StatusBadRequest, "ollama_mode must be 'analysis' or 'enhanced'")
+			return
+		}
+		if ollamaMode == "" {
+			ollamaMode = "analysis"
+		}
 
 		now := time.Now()
 		settings := []models.AppSetting{
 			{Key: ollamaURLKey, Value: ollamaURL, UpdatedAt: now},
 			{Key: ollamaModelKey, Value: strings.TrimSpace(req.OllamaModel), UpdatedAt: now},
+			{Key: ollamaModeKey, Value: ollamaMode, UpdatedAt: now},
 		}
 		for _, s := range settings {
 			if err := db.Save(&s).Error; err != nil {
@@ -78,21 +90,26 @@ func UpdateOllamaSettings(db *gorm.DB) http.HandlerFunc {
 	}
 }
 
-func getOllamaSettings(db *gorm.DB) (string, string, error) {
+func getOllamaSettings(db *gorm.DB) (string, string, string, error) {
 	var settings []models.AppSetting
-	if err := db.Where("key IN ?", []string{ollamaURLKey, ollamaModelKey}).Find(&settings).Error; err != nil {
-		return "", "", err
+	if err := db.Where("key IN ?", []string{ollamaURLKey, ollamaModelKey, ollamaModeKey}).Find(&settings).Error; err != nil {
+		return "", "", "", err
 	}
 
 	ollamaURL := ""
 	ollamaModel := ""
+	ollamaMode := "analysis"
 	for _, s := range settings {
 		switch s.Key {
 		case ollamaURLKey:
 			ollamaURL = strings.TrimSpace(s.Value)
 		case ollamaModelKey:
 			ollamaModel = strings.TrimSpace(s.Value)
+		case ollamaModeKey:
+			if v := strings.TrimSpace(s.Value); v != "" {
+				ollamaMode = v
+			}
 		}
 	}
-	return ollamaURL, ollamaModel, nil
+	return ollamaURL, ollamaModel, ollamaMode, nil
 }
