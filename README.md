@@ -20,13 +20,13 @@
 
 ## What is Blackbox?
 
-Blackbox is a lightweight, self-hosted event correlation platform built for homelabbers who want to understand their infrastructure at a glance. It collects events from Docker, config file changes, uptime monitors, and container update tools, correlates them into a single chronological timeline, and groups likely outages into incidents with scored cause candidates and optional local-AI summaries.
+Blackbox is a lightweight, self-hosted event correlation platform built for homelabbers who want to understand their infrastructure at a glance. It collects events from Docker, config file changes, selected systemd units, uptime monitors, and container update tools, correlates them into a single chronological timeline, and groups likely outages into incidents with scored cause candidates and optional local-AI summaries.
 
 When your homelab breaks, Blackbox tells you what happened. You don't need to lift a finger.
 
 ### Core Principles
 
-- **The Forensic Timeline** — Every event (Docker, file change, webhook) is timestamped and correlated. Nothing is lost.
+- **The Forensic Timeline** — Every event (Docker, file change, systemd, webhook) is timestamped and correlated. Nothing is lost.
 - **The "Discipline" Fix** — Automation handles the *what*. Your notes handle the *why*. No manual logging of events that can be detected automatically.
 - **The 2 AM Rule** — High-density, low eye strain (dark mode), zero-friction navigation. Built for stressful troubleshooting.
 
@@ -88,7 +88,7 @@ docker compose up -d
 
 **3. Open `http://your-server:8080` and complete the setup wizard.**
 
-**4. Optional: open Admin > Settings to configure file-diff redaction and Ollama-based incident enrichment.**
+**4. Optional: open Admin > Settings to configure file-diff redaction and Ollama-based incident enrichment. Open Admin > Systemd to choose which units each node should watch when `WATCH_SYSTEMD=true` is enabled on that agent.**
 
 ---
 
@@ -100,13 +100,15 @@ docker compose up -d
 - **Crash log capture** — Collapsed Docker stop/restart events include a best-effort tail of recent container logs, which Blackbox can surface directly inside incidents.
 - **Config file watching** — inotify-based watching of `.yaml`, `.yml`, `.conf`, `.env`, `.json`, and `.ini` files via configurable `WATCH_PATHS`.
 - **Config diffs** — File change events include a bounded text diff in metadata for deeper timeline analysis, with optional secret redaction controlled from the Admin settings page.
+- **Systemd unit watching** — Linux agents can watch selected systemd units from the journal and emit `started`, `stopped`, `restart`, and `failed` lifecycle entries.
+- **OOM kill detection** — Kernel OOM events are ingested as `systemd` entries, and failed units include a recent journal log snippet for faster triage.
 - **Uptime Kuma webhooks** — Ingest Down/Up state changes. Down events open confirmed incidents and score likely causes from recent Docker, file, and webhook activity.
 - **Watchtower webhooks** — Ingest container image update events with version metadata and use them as incident evidence when a restart follows shortly after.
 - **Manual entries** — Post arbitrary events from the UI or via the API.
 
 ### Incidents & Correlation
 - **Incident lifecycle** — Blackbox opens confirmed incidents from monitor-down events and suspected incidents from crash loops, unexpected container exits, and update-triggered restarts.
-- **Weighted cause scoring** — Likely causes are ranked from recent entries using event-specific lookback windows, same-node bonuses, and log-snippet bonuses.
+- **Weighted cause scoring** — Likely causes are ranked from recent Docker, file, systemd, and update entries using event-specific lookback windows, same-node bonuses, and log-snippet bonuses.
 - **Event chain view** — The Incidents page shows open and resolved incidents, duration, linked trigger/cause/recovery events, and the chosen root-cause entry.
 - **Optional AI enrichment** — If Ollama is configured, Blackbox stores an AI-generated root-cause summary and suggested incident title in incident metadata.
 
@@ -158,6 +160,7 @@ docker compose up -d
 | `NODE_NAME` | No | System hostname | Identifier for this node in the timeline. |
 | `WATCH_PATHS` | No | — | Colon-separated list of directories to watch for file changes as seen inside the agent container (e.g., `/watch/etc:/watch/appdata`). |
 | `WATCH_IGNORE` | No | — | Colon-separated glob patterns to exclude from file watching. |
+| `WATCH_SYSTEMD` | No | `false` | Set to `true` on Linux agents to enable journal-based systemd monitoring for the units configured in the Admin UI. |
 
 ### File Watcher Troubleshooting
 
@@ -165,6 +168,21 @@ docker compose up -d
 - On startup, the agent now logs a per-root registration line. If you see `failed to register root /watch/stacks`, the bind mount and `WATCH_PATHS` do not line up inside the container.
 - Some editors save by replacing files instead of writing them in place. Blackbox now emits alerts for those `rename` and `chmod-style` config-file changes as well.
 - File-change metadata now includes a small line diff when the file is UTF-8 text and under the tracking limit. Obvious secret values such as `TOKEN`, `PASSWORD`, and `CLIENT_SECRET` are redacted before upload.
+
+### Systemd Monitoring
+
+- Systemd monitoring is Linux-only. On non-Linux hosts the watcher is a no-op.
+- Set `WATCH_SYSTEMD=true` on the agent to enable journal monitoring.
+- Configure the watched units from **Admin > Systemd**. Settings are stored per node and the agent refreshes them from the server every minute.
+- The watcher emits `started`, `stopped`, `restart`, and `failed` events for configured units, plus `oom_kill` events from the kernel journal.
+- Failed unit entries include a recent journal snippet in entry metadata, which Blackbox also uses as a correlation scoring bonus.
+- For containerized agents, mount the host journal read-only so the agent can read systemd entries. Typical mounts are:
+
+```yaml
+volumes:
+  - /run/log/journal:/run/log/journal:ro
+  - /var/log/journal:/var/log/journal:ro
+```
 
 ### Incident Enrichment
 
@@ -197,6 +215,7 @@ openssl rand -hex 32
 
 Deploy an agent on each machine you want to monitor. All agents point at the same central server.
 > The server should run with its default distroless `nonroot` user. The agent example keeps `user: "0:0"` because `/var/run/docker.sock` often requires elevated access unless you align the container group with the host Docker socket group.
+> If you also want systemd monitoring from a containerized agent, set `WATCH_SYSTEMD=true` and mount the host journal read-only as described in [Systemd Monitoring](#systemd-monitoring).
 
 **Node 01 — Primary server (also runs an agent):**
 
@@ -376,7 +395,7 @@ Blackbox is split into two components designed to run across multiple nodes.
 | Component | Role |
 |-----------|------|
 | **Server** | Central brain. Hosts the UI, stores the database, receives events from agents, handles webhook ingestion, and runs the incident/correlation engine. |
-| **Agent** | Lightweight binary deployed on each node. Watches Docker and config files, pushes events to the server. |
+| **Agent** | Lightweight binary deployed on each node. Watches Docker, config files, and optional systemd journals, then pushes events to the server. |
 
 ---
 
@@ -410,6 +429,8 @@ JWT_SECRET=dev AGENT_TOKENS="local=devtoken" WEBHOOK_SECRET=dev ./server/blackbo
 # Agent (separate terminal)
 SERVER_URL=http://localhost:8080 AGENT_TOKEN=devtoken NODE_NAME=local ./agent/blackbox-agent
 ```
+
+To test systemd monitoring locally on Linux, add `WATCH_SYSTEMD=true` and make sure the agent can read the host journal. Then configure units from **Admin > Systemd** after the node registers.
 
 **Build Docker images:**
 
@@ -466,6 +487,8 @@ All protected endpoints require an authenticated session cookie (obtained via lo
 | `GET` | `/api/admin/config` | Load admin-visible runtime config, including webhook secret, file-watcher settings, and Ollama settings. |
 | `PUT` | `/api/admin/settings/file-watcher` | Update file-diff secret redaction behavior for newly uploaded diffs. |
 | `PUT` | `/api/admin/settings/ollama` | Update the Ollama URL and model used for optional incident enrichment. |
+| `GET` | `/api/admin/settings/systemd` | List per-node systemd unit selections. |
+| `PUT` | `/api/admin/settings/systemd/{node_name}` | Replace the watched systemd unit list for a node. |
 
 ### Agent Ingestion
 
@@ -517,7 +540,7 @@ The database is automatically migrated on startup — no manual schema managemen
 - [ ] Timeline UI polish and interaction improvements
 - [ ] Grafana data source plugin
 - [ ] Optional AI-Enhanced correlation engine
-- [ ] Support tracking systemd services
+- [x] Support tracking systemd services
 - [ ] Mobile-friendly view
 
 ---
