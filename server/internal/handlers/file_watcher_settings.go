@@ -83,7 +83,8 @@ func UpdateFileWatcherSettings(db *gorm.DB) http.HandlerFunc {
 
 func AgentConfig(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if _, ok := middleware.AgentNodeFromContext(r.Context()); !ok {
+		nodeName, ok := middleware.AgentNodeFromContext(r.Context())
+		if !ok {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
@@ -94,9 +95,24 @@ func AgentConfig(db *gorm.DB) http.HandlerFunc {
 			return
 		}
 
+		systemdUnits := getSystemdUnitsForNode(db, nodeName)
+
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]bool{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"file_watcher_redact_secrets": redactSecrets,
+			"systemd_units":               systemdUnits,
 		})
 	}
+}
+
+func getSystemdUnitsForNode(db *gorm.DB, nodeName string) []string {
+	var config models.SystemdUnitConfig
+	if err := db.First(&config, "node_name = ?", nodeName).Error; err != nil {
+		return []string{}
+	}
+	var units []string
+	if err := json.Unmarshal([]byte(config.Units), &units); err != nil {
+		return []string{}
+	}
+	return units
 }

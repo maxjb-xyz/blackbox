@@ -172,6 +172,8 @@ func main() {
 		r.Delete("/api/admin/users/{id}", handlers.DeleteAdminUser(database, eventHub))
 		r.Get("/api/admin/config", handlers.AdminConfig(database, webhookSecret))
 		r.Put("/api/admin/settings/file-watcher", handlers.UpdateFileWatcherSettings(database))
+		r.Get("/api/admin/settings/systemd", handlers.GetSystemdSettings(database))
+		r.Put("/api/admin/settings/systemd/{node_name}", handlers.UpdateSystemdSettings(database))
 		r.Put("/api/admin/settings/ollama", handlers.UpdateOllamaSettings(database))
 		r.Get("/api/admin/oidc/providers", handlers.ListOIDCProviders(database))
 		r.Post("/api/admin/oidc/providers", handlers.CreateOIDCProvider(database, registry))
