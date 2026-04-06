@@ -345,25 +345,30 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
               )}
 
               {(() => {
-                const causeWithLog = detail.entries.reduce<{
+                const logSourceRoles = ['cause', 'trigger', 'evidence', 'ai_cause', 'recovery']
+                const entryWithLog = logSourceRoles.reduce<{
                   entry: IncidentDetail['entries'][number]['entry']
                   logLines: string[]
-                } | null>((match, { link, entry }) => {
-                  if (match || link.role !== 'cause') return match
-                  try {
-                    const metadata = JSON.parse(entry.metadata) as Record<string, unknown>
-                    const logLines = Array.isArray(metadata.log_snippet) ? metadata.log_snippet as string[] : []
-                    if (logLines.length === 0) return match
-                    return { entry, logLines }
-                  } catch {
-                    return match
+                } | null>((match, role) => {
+                  if (match) return match
+                  for (const { link, entry } of detail.entries) {
+                    if (link.role !== role) continue
+                    try {
+                      const metadata = JSON.parse(entry.metadata) as Record<string, unknown>
+                      const logLines = Array.isArray(metadata.log_snippet) ? metadata.log_snippet as string[] : []
+                      if (logLines.length === 0) continue
+                      return { entry, logLines }
+                    } catch {
+                      continue
+                    }
                   }
+                  return match
                 }, null)
-                if (!causeWithLog) return null
+                if (!entryWithLog) return null
                 return (
                   <div style={{ marginBottom: 8 }}>
                     <div style={{ color: 'var(--muted)', marginBottom: 4, letterSpacing: '0.1em' }}>
-                      LOG SNIPPET ({causeWithLog.entry.node_name} · last {causeWithLog.logLines.length} lines)
+                      LOG SNIPPET ({entryWithLog.entry.node_name} · last {entryWithLog.logLines.length} lines)
                     </div>
                     <div
                       style={{
@@ -376,7 +381,7 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
                         overflowY: 'auto',
                       }}
                     >
-                      {causeWithLog.logLines.slice(-10).join('\n')}
+                      {entryWithLog.logLines.slice(-10).join('\n')}
                     </div>
                   </div>
                 )

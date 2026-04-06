@@ -3,6 +3,7 @@ package incidents
 import (
 	"encoding/json"
 	"log"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -88,26 +89,7 @@ func (m *Manager) handleMonitorDown(entry types.Entry) {
 	m.openIncidents[incidentKey(svc, entry.NodeName)] = incidentID
 	m.broadcastOpened(incident)
 
-	enrichEntries := make([]enrichEntry, 0, len(candidates)+1)
-	enrichEntries = append(enrichEntries, enrichEntry{
-		Role:    "trigger",
-		Content: entry.Content,
-		Source:  entry.Source,
-		Event:   entry.Event,
-	})
-	for _, c := range candidates {
-		ee := enrichEntry{
-			Role:    "cause",
-			Content: c.Entry.Content,
-			Source:  c.Entry.Source,
-			Event:   c.Entry.Event,
-		}
-		if logSnippet := extractLogSnippet(c.Entry); logSnippet != "" {
-			ee.Log = logSnippet
-		}
-		enrichEntries = append(enrichEntries, ee)
-	}
-	m.DispatchOllamaAsync(incidentID, enrichEntries, entry.NodeName)
+	m.dispatchIncidentEnrichment(incidentID, entry.NodeName)
 }
 
 func (m *Manager) handleMonitorUp(entry types.Entry) {
@@ -259,6 +241,7 @@ func (m *Manager) openSuspectedIncident(trigger types.Entry, reason string) {
 	}
 	m.openIncidents[incidentKey(svc, trigger.NodeName)] = incidentID
 	m.broadcastOpened(incident)
+	m.dispatchIncidentEnrichment(incidentID, trigger.NodeName)
 }
 
 func (m *Manager) openSuspectedIncidentWithCause(trigger, cause types.Entry, reason string) {
@@ -284,6 +267,7 @@ func (m *Manager) openSuspectedIncidentWithCause(trigger, cause types.Entry, rea
 	m.linkEntry(incidentID, cause.ID, "cause", 70)
 	m.openIncidents[incidentKey(svc, trigger.NodeName)] = incidentID
 	m.broadcastOpened(incident)
+	m.dispatchIncidentEnrichment(incidentID, trigger.NodeName)
 }
 
 func (m *Manager) upgradeToConfirmed(incidentID string, downEntry types.Entry) {
@@ -324,6 +308,7 @@ func (m *Manager) upgradeToConfirmed(incidentID string, downEntry types.Entry) {
 	}
 
 	m.broadcastUpdated(incidentID)
+	m.dispatchIncidentEnrichment(incidentID, downEntry.NodeName)
 }
 
 func sweepExpiredSuspectedLocked(m *Manager) {
@@ -455,6 +440,69 @@ func (m *Manager) linkedEntryIDs(incidentID string, extraIDs ...string) map[stri
 		excluded[link.EntryID] = struct{}{}
 	}
 	return excluded
+}
+
+func (m *Manager) dispatchIncidentEnrichment(incidentID, nodeName string) {
+	enrichEntries, err := m.enrichmentEntries(incidentID)
+	if err != nil {
+		log.Printf("incidents: build enrich entries for %s: %v", incidentID, err)
+		return
+	}
+	if len(enrichEntries) == 0 {
+		return
+	}
+	m.DispatchOllamaAsync(incidentID, enrichEntries, nodeName)
+}
+
+func (m *Manager) enrichmentEntries(incidentID string) ([]enrichEntry, error) {
+	var links []models.IncidentEntry
+	if err := m.db.Where("incident_id = ? AND role <> ?", incidentID, "ai_cause").Find(&links).Error; err != nil {
+		return nil, err
+	}
+	if len(links) == 0 {
+		return nil, nil
+	}
+
+	roleByID := make(map[string]string, len(links))
+	entryIDs := make([]string, 0, len(links))
+	for _, link := range links {
+		entryID := strings.TrimSpace(link.EntryID)
+		if entryID == "" {
+			continue
+		}
+		roleByID[entryID] = link.Role
+		entryIDs = append(entryIDs, entryID)
+	}
+	if len(entryIDs) == 0 {
+		return nil, nil
+	}
+
+	var entries []types.Entry
+	if err := m.db.Where("id IN ?", entryIDs).Find(&entries).Error; err != nil {
+		return nil, err
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		if !entries[i].Timestamp.Equal(entries[j].Timestamp) {
+			return entries[i].Timestamp.Before(entries[j].Timestamp)
+		}
+		return entries[i].ID < entries[j].ID
+	})
+
+	enrichEntries := make([]enrichEntry, 0, len(entries))
+	for _, entry := range entries {
+		enrichEntry := enrichEntry{
+			Role:    roleByID[entry.ID],
+			Content: entry.Content,
+			Source:  entry.Source,
+			Event:   entry.Event,
+		}
+		if logSnippet := extractLogSnippet(&entry); logSnippet != "" {
+			enrichEntry.Log = logSnippet
+		}
+		enrichEntries = append(enrichEntries, enrichEntry)
+	}
+	return enrichEntries, nil
 }
 
 func (m *Manager) broadcastOpened(inc models.Incident) {

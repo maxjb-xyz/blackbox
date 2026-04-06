@@ -2,6 +2,7 @@ package incidents
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,6 +12,56 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/require"
 )
+
+func TestManager_SuspectedIncidentDispatchesAIAnalysisWithTriggerLogs(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	require.NoError(t, database.Create(&models.AppSetting{Key: ollamaURLKey, Value: "http://ollama.local"}).Error)
+	require.NoError(t, database.Create(&models.AppSetting{Key: ollamaModelKey, Value: "llama3.2"}).Error)
+
+	promptSeen := make(chan string, 1)
+	originalCall := callOllamaFunc
+	callOllamaFunc = func(baseURL, model, prompt string) (string, error) {
+		promptSeen <- prompt
+		return "Crash caused by invalid config", nil
+	}
+	defer func() { callOllamaFunc = originalCall }()
+
+	now := time.Now().UTC()
+	entry := types.Entry{
+		ID:        ulid.Make().String(),
+		Timestamp: now,
+		NodeName:  "node-01",
+		Source:    "docker",
+		Service:   "nginx",
+		Event:     "die",
+		Content:   "Container stopped: nginx (exit code: 137)",
+		Metadata:  `{"exitCode":137,"log_snippet":["fatal: invalid nginx.conf"]}`,
+	}
+	require.NoError(t, database.Create(&entry).Error)
+
+	manager := NewManager(database, nil)
+	manager.processEntry(entry)
+
+	var incident models.Incident
+	require.Eventually(t, func() bool {
+		if err := database.Where("confidence = ?", "suspected").First(&incident).Error; err != nil {
+			return false
+		}
+		meta := parseIncidentTestMetadata(t, incident.Metadata)
+		return meta["ai_analysis"] == "Crash caused by invalid config"
+	}, time.Second, 10*time.Millisecond)
+
+	select {
+	case prompt := <-promptSeen:
+		require.Contains(t, prompt, "[trigger] docker/die")
+		require.Contains(t, prompt, "Log: fatal: invalid nginx.conf")
+		require.True(t, strings.Contains(prompt, "Confidence: suspected"), prompt)
+	default:
+		t.Fatal("expected Ollama prompt for suspected incident")
+	}
+}
 
 func TestOllamaEnricher_SetsAndClearsPendingState(t *testing.T) {
 	database, err := db.Init(":memory:")
