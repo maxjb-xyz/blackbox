@@ -7,6 +7,7 @@ import (
 	"blackbox/server/internal/correlation"
 	"blackbox/server/internal/db"
 	"blackbox/shared/types"
+	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -137,4 +138,50 @@ func TestFindCause_ReturnsHighestScoringCandidateWhenMultiple(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, cause)
 	assert.Equal(t, "01TEST00000000005", cause.ID)
+}
+
+func TestScoreCauses_SystemdFailedScores90(t *testing.T) {
+	database := newTestDB(t)
+	now := time.Now().UTC()
+
+	failedID := ulid.Make().String()
+	require.NoError(t, database.Create(&types.Entry{
+		ID:        failedID,
+		Timestamp: now.Add(-60 * time.Second),
+		NodeName:  "node-01",
+		Source:    "systemd",
+		Service:   "nginx.service",
+		Event:     "failed",
+		Content:   "nginx.service failed",
+		Metadata:  `{}`,
+	}).Error)
+
+	candidates, err := correlation.ScoreCauses(database, []string{"nginx.service"}, now)
+	require.NoError(t, err)
+	require.Len(t, candidates, 1)
+	require.Equal(t, failedID, candidates[0].Entry.ID)
+	require.GreaterOrEqual(t, candidates[0].Score, 90)
+}
+
+func TestScoreCauses_OOMKillScores100(t *testing.T) {
+	database := newTestDB(t)
+	now := time.Now().UTC()
+
+	oomID := ulid.Make().String()
+	require.NoError(t, database.Create(&types.Entry{
+		ID:        oomID,
+		Timestamp: now.Add(-30 * time.Second),
+		NodeName:  "node-01",
+		Source:    "systemd",
+		Service:   "kernel",
+		Event:     "oom_kill",
+		Content:   "OOM kill: nginx",
+		Metadata:  `{}`,
+	}).Error)
+
+	candidates, err := correlation.ScoreCauses(database, []string{"kernel"}, now)
+	require.NoError(t, err)
+	require.Len(t, candidates, 1)
+	require.Equal(t, oomID, candidates[0].Entry.ID)
+	require.Equal(t, 100, candidates[0].Score)
 }
