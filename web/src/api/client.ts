@@ -285,6 +285,21 @@ export async function updateOllamaSettings(ollamaUrl: string, ollamaModel: strin
   if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to update Ollama settings'))
 }
 
+export async function fetchSystemdSettings(): Promise<Record<string, string[]>> {
+  const res = await apiFetch('/api/admin/settings/systemd')
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to fetch systemd settings'))
+  return res.json() as Promise<Record<string, string[]>>
+}
+
+export async function updateSystemdSettings(nodeName: string, units: string[]): Promise<void> {
+  const res = await apiFetch(`/api/admin/settings/systemd/${encodeURIComponent(nodeName)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ units }),
+  })
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to update systemd settings'))
+}
+
 export async function revokeInvite(id: string): Promise<void> {
   const res = await apiFetch(`/api/auth/invite/${encodeURIComponent(id)}`, { method: 'DELETE' })
   if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to revoke invite'))
