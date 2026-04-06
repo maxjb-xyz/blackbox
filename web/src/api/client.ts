@@ -258,6 +258,7 @@ export interface AdminConfig {
   file_watcher_redact_secrets: boolean
   ollama_url: string
   ollama_model: string
+  ollama_mode: 'analysis' | 'enhanced'
 }
 
 export async function fetchAdminConfig(): Promise<AdminConfig> {
@@ -276,11 +277,15 @@ export async function updateFileWatcherSettings(redactSecrets: boolean): Promise
   return res.json()
 }
 
-export async function updateOllamaSettings(ollamaUrl: string, ollamaModel: string): Promise<void> {
+export async function updateOllamaSettings(
+  ollamaUrl: string,
+  ollamaModel: string,
+  ollamaMode: 'analysis' | 'enhanced',
+): Promise<void> {
   const res = await apiFetch('/api/admin/settings/ollama', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ollama_url: ollamaUrl, ollama_model: ollamaModel }),
+    body: JSON.stringify({ ollama_url: ollamaUrl, ollama_model: ollamaModel, ollama_mode: ollamaMode }),
   })
   if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to update Ollama settings'))
 }
@@ -400,8 +405,9 @@ export interface IncidentEntryLink {
   link: {
     incident_id: string
     entry_id: string
-    role: 'trigger' | 'cause' | 'evidence' | 'recovery'
+    role: 'trigger' | 'cause' | 'evidence' | 'recovery' | 'ai_cause'
     score: number
+    reason?: string
   }
   entry: Entry
 }

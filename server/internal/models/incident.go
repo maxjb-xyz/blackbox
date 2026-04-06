@@ -19,6 +19,7 @@ type Incident struct {
 type IncidentEntry struct {
 	IncidentID string `gorm:"primaryKey;index" json:"incident_id"`
 	EntryID    string `gorm:"primaryKey;index" json:"entry_id"`
-	Role       string `json:"role"`  // "trigger" | "cause" | "evidence" | "recovery"
-	Score      int    `json:"score"` // correlation score; 0 for non-cause roles
+	Role       string `json:"role"`   // "trigger" | "cause" | "evidence" | "recovery" | "ai_cause"
+	Score      int    `json:"score"`  // correlation score; 0 for non-cause roles
+	Reason     string `json:"reason"` // empty for deterministic links; Ollama explanation for ai_cause
 }

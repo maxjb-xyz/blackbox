@@ -1035,6 +1035,7 @@ function SettingsTab() {
   const [message, setMessage] = useState<string | null>(null)
   const [ollamaURL, setOllamaURL] = useState('')
   const [ollamaModel, setOllamaModel] = useState('')
+  const [ollamaMode, setOllamaMode] = useState<'analysis' | 'enhanced'>('analysis')
   const [ollamaSaving, setOllamaSaving] = useState(false)
   const [ollamaError, setOllamaError] = useState<string | null>(null)
   const [ollamaSuccess, setOllamaSuccess] = useState(false)
@@ -1049,6 +1050,7 @@ function SettingsTab() {
       setRedactSecrets(config.file_watcher_redact_secrets)
       setOllamaURL(config.ollama_url ?? '')
       setOllamaModel(config.ollama_model ?? '')
+      setOllamaMode(config.ollama_mode ?? 'analysis')
       setInitialLoaded(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load settings')
@@ -1092,7 +1094,7 @@ function SettingsTab() {
     setOllamaError(null)
     setOllamaSuccess(false)
     try {
-      await updateOllamaSettings(ollamaURL, ollamaModel)
+      await updateOllamaSettings(ollamaURL, ollamaModel, ollamaMode)
       if (ollamaSuccessTimerRef.current !== null) {
         window.clearTimeout(ollamaSuccessTimerRef.current)
       }
@@ -1214,6 +1216,65 @@ function SettingsTab() {
                 style={{ display: 'block', width: '100%', marginTop: 4, ...FILTER_CONTROL_STYLE }}
               />
             </label>
+            {ollamaURL.trim() !== '' && ollamaModel.trim() !== '' && (
+              <div style={{ marginTop: 4 }}>
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: 'var(--muted)',
+                    marginBottom: 6,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                  }}
+                >
+                  AI Mode
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {(['analysis', 'enhanced'] as const).map(mode => {
+                    const selected = ollamaMode === mode
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => {
+                          setOllamaMode(mode)
+                          setOllamaSuccess(false)
+                        }}
+                        disabled={ollamaSaving}
+                        style={{
+                          padding: '4px 12px',
+                          fontSize: 12,
+                          border: '1px solid',
+                          borderColor: selected ? OLLAMA_MODE_ACTIVE_COLOR : 'var(--border)',
+                          background: selected ? 'rgba(168, 85, 247, 0.1)' : 'transparent',
+                          color: selected ? OLLAMA_MODE_ACTIVE_COLOR : 'var(--muted)',
+                          cursor: ollamaSaving ? 'not-allowed' : 'pointer',
+                          fontFamily: 'inherit',
+                        }}
+                      >
+                        {mode === 'analysis' ? 'AI Analysis' : 'AI-Enhanced Engine'}
+                      </button>
+                    )
+                  })}
+                </div>
+                {ollamaMode === 'enhanced' && (
+                  <div
+                    style={{
+                      marginTop: 8,
+                      fontSize: 11,
+                      color: 'var(--muted)',
+                      fontStyle: 'italic',
+                      maxWidth: 420,
+                      lineHeight: '1.5',
+                    }}
+                  >
+                    AI will analyze all recent events on the same node and suggest additional
+                    causes. Results stay separated from algorithmic correlation, and invalid
+                    entry references are discarded.
+                  </div>
+                )}
+              </div>
+            )}
             {ollamaError && <div style={{ color: 'var(--danger)', fontSize: 11 }}>{ollamaError}</div>}
             {ollamaSuccess && <div style={{ color: 'var(--success)', fontSize: 11 }}>saved</div>}
             <button
@@ -1282,6 +1343,8 @@ const FILTER_CONTROL_STYLE: CSSProperties = {
   fontFamily: 'inherit',
   outline: 'none',
 }
+
+const OLLAMA_MODE_ACTIVE_COLOR = '#a855f7'
 
 const actionBtnStyle: CSSProperties = {
   background: 'none',
