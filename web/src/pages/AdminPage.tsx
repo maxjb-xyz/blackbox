@@ -100,23 +100,42 @@ export default function AdminPage() {
   const [systemdSettings, setSystemdSettings] = useState<Record<string, string[]>>({})
   const [systemdInputs, setSystemdInputs] = useState<Record<string, string>>({})
   const [systemdSaving, setSystemdSaving] = useState<Record<string, boolean>>({})
+  const [systemdSaveError, setSystemdSaveError] = useState<Record<string, string | null>>({})
+  const [nodesError, setNodesError] = useState<string | null>(null)
+  const [systemdError, setSystemdError] = useState<string | null>(null)
+
+  const handleAddUnit = useCallback((nodeName: string) => {
+    const units = systemdSettings[nodeName] ?? []
+    const val = (systemdInputs[nodeName] ?? '').trim()
+    if (!val || units.includes(val)) return
+
+    setSystemdSettings(prev => ({ ...prev, [nodeName]: [...units, val] }))
+    setSystemdInputs(prev => ({ ...prev, [nodeName]: '' }))
+    setSystemdSaveError(prev => ({ ...prev, [nodeName]: null }))
+  }, [systemdInputs, systemdSettings])
 
   useEffect(() => {
     if (tab !== 'systemd') return
     void fetchNodes()
       .then(data => {
+        setNodesError(null)
         setNodes(data)
       })
-      .catch(() => {})
+      .catch(err => {
+        setNodesError(err instanceof Error ? err.message : 'Failed to fetch nodes')
+      })
   }, [tab])
 
   useEffect(() => {
     if (tab !== 'systemd') return
     void fetchSystemdSettings()
       .then(data => {
+        setSystemdError(null)
         setSystemdSettings(data)
       })
-      .catch(() => {})
+      .catch(err => {
+        setSystemdError(err instanceof Error ? err.message : 'Failed to fetch systemd settings')
+      })
   }, [tab])
 
   if (!isAdmin) return <Navigate to="/timeline" replace />
@@ -164,6 +183,16 @@ export default function AdminPage() {
             >
               Per-Node Systemd Units
             </div>
+            {nodesError && (
+              <div style={{ color: 'var(--danger)', fontSize: 11, marginBottom: 8 }}>
+                Failed to load nodes: {nodesError}
+              </div>
+            )}
+            {systemdError && (
+              <div style={{ color: 'var(--danger)', fontSize: 11, marginBottom: 8 }}>
+                Failed to load systemd settings: {systemdError}
+              </div>
+            )}
             {nodes.length === 0 && (
               <div style={{ color: 'var(--muted)', fontSize: 12 }}>No nodes registered yet.</div>
             )}
@@ -171,6 +200,7 @@ export default function AdminPage() {
               const units = systemdSettings[node.name] ?? []
               const inputVal = systemdInputs[node.name] ?? ''
               const saving = systemdSaving[node.name] ?? false
+              const saveError = systemdSaveError[node.name]
 
               return (
                 <div
@@ -226,11 +256,7 @@ export default function AdminPage() {
                       }
                       onKeyDown={e => {
                         if (e.key === 'Enter') {
-                          const val = inputVal.trim()
-                          if (val && !units.includes(val)) {
-                            setSystemdSettings(prev => ({ ...prev, [node.name]: [...units, val] }))
-                            setSystemdInputs(prev => ({ ...prev, [node.name]: '' }))
-                          }
+                          handleAddUnit(node.name)
                         }
                       }}
                       style={{
@@ -244,13 +270,7 @@ export default function AdminPage() {
                       }}
                     />
                     <button
-                      onClick={() => {
-                        const val = inputVal.trim()
-                        if (val && !units.includes(val)) {
-                          setSystemdSettings(prev => ({ ...prev, [node.name]: [...units, val] }))
-                          setSystemdInputs(prev => ({ ...prev, [node.name]: '' }))
-                        }
-                      }}
+                      onClick={() => handleAddUnit(node.name)}
                       style={{
                         background: 'transparent',
                         border: '1px solid var(--border)',
@@ -264,14 +284,24 @@ export default function AdminPage() {
                       Add
                     </button>
                   </div>
+                  {saveError && (
+                    <div style={{ color: 'var(--danger)', fontSize: 11, marginTop: 8 }}>
+                      Failed to save {node.name}: {saveError}
+                    </div>
+                  )}
                   <button
                     disabled={saving}
                     onClick={async () => {
+                      setSystemdSaveError(prev => ({ ...prev, [node.name]: null }))
                       setSystemdSaving(prev => ({ ...prev, [node.name]: true }))
                       try {
                         await updateSystemdSettings(node.name, systemdSettings[node.name] ?? [])
-                      } catch {
-                        // error handling: leave saving=false
+                      } catch (err) {
+                        setSystemdSaveError(prev => ({
+                          ...prev,
+                          [node.name]:
+                            err instanceof Error ? err.message : `Failed to update systemd settings for ${node.name}`,
+                        }))
                       } finally {
                         setSystemdSaving(prev => ({ ...prev, [node.name]: false }))
                       }

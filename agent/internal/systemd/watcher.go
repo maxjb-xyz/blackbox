@@ -45,6 +45,8 @@ func (s *Settings) SetUnits(units []string) {
 // Watch opens the systemd journal and emits lifecycle and OOM kill entries.
 // Reconnects on error with 5s backoff.
 func Watch(ctx context.Context, nodeName string, settings *Settings, out chan<- types.Entry) {
+	defer closeCachedJournal()
+
 	for {
 		if err := watch(ctx, nodeName, settings, out); err != nil {
 			if ctx.Err() != nil {

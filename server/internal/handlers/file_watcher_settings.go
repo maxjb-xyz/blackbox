@@ -95,7 +95,11 @@ func AgentConfig(db *gorm.DB) http.HandlerFunc {
 			return
 		}
 
-		systemdUnits := getSystemdUnitsForNode(db, nodeName)
+		systemdUnits, err := getSystemdUnitsForNode(db, nodeName)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to load agent config")
+			return
+		}
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -105,14 +109,17 @@ func AgentConfig(db *gorm.DB) http.HandlerFunc {
 	}
 }
 
-func getSystemdUnitsForNode(db *gorm.DB, nodeName string) []string {
+func getSystemdUnitsForNode(db *gorm.DB, nodeName string) ([]string, error) {
 	var config models.SystemdUnitConfig
 	if err := db.First(&config, "node_name = ?", nodeName).Error; err != nil {
-		return []string{}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return []string{}, nil
+		}
+		return nil, err
 	}
 	var units []string
 	if err := json.Unmarshal([]byte(config.Units), &units); err != nil {
-		return []string{}
+		return nil, err
 	}
-	return units
+	return units, nil
 }

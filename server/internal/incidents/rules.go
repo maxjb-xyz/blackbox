@@ -498,6 +498,9 @@ func (m *Manager) pruneSystemdEvents(key string, now time.Time) {
 
 func pruneRecentTimes(times []time.Time, now time.Time, window time.Duration) []time.Time {
 	cutoff := now.Add(-window)
+	// Reusing the backing array in place is intentional: pruneDies and pruneSystemdEvents
+	// immediately store the returned slice back into their maps, and no external references
+	// to the original slice are kept. If that changes, allocate a new slice here instead.
 	filtered := times[:0]
 	for _, t := range times {
 		if t.After(cutoff) {

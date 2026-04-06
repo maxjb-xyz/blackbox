@@ -13,3 +13,5 @@ func watch(ctx context.Context, _ string, _ *Settings, _ chan<- types.Entry) err
 	<-ctx.Done()
 	return nil
 }
+
+func closeCachedJournal() {}

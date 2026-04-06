@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"syscall"
@@ -172,16 +173,37 @@ func loadSystemdUnits(ctx context.Context, c *client.Client) []string {
 func refreshSystemdSettings(ctx context.Context, c *client.Client, settings *systemd.Settings) {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
+	prevUnits := settings.Units()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			units := loadSystemdUnits(ctx, c)
-			settings.SetUnits(units)
+			newUnits := loadSystemdUnits(ctx, c)
+			if !slices.Equal(prevUnits, newUnits) {
+				log.Printf("systemd watcher: refreshed units (%d total, added: %s, removed: %s)", len(newUnits), summarizeUnitDiff(newUnits, prevUnits), summarizeUnitDiff(prevUnits, newUnits))
+			}
+			settings.SetUnits(newUnits)
+			prevUnits = newUnits
 		}
 	}
+}
+
+func summarizeUnitDiff(current, previous []string) string {
+	var changed []string
+	for _, unit := range current {
+		if !slices.Contains(previous, unit) {
+			changed = append(changed, unit)
+		}
+	}
+	if len(changed) == 0 {
+		return "none"
+	}
+	if len(changed) > 3 {
+		return strings.Join(changed[:3], ", ") + ", ..."
+	}
+	return strings.Join(changed, ", ")
 }
 
 type nodeInfo struct {

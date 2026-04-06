@@ -64,6 +64,52 @@ func TestUpdateSystemdSettings_OverwritesExistingList(t *testing.T) {
 	require.Equal(t, []string{"nginx.service"}, units)
 }
 
+func TestUpdateSystemdSettings_RequiresNodeName(t *testing.T) {
+	database := newTestDB(t)
+	req := httptest.NewRequest(http.MethodPut, "/api/admin/settings/systemd",
+		bytes.NewBufferString(`{"units":["nginx.service"]}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handlers.UpdateSystemdSettings(database)(w, req)
+
+	require.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestUpdateSystemdSettings_RejectsInvalidJSON(t *testing.T) {
+	database := newTestDB(t)
+	req := httptest.NewRequest(http.MethodPut, "/api/admin/settings/systemd/node-01",
+		bytes.NewBufferString(`{"units":[}`))
+	req.Header.Set("Content-Type", "application/json")
+	req = withChiParam(req, "node_name", "node-01")
+	w := httptest.NewRecorder()
+
+	handlers.UpdateSystemdSettings(database)(w, req)
+
+	require.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestUpdateSystemdSettings_PersistsEmptyUnitList(t *testing.T) {
+	database := newTestDB(t)
+	req := httptest.NewRequest(http.MethodPut, "/api/admin/settings/systemd/node-01",
+		bytes.NewBufferString(`{"units":[]}`))
+	req.Header.Set("Content-Type", "application/json")
+	req = withChiParam(req, "node_name", "node-01")
+	w := httptest.NewRecorder()
+
+	handlers.UpdateSystemdSettings(database)(w, req)
+
+	require.Equal(t, http.StatusNoContent, w.Code)
+
+	var config models.SystemdUnitConfig
+	require.NoError(t, database.First(&config, "node_name = ?", "node-01").Error)
+	require.Equal(t, "[]", config.Units)
+
+	var units []string
+	require.NoError(t, json.Unmarshal([]byte(config.Units), &units))
+	require.Empty(t, units)
+}
+
 func TestGetSystemdSettings_ReturnsAllNodes(t *testing.T) {
 	database := newTestDB(t)
 	require.NoError(t, database.Create(&models.SystemdUnitConfig{NodeName: "node-01", Units: `["nginx.service"]`}).Error)

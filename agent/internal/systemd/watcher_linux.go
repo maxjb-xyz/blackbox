@@ -5,8 +5,10 @@ package systemd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	sdjournal "github.com/coreos/go-systemd/v22/sdjournal"
@@ -17,6 +19,13 @@ import (
 
 const logCaptureLines = 50
 const oomMessageSubstring = "Out of memory"
+
+var (
+	cachedJournal     *sdjournal.Journal
+	cachedJournalOnce sync.Once
+	cachedJournalErr  error
+	cachedJournalMu   sync.Mutex
+)
 
 // watch is the inner loop — opens the journal and emits entries until ctx is done or an error occurs.
 func watch(ctx context.Context, nodeName string, settings *Settings, out chan<- types.Entry) error {
@@ -130,7 +139,9 @@ func watch(ctx context.Context, nodeName string, settings *Settings, out chan<- 
 		}
 
 		if event == "failed" {
-			if snippet := captureUnitLogs(unit); len(snippet) > 0 {
+			if snippet, err := captureUnitLogs(unit); err != nil {
+				log.Printf("systemd watcher: capture logs for %s: %v", unit, err)
+			} else if len(snippet) > 0 {
 				meta["log_snippet"] = snippet
 			}
 		}
@@ -188,19 +199,29 @@ func buildOOMEntry(nodeName, message string, realtimeMicros uint64) types.Entry 
 	}
 }
 
-func captureUnitLogs(unit string) []string {
-	j, err := sdjournal.NewJournal()
+func captureUnitLogs(unit string) ([]string, error) {
+	j, err := journalForCapture()
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	defer func() { _ = j.Close() }()
 
+	cachedJournalMu.Lock()
+	defer cachedJournalMu.Unlock()
+
+	if err := j.FlushMatches(); err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := j.FlushMatches(); err != nil {
+			log.Printf("systemd watcher: flush journal matches: %v", err)
+		}
+	}()
 	if err := j.AddMatch("_SYSTEMD_UNIT=" + unit); err != nil {
-		return nil
+		return nil, err
 	}
 
 	if err := j.SeekTail(); err != nil {
-		return nil
+		return nil, err
 	}
 
 	var lines []string
@@ -221,5 +242,27 @@ func captureUnitLogs(unit string) []string {
 	for i, j := 0, len(lines)-1; i < j; i, j = i+1, j-1 {
 		lines[i], lines[j] = lines[j], lines[i]
 	}
-	return lines
+	return lines, nil
+}
+
+func journalForCapture() (*sdjournal.Journal, error) {
+	cachedJournalOnce.Do(func() {
+		cachedJournal, cachedJournalErr = sdjournal.NewJournal()
+	})
+	if cachedJournalErr != nil {
+		return nil, cachedJournalErr
+	}
+	if cachedJournal == nil {
+		return nil, errors.New("systemd journal not initialized")
+	}
+	return cachedJournal, nil
+}
+
+func closeCachedJournal() {
+	cachedJournalMu.Lock()
+	defer cachedJournalMu.Unlock()
+	if cachedJournal != nil {
+		_ = cachedJournal.Close()
+		cachedJournal = nil
+	}
 }
