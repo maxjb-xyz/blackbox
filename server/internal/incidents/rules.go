@@ -107,7 +107,7 @@ func (m *Manager) handleMonitorDown(entry types.Entry) {
 		}
 		enrichEntries = append(enrichEntries, ee)
 	}
-	m.EnrichAsync(incidentID, enrichEntries)
+	m.DispatchOllamaAsync(incidentID, enrichEntries, entry.NodeName)
 }
 
 func (m *Manager) handleMonitorUp(entry types.Entry) {

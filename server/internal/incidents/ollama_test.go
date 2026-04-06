@@ -7,6 +7,7 @@ import (
 
 	"blackbox/server/internal/db"
 	"blackbox/server/internal/models"
+	"blackbox/shared/types"
 	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/require"
 )
@@ -67,6 +68,147 @@ func TestOllamaEnricher_SetsAndClearsPendingState(t *testing.T) {
 		_, pending := meta["ai_pending"]
 		return !pending && meta["ai_analysis"] == "Root cause: bad config"
 	}, time.Second, 10*time.Millisecond)
+}
+
+func TestCorrelateAsync_WritesAICauseLinks(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	require.NoError(t, database.Create(&models.AppSetting{Key: ollamaURLKey, Value: "http://ollama.local"}).Error)
+	require.NoError(t, database.Create(&models.AppSetting{Key: ollamaModelKey, Value: "llama3.2"}).Error)
+
+	now := time.Now().UTC()
+	triggerID := ulid.Make().String()
+	candidateID := ulid.Make().String()
+
+	require.NoError(t, database.Create(&types.Entry{
+		ID:        triggerID,
+		Timestamp: now.Add(-2 * time.Minute),
+		NodeName:  "node-01",
+		Source:    "webhook",
+		Service:   "nginx",
+		Event:     "down",
+		Content:   "nginx monitor down",
+		Metadata:  `{}`,
+	}).Error)
+	require.NoError(t, database.Create(&types.Entry{
+		ID:        candidateID,
+		Timestamp: now.Add(-3 * time.Minute),
+		NodeName:  "node-01",
+		Source:    "docker",
+		Service:   "nginx",
+		Event:     "die",
+		Content:   "container exited with OOMKilled",
+		Metadata:  `{"log_snippet":["oom kill detected"]}`,
+	}).Error)
+
+	incidentID := ulid.Make().String()
+	require.NoError(t, database.Create(&models.Incident{
+		ID:         incidentID,
+		OpenedAt:   now,
+		Status:     "open",
+		Confidence: "confirmed",
+		Title:      "nginx down",
+		Services:   `["nginx"]`,
+		NodeNames:  `["node-01"]`,
+		TriggerID:  triggerID,
+		Metadata:   `{}`,
+	}).Error)
+	require.NoError(t, database.Create(&models.IncidentEntry{
+		IncidentID: incidentID,
+		EntryID:    triggerID,
+		Role:       "trigger",
+		Score:      0,
+	}).Error)
+
+	originalCall := callOllamaCorrelateFunc
+	originalDelay := correlateDelay
+	callOllamaCorrelateFunc = func(baseURL, model, prompt string) (string, error) {
+		return `analysis wrapper {"summary":"nginx crashed due to resource exhaustion","causes":[{"entry_id":"` + candidateID + `","confidence":0.85,"reason":"Container exited before the outage"}]} done`, nil
+	}
+	correlateDelay = 0
+	defer func() {
+		callOllamaCorrelateFunc = originalCall
+		correlateDelay = originalDelay
+	}()
+
+	enricher := NewOllamaEnricher(database, nil)
+	enricher.CorrelateAsync(incidentID, nil, "node-01")
+
+	require.Eventually(t, func() bool {
+		var link models.IncidentEntry
+		if err := database.Where("incident_id = ? AND entry_id = ?", incidentID, candidateID).First(&link).Error; err != nil {
+			return false
+		}
+		return link.Role == "ai_cause" && link.Score == 85 && link.Reason == "Container exited before the outage"
+	}, time.Second, 10*time.Millisecond)
+
+	var inc models.Incident
+	require.NoError(t, database.First(&inc, "id = ?", incidentID).Error)
+	meta := parseIncidentTestMetadata(t, inc.Metadata)
+	require.Equal(t, "nginx crashed due to resource exhaustion", meta["ai_analysis"])
+}
+
+func TestCorrelateAsync_DropsHallucinatedEntryIDs(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	require.NoError(t, database.Create(&models.AppSetting{Key: ollamaURLKey, Value: "http://ollama.local"}).Error)
+	require.NoError(t, database.Create(&models.AppSetting{Key: ollamaModelKey, Value: "llama3.2"}).Error)
+
+	now := time.Now().UTC()
+	incidentID := ulid.Make().String()
+	realID := ulid.Make().String()
+	fakeID := ulid.Make().String()
+
+	require.NoError(t, database.Create(&types.Entry{
+		ID:        realID,
+		Timestamp: now.Add(-time.Minute),
+		NodeName:  "node-01",
+		Source:    "docker",
+		Service:   "nginx",
+		Event:     "die",
+		Content:   "real entry",
+		Metadata:  `{}`,
+	}).Error)
+	require.NoError(t, database.Create(&models.Incident{
+		ID:         incidentID,
+		OpenedAt:   now,
+		Status:     "open",
+		Confidence: "suspected",
+		Title:      "nginx crash",
+		Services:   `["nginx"]`,
+		NodeNames:  `["node-01"]`,
+		Metadata:   `{}`,
+	}).Error)
+
+	originalCall := callOllamaCorrelateFunc
+	originalDelay := correlateDelay
+	callOllamaCorrelateFunc = func(baseURL, model, prompt string) (string, error) {
+		return `{"summary":"something","causes":[{"entry_id":"` + fakeID + `","confidence":0.9,"reason":"ghost"}]}`, nil
+	}
+	correlateDelay = 0
+	defer func() {
+		callOllamaCorrelateFunc = originalCall
+		correlateDelay = originalDelay
+	}()
+
+	enricher := NewOllamaEnricher(database, nil)
+	enricher.CorrelateAsync(incidentID, nil, "node-01")
+
+	require.Eventually(t, func() bool {
+		var inc models.Incident
+		if err := database.First(&inc, "id = ?", incidentID).Error; err != nil {
+			return false
+		}
+		meta := parseIncidentTestMetadata(t, inc.Metadata)
+		_, pending := meta["ai_pending"]
+		return !pending
+	}, time.Second, 10*time.Millisecond)
+
+	var links []models.IncidentEntry
+	require.NoError(t, database.Where("incident_id = ? AND role = ?", incidentID, "ai_cause").Find(&links).Error)
+	require.Empty(t, links)
 }
 
 func parseIncidentTestMetadata(t *testing.T, raw string) map[string]interface{} {
