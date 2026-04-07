@@ -7,6 +7,9 @@ WORKDIR /app
 ARG VERSION=dev
 ARG COMMIT=unknown
 
+# hadolint ignore=DL3008
+# NOTE: Packages are intentionally unpinned for flexibility with Debian updates.
+# For reproducible builds, switch to pinning versions or a package lockfile and update this comment.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends build-essential pkg-config libsystemd-dev && \
     rm -rf /var/lib/apt/lists/*
@@ -33,5 +36,5 @@ RUN apt-get update && \
     useradd --no-create-home --shell /bin/false --uid 65532 nonroot
 
 COPY --from=go-builder /blackbox-agent /blackbox-agent
-COPY agent/entrypoint.sh /entrypoint.sh
+COPY --chmod=755 agent/entrypoint.sh /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
