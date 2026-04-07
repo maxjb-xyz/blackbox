@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+﻿import { useCallback, useEffect, useRef, useState } from 'react'
 import { AlertTriangle, CheckCircle, ChevronDown, ChevronRight } from 'lucide-react'
 import {
   fetchIncident,
@@ -35,7 +35,7 @@ function statusLabel(inc: Incident) {
 }
 
 function formatTs(ts?: string | null) {
-  const dash = '—'
+  const dash = '\u2014'
   if (!ts) return dash
   const d = new Date(ts)
   if (Number.isNaN(d.getTime())) return dash
@@ -178,7 +178,7 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
         const d = await fetchIncident(incident.id)
         setDetail(d)
       } catch {
-        // ignore ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â detail just won't show
+        // ignore errors; detail just won't show
       } finally {
         setLoadingDetail(false)
       }
@@ -223,7 +223,7 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
           {services.join(', ')}
           {nodes.length > 0 && (
             <span style={{ color: 'var(--muted)', marginLeft: 6 }}>
-              ÃƒÆ’Ã¢â‚¬Å¡Ã‚Â· {nodes.join(', ')}
+              {'\u00B7'} {nodes.join(', ')}
             </span>
           )}
         </span>
@@ -235,7 +235,7 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
         )}
         <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 12, whiteSpace: 'nowrap' }}>
           {formatTs(incident.opened_at)}
-          {' ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ '}
+          {' \u2192 '}
           {incident.status === 'resolved'
             ? `${formatTs(incident.resolved_at)} (${duration(incident.opened_at, incident.resolved_at)})`
             : `ongoing (${duration(incident.opened_at)})`}
@@ -287,7 +287,7 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
                     >
                       <span style={{ color: roleColor(link.role) }}>
                         {link.role.toUpperCase()}
-                        {link.role === 'cause' && detailIncident.root_cause_id === link.entry_id && ' ÃƒÆ’Ã‚Â¢Ãƒâ€¹Ã…â€œÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦'}
+                        {link.role === 'cause' && detailIncident.root_cause_id === link.entry_id && ' \u2605'}
                       </span>
                       <span style={{ color: 'var(--muted)' }}>{formatTs(entry.timestamp)}</span>
                       <span style={{ color: 'var(--muted)' }}>{entry.source}</span>
@@ -385,7 +385,7 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
                 return (
                   <div style={{ marginBottom: 8 }}>
                     <div style={{ color: 'var(--muted)', marginBottom: 4, letterSpacing: '0.1em' }}>
-                      LOG SNIPPET ({entryWithLog.entry.node_name} ÃƒÆ’Ã¢â‚¬Å¡Ã‚Â· last {entryWithLog.logLines.length} lines)
+                      LOG SNIPPET ({entryWithLog.entry.node_name} {'\u00B7'} last {entryWithLog.logLines.length} lines)
                     </div>
                     <div
                       style={{
@@ -410,7 +410,7 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
                     AI ANALYSIS
                     {typeof meta.ai_model === 'string' && (
                       <span style={{ color: 'var(--accent)', marginLeft: 8 }}>
-                        [AI ÃƒÆ’Ã¢â‚¬Å¡Ã‚Â· {meta.ai_model}]
+                        [AI {'\u00B7'} {meta.ai_model}]
                       </span>
                     )}
                   </div>
@@ -433,7 +433,7 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
                     AI ANALYSIS
                     {typeof meta.ai_model === 'string' && (
                       <span style={{ color: 'var(--accent)', marginLeft: 8 }}>
-                        [AI ÃƒÆ’Ã¢â‚¬Å¡Ã‚Â· {meta.ai_model}]
+                        [AI {'\u00B7'} {meta.ai_model}]
                       </span>
                     )}
                   </div>
