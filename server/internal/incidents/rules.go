@@ -18,6 +18,7 @@ import (
 const crashLoopWindow = 5 * time.Minute
 const crashLoopThreshold = 3
 const suspectedAutoCloseTTL = 10 * time.Minute
+const dockerStabilityTTL = 30 * time.Second
 const systemdStabilityTTL = 2 * time.Minute
 const watchtowerPendingTTL = 5 * time.Minute
 
@@ -48,7 +49,7 @@ func (m *Manager) handleMonitorDown(entry types.Entry) {
 	// If a suspected incident is already open for this service (any node), upgrade it.
 	for key, incidentID := range m.openIncidents {
 		if strings.HasPrefix(key, prefix) {
-			delete(m.pendingSystemdRecover, key)
+			delete(m.pendingRecover, key)
 			m.upgradeToConfirmed(incidentID, entry)
 			return
 		}
@@ -118,7 +119,7 @@ func (m *Manager) handleMonitorUp(entry types.Entry) {
 		incidentID := m.openIncidents[key]
 		if _, ok := handled[incidentID]; ok {
 			delete(m.openIncidents, key)
-			delete(m.pendingSystemdRecover, key)
+			delete(m.pendingRecover, key)
 			continue
 		}
 		handled[incidentID] = struct{}{}
@@ -133,7 +134,7 @@ func (m *Manager) handleMonitorUp(entry types.Entry) {
 			continue
 		}
 		delete(m.openIncidents, key)
-		delete(m.pendingSystemdRecover, key)
+		delete(m.pendingRecover, key)
 		var updated models.Incident
 		if err := m.db.First(&updated, "id = ?", incidentID).Error; err != nil {
 			log.Printf("incidents: reload resolved incident %s: %v", incidentID, err)
@@ -151,6 +152,7 @@ func (m *Manager) handleContainerExit(entry types.Entry) {
 	m.pruneDies(key, entry.Timestamp)
 
 	if incidentID, ok := m.openIncidents[key]; ok {
+		delete(m.pendingRecover, key)
 		m.linkEntry(incidentID, entry.ID, "evidence", 0)
 		m.broadcastUpdated(incidentID)
 		return
@@ -186,27 +188,19 @@ func (m *Manager) handleContainerStart(entry types.Entry) {
 		log.Printf("incidents: load incident %s: %v", incidentID, err)
 		return
 	}
+	if inc.Status != "open" {
+		return
+	}
 	if inc.Confidence != "suspected" {
+		m.linkEntry(incidentID, entry.ID, "evidence", 0)
+		m.broadcastUpdated(incidentID)
 		return
 	}
 
-	m.linkEntry(incidentID, entry.ID, "recovery", 0)
-	if err := m.db.Model(&models.Incident{}).Where("id = ?", incidentID).Updates(map[string]interface{}{
-		"status":      "resolved",
-		"resolved_at": entry.Timestamp,
-	}).Error; err != nil {
-		log.Printf("incidents: resolve suspected incident %s: %v", incidentID, err)
-		return
+	m.pendingRecover[key] = pendingRecovery{
+		entry:    entry,
+		deadline: entry.Timestamp.Add(dockerStabilityTTL),
 	}
-
-	var updated models.Incident
-	if err := m.db.First(&updated, "id = ?", incidentID).Error; err != nil {
-		log.Printf("incidents: reload resolved incident %s: %v", incidentID, err)
-		return
-	}
-	delete(m.openIncidents, key)
-	delete(m.pendingSystemdRecover, key)
-	m.broadcastResolved(updated)
 }
 
 func (m *Manager) handleWatchtowerUpdate(entry types.Entry) {
@@ -236,7 +230,7 @@ func (m *Manager) handleSystemdInstability(entry types.Entry) {
 	}
 
 	if incidentID, ok := m.openIncidents[key]; ok {
-		delete(m.pendingSystemdRecover, key)
+		delete(m.pendingRecover, key)
 		m.linkEntry(incidentID, entry.ID, "evidence", 0)
 		m.broadcastUpdated(incidentID)
 		return
@@ -265,11 +259,16 @@ func (m *Manager) handleSystemdStarted(entry types.Entry) {
 		log.Printf("incidents: load incident %s: %v", incidentID, err)
 		return
 	}
+	if inc.Status != "open" {
+		return
+	}
 	if inc.Confidence != "suspected" {
+		m.linkEntry(incidentID, entry.ID, "evidence", 0)
+		m.broadcastUpdated(incidentID)
 		return
 	}
 
-	m.pendingSystemdRecover[key] = pendingSystemdRecovery{
+	m.pendingRecover[key] = pendingRecovery{
 		entry:    entry,
 		deadline: entry.Timestamp.Add(systemdStabilityTTL),
 	}
@@ -392,7 +391,7 @@ func sweepExpiredSuspectedLocked(m *Manager) {
 		return
 	}
 	for _, inc := range stale {
-		if m.hasPendingSystemdRecovery(inc.ID) {
+		if m.hasPendingRecovery(inc.ID) {
 			continue
 		}
 		meta := map[string]interface{}{"auto_closed": true}
@@ -417,7 +416,7 @@ func sweepExpiredSuspectedLocked(m *Manager) {
 		for key, id := range m.openIncidents {
 			if id == inc.ID {
 				delete(m.openIncidents, key)
-				delete(m.pendingSystemdRecover, key)
+				delete(m.pendingRecover, key)
 				break
 			}
 		}
@@ -429,11 +428,11 @@ func sweepExpiredSuspectedLocked(m *Manager) {
 		m.broadcastResolved(updated)
 	}
 	sweepExpiredPendingWTLocked(m, now)
-	sweepExpiredSystemdRecoveriesLocked(m, now)
+	sweepExpiredRecoveriesLocked(m, now)
 }
 
-func (m *Manager) hasPendingSystemdRecovery(incidentID string) bool {
-	for key, pending := range m.pendingSystemdRecover {
+func (m *Manager) hasPendingRecovery(incidentID string) bool {
+	for key, pending := range m.pendingRecover {
 		if pending.entry.ID == "" {
 			continue
 		}
@@ -452,26 +451,26 @@ func sweepExpiredPendingWTLocked(m *Manager, now time.Time) {
 	}
 }
 
-func sweepExpiredSystemdRecoveriesLocked(m *Manager, now time.Time) {
-	for key, pending := range m.pendingSystemdRecover {
+func sweepExpiredRecoveriesLocked(m *Manager, now time.Time) {
+	for key, pending := range m.pendingRecover {
 		if pending.deadline.After(now) {
 			continue
 		}
 
 		incidentID, ok := m.openIncidents[key]
 		if !ok {
-			delete(m.pendingSystemdRecover, key)
+			delete(m.pendingRecover, key)
 			continue
 		}
 
 		var inc models.Incident
 		if err := m.db.First(&inc, "id = ?", incidentID).Error; err != nil {
 			log.Printf("incidents: load systemd recovery incident %s: %v", incidentID, err)
-			delete(m.pendingSystemdRecover, key)
+			delete(m.pendingRecover, key)
 			continue
 		}
-		if inc.Status != "open" || inc.Confidence != "suspected" {
-			delete(m.pendingSystemdRecover, key)
+		if inc.Status != "open" {
+			delete(m.pendingRecover, key)
 			continue
 		}
 
@@ -484,7 +483,7 @@ func sweepExpiredSystemdRecoveriesLocked(m *Manager, now time.Time) {
 			continue
 		}
 
-		delete(m.pendingSystemdRecover, key)
+		delete(m.pendingRecover, key)
 		delete(m.openIncidents, key)
 
 		var updated models.Incident

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"blackbox/server/internal/hub"
+	"blackbox/server/internal/models"
 	"blackbox/shared/types"
 	"gorm.io/gorm"
 )
@@ -19,9 +20,9 @@ type pendingWatchtower struct {
 	deadline time.Time
 }
 
-// pendingSystemdRecovery tracks a started event that may resolve a suspected
-// systemd incident once the unit stays healthy for a short window.
-type pendingSystemdRecovery struct {
+// pendingRecovery tracks a recovery signal that may resolve an open
+// incident once the service stays healthy for a short window.
+type pendingRecovery struct {
 	entry    types.Entry
 	deadline time.Time
 }
@@ -32,12 +33,12 @@ type Manager struct {
 	hub      *hub.Hub
 	enricher *OllamaEnricher
 
-	mu                    sync.Mutex
-	openIncidents         map[string]string                 // "service|node" -> incidentID
-	pendingWT             map[string]pendingWatchtower      // normalizedService -> pending (watchtower has no node)
-	pendingSystemdRecover map[string]pendingSystemdRecovery // "service|node" -> started event waiting for stability
-	recentDies            map[string][]time.Time            // "service|node" -> die timestamps
-	recentSystemdEvents   map[string][]time.Time            // "service|node" -> failed/restart timestamps
+	mu                  sync.Mutex
+	openIncidents       map[string]string            // "service|node" -> incidentID
+	pendingWT           map[string]pendingWatchtower // normalizedService -> pending (watchtower has no node)
+	pendingRecover      map[string]pendingRecovery   // "service|node" -> recovery event waiting for stability
+	recentDies          map[string][]time.Time       // "service|node" -> die timestamps
+	recentSystemdEvents map[string][]time.Time       // "service|node" -> failed/restart timestamps
 }
 
 // incidentKey returns the composite lookup key for open incidents and recent-die
@@ -49,13 +50,13 @@ func incidentKey(svc, node string) string {
 // NewManager creates a Manager. Call Run in a goroutine.
 func NewManager(db *gorm.DB, h *hub.Hub) *Manager {
 	m := &Manager{
-		db:                    db,
-		hub:                   h,
-		openIncidents:         make(map[string]string),
-		pendingWT:             make(map[string]pendingWatchtower),
-		pendingSystemdRecover: make(map[string]pendingSystemdRecovery),
-		recentDies:            make(map[string][]time.Time),
-		recentSystemdEvents:   make(map[string][]time.Time),
+		db:                  db,
+		hub:                 h,
+		openIncidents:       make(map[string]string),
+		pendingWT:           make(map[string]pendingWatchtower),
+		pendingRecover:      make(map[string]pendingRecovery),
+		recentDies:          make(map[string][]time.Time),
+		recentSystemdEvents: make(map[string][]time.Time),
 	}
 	m.enricher = NewOllamaEnricher(db, m.broadcastUpdated)
 	return m
@@ -71,6 +72,10 @@ func NewChannel() chan types.Entry {
 func (m *Manager) Run(ctx context.Context, ch <-chan types.Entry) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
+
+	m.mu.Lock()
+	m.rebuildOpenIncidentsLocked()
+	m.mu.Unlock()
 
 	for {
 		select {
@@ -92,4 +97,24 @@ func (m *Manager) sweepExpiredSuspected() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	sweepExpiredSuspectedLocked(m)
+}
+
+func (m *Manager) rebuildOpenIncidentsLocked() {
+	m.openIncidents = make(map[string]string)
+
+	var incidents []models.Incident
+	if err := m.db.Where("status = ?", "open").Order("opened_at ASC, id ASC").Find(&incidents).Error; err != nil {
+		return
+	}
+
+	for _, inc := range incidents {
+		services := uniqueStrings(parseJSONStringSlice(inc.Services))
+		if len(services) == 0 {
+			continue
+		}
+		nodes := preferNonWebhookValues(parseJSONStringSlice(inc.NodeNames))
+		for _, service := range services {
+			m.registerOpenIncidentKeys(inc.ID, service, nodes)
+		}
+	}
 }

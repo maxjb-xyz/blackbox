@@ -148,6 +148,128 @@ func TestConfirmedIncident_ResolveOnUp(t *testing.T) {
 	assert.NotNil(t, incident.ResolvedAt)
 }
 
+func TestConfirmedIncident_DockerStartAddsEvidenceButDoesNotResolve(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	now := time.Now().UTC()
+	causeEntry := makeEntryAt("radarr", "docker", "stop", `{}`, now.Add(-30*time.Second))
+	causeEntry.NodeName = "media-node"
+	require.NoError(t, database.Create(&causeEntry).Error)
+
+	mgr := NewManager(database, hub.New())
+	ch := NewChannel()
+	go mgr.Run(t.Context(), ch)
+
+	downEntry := makeEntryAt("radarr", "webhook", "down", `{"monitor":"radarr"}`, now)
+	downEntry.NodeName = "webhook"
+	require.NoError(t, database.Create(&downEntry).Error)
+	ch <- downEntry
+
+	var incident models.Incident
+	require.Eventually(t, func() bool {
+		if err := database.Where("status = ? AND confidence = ?", "open", "confirmed").First(&incident).Error; err != nil {
+			return false
+		}
+		return incident.TriggerID == downEntry.ID
+	}, time.Second, 10*time.Millisecond)
+
+	startEntry := makeEntryAt("radarr", "docker", "start", `{}`, now.Add(15*time.Second))
+	startEntry.NodeName = "media-node"
+	require.NoError(t, database.Create(&startEntry).Error)
+	ch <- startEntry
+
+	require.Eventually(t, func() bool {
+		var link models.IncidentEntry
+		if err := database.Where("incident_id = ? AND entry_id = ?", incident.ID, startEntry.ID).First(&link).Error; err != nil {
+			return false
+		}
+		return link.Role == "evidence"
+	}, time.Second, 10*time.Millisecond)
+
+	require.Never(t, func() bool {
+		if err := database.First(&incident, "id = ?", incident.ID).Error; err != nil {
+			return false
+		}
+		return incident.Status == "resolved"
+	}, 150*time.Millisecond, 25*time.Millisecond)
+}
+
+func TestSuspectedIncident_DockerExitDuringRecoveryWindow_KeepsIncidentOpen(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	now := time.Now().UTC()
+	mgr := NewManager(database, hub.New())
+	ch := NewChannel()
+	go mgr.Run(t.Context(), ch)
+
+	dieEntry := makeEntryAt("radarr", "docker", "die", `{"exitCode":137}`, now)
+	dieEntry.NodeName = "media-node"
+	require.NoError(t, database.Create(&dieEntry).Error)
+	ch <- dieEntry
+
+	var incident models.Incident
+	require.Eventually(t, func() bool {
+		if err := database.Where("status = ? AND confidence = ?", "open", "suspected").First(&incident).Error; err != nil {
+			return false
+		}
+		return incident.TriggerID == dieEntry.ID
+	}, time.Second, 10*time.Millisecond)
+
+	startEntry := makeEntryAt("radarr", "docker", "start", `{}`, now.Add(15*time.Second))
+	startEntry.NodeName = "media-node"
+	require.NoError(t, database.Create(&startEntry).Error)
+	ch <- startEntry
+
+	stopEntry := makeEntryAt("radarr", "docker", "stop", `{"exitCode":1}`, startEntry.Timestamp.Add(10*time.Second))
+	stopEntry.NodeName = "media-node"
+	require.NoError(t, database.Create(&stopEntry).Error)
+	ch <- stopEntry
+
+	mgr.mu.Lock()
+	sweepExpiredRecoveriesLocked(mgr, startEntry.Timestamp.Add(dockerStabilityTTL+time.Second))
+	mgr.mu.Unlock()
+
+	require.NoError(t, database.First(&incident, "id = ?", incident.ID).Error)
+	assert.Equal(t, "open", incident.Status)
+	assert.Nil(t, incident.ResolvedAt)
+}
+
+func TestConfirmedIncident_ResolveOnUpAfterManagerRestart(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	now := time.Now().UTC()
+	incident := models.Incident{
+		ID:         ulid.Make().String(),
+		OpenedAt:   now.Add(-5 * time.Minute),
+		Status:     "open",
+		Confidence: "confirmed",
+		Title:      "nginx - monitor down",
+		Services:   `["nginx"]`,
+		NodeNames:  `["node-01"]`,
+		Metadata:   "{}",
+	}
+	require.NoError(t, database.Create(&incident).Error)
+
+	mgr := NewManager(database, hub.New())
+	ch := NewChannel()
+	go mgr.Run(t.Context(), ch)
+
+	upEntry := makeEntryAt("nginx", "webhook", "up", `{"monitor":"nginx"}`, now)
+	upEntry.NodeName = "webhook"
+	require.NoError(t, database.Create(&upEntry).Error)
+	ch <- upEntry
+
+	require.Eventually(t, func() bool {
+		if err := database.First(&incident, "id = ?", incident.ID).Error; err != nil {
+			return false
+		}
+		return incident.Status == "resolved" && incident.ResolvedAt != nil
+	}, time.Second, 10*time.Millisecond)
+}
+
 func TestSuspectedIncident_OpensOnNumericExitCode(t *testing.T) {
 	database, err := db.Init(":memory:")
 	require.NoError(t, err)
@@ -310,7 +432,7 @@ func TestSystemdStarted_ResolvesAfterStabilityWindow(t *testing.T) {
 	require.NoError(t, database.Create(&started).Error)
 	mgr.processEntry(started)
 
-	sweepExpiredSystemdRecoveriesLocked(mgr, started.Timestamp.Add(systemdStabilityTTL+time.Second))
+	sweepExpiredRecoveriesLocked(mgr, started.Timestamp.Add(systemdStabilityTTL+time.Second))
 
 	var incident models.Incident
 	require.NoError(t, database.First(&incident).Error)
@@ -320,6 +442,53 @@ func TestSystemdStarted_ResolvesAfterStabilityWindow(t *testing.T) {
 	var recovery models.IncidentEntry
 	require.NoError(t, database.Where("incident_id = ? AND role = ?", incident.ID, "recovery").First(&recovery).Error)
 	assert.Equal(t, started.ID, recovery.EntryID)
+}
+
+func TestConfirmedSystemdStartedAddsEvidenceButDoesNotResolve(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	now := time.Now().UTC()
+	causeEntry := makeEntryAt("nginx.service", "systemd", "failed", `{}`, now.Add(-30*time.Second))
+	causeEntry.NodeName = "node-01"
+	require.NoError(t, database.Create(&causeEntry).Error)
+
+	mgr := NewManager(database, hub.New())
+	ch := NewChannel()
+	go mgr.Run(t.Context(), ch)
+
+	downEntry := makeEntryAt("nginx.service", "webhook", "down", `{"monitor":"nginx.service"}`, now)
+	downEntry.NodeName = "webhook"
+	require.NoError(t, database.Create(&downEntry).Error)
+	ch <- downEntry
+
+	var incident models.Incident
+	require.Eventually(t, func() bool {
+		if err := database.Where("status = ? AND confidence = ?", "open", "confirmed").First(&incident).Error; err != nil {
+			return false
+		}
+		return incident.TriggerID == downEntry.ID
+	}, time.Second, 10*time.Millisecond)
+
+	started := makeEntryAt("nginx.service", "systemd", "started", `{}`, now.Add(time.Second))
+	started.NodeName = "node-01"
+	require.NoError(t, database.Create(&started).Error)
+	ch <- started
+
+	require.Eventually(t, func() bool {
+		var link models.IncidentEntry
+		if err := database.Where("incident_id = ? AND entry_id = ?", incident.ID, started.ID).First(&link).Error; err != nil {
+			return false
+		}
+		return link.Role == "evidence"
+	}, time.Second, 10*time.Millisecond)
+
+	require.Never(t, func() bool {
+		if err := database.First(&incident, "id = ?", incident.ID).Error; err != nil {
+			return false
+		}
+		return incident.Status == "resolved"
+	}, 150*time.Millisecond, 25*time.Millisecond)
 }
 
 func TestSystemdFailureDuringRecoveryWindow_KeepsIncidentOpen(t *testing.T) {
@@ -341,7 +510,7 @@ func TestSystemdFailureDuringRecoveryWindow_KeepsIncidentOpen(t *testing.T) {
 	require.NoError(t, database.Create(&restarted).Error)
 	mgr.processEntry(restarted)
 
-	sweepExpiredSystemdRecoveriesLocked(mgr, started.Timestamp.Add(systemdStabilityTTL+time.Second))
+	sweepExpiredRecoveriesLocked(mgr, started.Timestamp.Add(systemdStabilityTTL+time.Second))
 
 	var incident models.Incident
 	require.NoError(t, database.First(&incident).Error)
