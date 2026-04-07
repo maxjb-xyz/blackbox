@@ -6,10 +6,15 @@ set -e
 
 # Helper function to add unique GID to GROUPS_ARG
 add_unique_gid() {
+    candidate=$(printf '%s' "$1" | tr -d '[:space:]')
+    if [ -z "$candidate" ]; then
+        return 0
+    fi
+
     if [ -z "$GROUPS_ARG" ]; then
-        GROUPS_ARG="$1"
-    elif ! echo "$GROUPS_ARG" | grep -qE "(^|,)$1(,|$)"; then
-        GROUPS_ARG="$GROUPS_ARG,$1"
+        GROUPS_ARG="$candidate"
+    elif ! echo "$GROUPS_ARG" | grep -qE "(^|,)$candidate(,|$)"; then
+        GROUPS_ARG="$GROUPS_ARG,$candidate"
     fi
 }
 

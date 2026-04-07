@@ -580,10 +580,8 @@ The database is automatically migrated on startup — no manual schema managemen
 - [x] Support tracking systemd services
 - [ ] Timeline UI polish and interaction improvements
 - [ ] Grafana data source plugin
-- [ ] Optional AI-Enhanced correlation engine
 - [ ] Dynamic notifications to Discord
 - [ ] Mobile-friendly view
-- [ ] Dynamic notifications to Discord
 
 ---
 

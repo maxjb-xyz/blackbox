@@ -31,10 +31,11 @@ RUN cd agent && \
 # Stage 2: Runtime image with libsystemd available for journal access
 FROM debian:bookworm-slim
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ca-certificates libsystemd0 && \
+    apt-get install -y --no-install-recommends ca-certificates libsystemd0 util-linux && \
     rm -rf /var/lib/apt/lists/* && \
     useradd --no-create-home --shell /bin/false --uid 65532 nonroot
 
 COPY --from=go-builder /blackbox-agent /blackbox-agent
 COPY --chmod=755 agent/entrypoint.sh /entrypoint.sh
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD ["/bin/sh", "-c", "kill -0 1"]
 ENTRYPOINT ["/entrypoint.sh"]
