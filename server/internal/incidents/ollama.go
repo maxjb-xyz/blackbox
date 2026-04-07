@@ -374,8 +374,9 @@ func correlationScopeNodes(rawNodeNames string, detEntries []types.Entry, fallba
 	for _, entry := range detEntries {
 		nodes = append(nodes, entry.NodeName)
 	}
-	if len(nodes) == 0 {
-		nodes = append(nodes, strings.TrimSpace(fallbackNode))
+	fallbackNode = strings.TrimSpace(fallbackNode)
+	if len(nodes) == 0 && fallbackNode != "" {
+		nodes = append(nodes, fallbackNode)
 	}
 
 	return preferNonWebhookValues(nodes)

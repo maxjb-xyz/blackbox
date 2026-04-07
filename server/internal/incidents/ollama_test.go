@@ -367,6 +367,11 @@ func TestCorrelateAsync_DropsHallucinatedEntryIDs(t *testing.T) {
 	require.Empty(t, links)
 }
 
+func TestCorrelationScopeNodes_DropsEmptyFallback(t *testing.T) {
+	require.Empty(t, correlationScopeNodes("", nil, "   "))
+	require.Equal(t, []string{"node-01"}, correlationScopeNodes("", nil, " node-01 "))
+}
+
 func parseIncidentTestMetadata(t *testing.T, raw string) map[string]interface{} {
 	t.Helper()
 	meta := make(map[string]interface{})
