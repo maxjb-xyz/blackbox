@@ -1,6 +1,7 @@
 package db_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -149,13 +150,13 @@ func TestInit_MigratesInviteCodeOIDCStateAndOIDCConfig(t *testing.T) {
 	assert.NoError(t, database.Create(&invite).Error)
 
 	state := models.OIDCState{
-		ID:        "01STATEID00000000",
-		State:     "randomstate123456789012345678901234567890123456789012345678901234",
-		Nonce:     "randomnonce123456789012345678901234567890123456789012345678901234",
+		ID:         "01STATEID00000000",
+		State:      "randomstate123456789012345678901234567890123456789012345678901234",
+		Nonce:      "randomnonce123456789012345678901234567890123456789012345678901234",
 		ProviderID: "01PROVIDERID000000",
 		InviteCode: "invite-code-123",
-		ExpiresAt: time.Now().Add(10 * time.Minute),
-		CreatedAt: time.Now(),
+		ExpiresAt:  time.Now().Add(10 * time.Minute),
+		CreatedAt:  time.Now(),
 	}
 	assert.NoError(t, database.Create(&state).Error)
 
@@ -272,4 +273,45 @@ func TestInit_ReturnsHelpfulErrorForReadOnlyDirectory(t *testing.T) {
 	assert.Contains(t, err.Error(), "database directory")
 	assert.Contains(t, err.Error(), "uid=")
 	assert.Contains(t, err.Error(), "gid=")
+}
+
+func TestStartOIDCStateSweeper_DeletesExpiredStatesImmediately(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+	closeDBOnCleanup(t, database)
+
+	expired := models.OIDCState{
+		ID:         "01STATEEXPIRED0000",
+		State:      "expiredstate1234567890123456789012345678901234567890123456789012",
+		Nonce:      "expirednonce1234567890123456789012345678901234567890123456789012",
+		ProviderID: "01PROVIDEREXPIRED0",
+		ExpiresAt:  time.Now().Add(-time.Minute),
+		CreatedAt:  time.Now().Add(-2 * time.Minute),
+	}
+	fresh := models.OIDCState{
+		ID:         "01STATEFRESH000000",
+		State:      "freshstate123456789012345678901234567890123456789012345678901234",
+		Nonce:      "freshnonce123456789012345678901234567890123456789012345678901234",
+		ProviderID: "01PROVIDERFRESH000",
+		ExpiresAt:  time.Now().Add(time.Hour),
+		CreatedAt:  time.Now(),
+	}
+	require.NoError(t, database.Create(&expired).Error)
+	require.NoError(t, database.Create(&fresh).Error)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	db.StartOIDCStateSweeper(ctx, database)
+
+	require.Eventually(t, func() bool {
+		var expiredCount int64
+		if err := database.Model(&models.OIDCState{}).Where("id = ?", expired.ID).Count(&expiredCount).Error; err != nil {
+			return false
+		}
+		return expiredCount == 0
+	}, time.Second, 10*time.Millisecond)
+
+	var freshCount int64
+	require.NoError(t, database.Model(&models.OIDCState{}).Where("id = ?", fresh.ID).Count(&freshCount).Error)
+	assert.Equal(t, int64(1), freshCount)
 }

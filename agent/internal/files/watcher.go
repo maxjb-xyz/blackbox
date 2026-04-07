@@ -257,9 +257,6 @@ func serviceFromPath(filePath string, roots []watchRoot) string {
 }
 
 func slashClean(path string) string {
-	if path == "" {
-		return filepath.ToSlash(filepath.Clean(path))
-	}
 	return filepath.ToSlash(filepath.Clean(path))
 }
 

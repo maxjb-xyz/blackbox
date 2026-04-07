@@ -3,10 +3,13 @@ package main
 import (
 	"context"
 	"embed"
+	"errors"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"blackbox/server/internal/auth"
@@ -33,6 +36,8 @@ const defaultDBPath = "/data/blackbox.db"
 
 func main() {
 	log.Printf("Blackbox Server %s (%s) starting", Version, Commit)
+	rootCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
@@ -55,11 +60,11 @@ func main() {
 		log.Fatalf("database init failed: %v", err)
 	}
 	log.Printf("database initialized at %s", dbPath)
-	db.StartOIDCStateSweeper(database)
+	db.StartOIDCStateSweeper(rootCtx, database)
 	eventHub := hub.New()
 	incidentCh := incidents.NewChannel()
 	incidentMgr := incidents.NewManager(database, eventHub)
-	go incidentMgr.Run(context.Background(), incidentCh)
+	go incidentMgr.Run(rootCtx, incidentCh)
 
 	registry := auth.NewOIDCRegistry(database)
 
@@ -98,10 +103,16 @@ func main() {
 		const retryInterval = 10 * time.Second
 		lastOIDCRegistryStatus := oidcRegistryStatusUnknown
 		for attempt := 1; ; attempt++ {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			if err := rootCtx.Err(); err != nil {
+				return
+			}
+			ctx, cancel := context.WithTimeout(rootCtx, 30*time.Second)
 			err := registry.Reload(ctx)
 			cancel()
 			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					return
+				}
 				log.Printf("OIDC registry reload attempt %d failed: %v", attempt, err)
 			} else {
 				providers, listErr := registry.ListEnabled()
@@ -115,7 +126,11 @@ func main() {
 					lastOIDCRegistryStatus = currentOIDCRegistryStatus
 				}
 			}
-			time.Sleep(retryInterval)
+			select {
+			case <-rootCtx.Done():
+				return
+			case <-time.After(retryInterval):
+			}
 		}
 	}()
 
@@ -208,7 +223,16 @@ func main() {
 
 	addr := getEnv("LISTEN_ADDR", ":8080")
 	log.Printf("listening on %s", addr)
-	if err := http.ListenAndServe(addr, r); err != nil {
+	server := &http.Server{Addr: addr, Handler: r}
+	go func() {
+		<-rootCtx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil && !errors.Is(err, context.Canceled) {
+			log.Printf("server shutdown error: %v", err)
+		}
+	}()
+	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("server failed: %v", err)
 	}
 }
