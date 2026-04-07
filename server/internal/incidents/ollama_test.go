@@ -2,6 +2,8 @@ package incidents
 
 import (
 	"encoding/json"
+	"fmt"
+	"sync/atomic"
 	"strings"
 	"testing"
 	"time"
@@ -476,6 +478,76 @@ func TestCorrelateAsync_ExcludesPriorAICauseLinksFromDeterministicPrompt(t *test
 	require.NotContains(t, prompt, "old ai cause")
 	require.NotContains(t, prompt, "[ai_cause")
 	require.Contains(t, prompt, "[cause score=90]")
+}
+
+func TestOllamaEnricher_QueuesDuplicateDispatchesWithoutConcurrentCalls(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	require.NoError(t, database.Create(&models.AppSetting{Key: ollamaURLKey, Value: "http://ollama.local"}).Error)
+	require.NoError(t, database.Create(&models.AppSetting{Key: ollamaModelKey, Value: "llama3.2"}).Error)
+
+	incidentID := ulid.Make().String()
+	require.NoError(t, database.Create(&models.Incident{
+		ID:         incidentID,
+		OpenedAt:   time.Now().UTC(),
+		Status:     "open",
+		Confidence: "confirmed",
+		Title:      "nginx down",
+		Services:   `["nginx"]`,
+		NodeNames:  `["node-01"]`,
+		Metadata:   `{}`,
+	}).Error)
+
+	originalCall := callOllamaFunc
+	defer func() { callOllamaFunc = originalCall }()
+
+	releaseFirst := make(chan struct{})
+	var calls atomic.Int32
+	var active atomic.Int32
+	var maxActive atomic.Int32
+
+	callOllamaFunc = func(baseURL, model, prompt string) (string, error) {
+		callNum := calls.Add(1)
+		currentActive := active.Add(1)
+		for {
+			seen := maxActive.Load()
+			if currentActive <= seen || maxActive.CompareAndSwap(seen, currentActive) {
+				break
+			}
+		}
+		defer active.Add(-1)
+
+		if callNum == 1 {
+			<-releaseFirst
+		}
+		return fmt.Sprintf("analysis %d", callNum), nil
+	}
+
+	enricher := NewOllamaEnricher(database, nil)
+	enricher.EnrichAsync(incidentID, []enrichEntry{{Role: "trigger", Content: "first", Source: "docker", Event: "die"}})
+
+	require.Eventually(t, func() bool {
+		return calls.Load() == 1
+	}, time.Second, 10*time.Millisecond)
+
+	enricher.EnrichAsync(incidentID, []enrichEntry{{Role: "trigger", Content: "second", Source: "docker", Event: "restart"}})
+
+	require.Never(t, func() bool {
+		return calls.Load() > 1
+	}, 150*time.Millisecond, 10*time.Millisecond)
+
+	close(releaseFirst)
+
+	require.Eventually(t, func() bool {
+		var inc models.Incident
+		if err := database.First(&inc, "id = ?", incidentID).Error; err != nil {
+			return false
+		}
+		meta := parseIncidentTestMetadata(t, inc.Metadata)
+		return calls.Load() == 2 && meta["ai_analysis"] == "analysis 2"
+	}, time.Second, 10*time.Millisecond)
+	require.Equal(t, int32(1), maxActive.Load())
 }
 
 func parseIncidentTestMetadata(t *testing.T, raw string) map[string]interface{} {

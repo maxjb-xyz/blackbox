@@ -204,10 +204,11 @@ func (m *Manager) handleContainerStart(entry types.Entry) {
 }
 
 func (m *Manager) handleWatchtowerUpdate(entry types.Entry) {
-	svc := entry.Service
-	m.pendingWT[svc] = pendingWatchtower{
-		entry:    entry,
-		deadline: entry.Timestamp.Add(watchtowerPendingTTL),
+	for _, svc := range watchtowerTargetServices(entry) {
+		m.pendingWT[svc] = pendingWatchtower{
+			entry:    entry,
+			deadline: entry.Timestamp.Add(watchtowerPendingTTL),
+		}
 	}
 }
 
@@ -792,6 +793,36 @@ func extractLogSnippet(e *types.Entry) string {
 		return ""
 	}
 	return strings.Join(meta.LogSnippet, "\n")
+}
+
+func watchtowerTargetServices(entry types.Entry) []string {
+	services := []string{}
+	seen := map[string]struct{}{}
+
+	addService := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		if _, ok := seen[value]; ok {
+			return
+		}
+		seen[value] = struct{}{}
+		services = append(services, value)
+	}
+
+	var meta struct {
+		Services []string `json:"watchtower.services"`
+	}
+	if err := json.Unmarshal([]byte(entry.Metadata), &meta); err == nil {
+		for _, service := range meta.Services {
+			addService(service)
+		}
+	}
+	if len(services) == 0 {
+		addService(entry.Service)
+	}
+	return services
 }
 
 // marshalWSMessage mirrors handlers.MarshalWSMessage to avoid a circular import.
