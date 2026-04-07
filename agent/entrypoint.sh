@@ -33,7 +33,7 @@ elif [ -d /var/log/journal ]; then
 fi
 
 if [ -n "$GROUPS_ARG" ]; then
-    exec setpriv --reuid=65532 --regid=65532 --clear-groups --groups="$GROUPS_ARG" /blackbox-agent "$@"
+    exec setpriv --reuid=65532 --regid=65532 --groups="$GROUPS_ARG" /blackbox-agent "$@"
 else
     exec setpriv --reuid=65532 --regid=65532 --clear-groups /blackbox-agent "$@"
 fi
