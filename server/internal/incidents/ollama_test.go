@@ -200,6 +200,111 @@ func TestCorrelateAsync_WritesAICauseLinks(t *testing.T) {
 	require.Equal(t, "nginx crashed due to resource exhaustion", meta["ai_analysis"])
 }
 
+func TestCorrelateAsync_UsesScopedIncidentNodesAndSetsVerified(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	require.NoError(t, database.Create(&models.AppSetting{Key: ollamaURLKey, Value: "http://ollama.local"}).Error)
+	require.NoError(t, database.Create(&models.AppSetting{Key: ollamaModelKey, Value: "llama3.2"}).Error)
+
+	now := time.Now().UTC()
+	triggerID := ulid.Make().String()
+	causeID := ulid.Make().String()
+	timelineID := ulid.Make().String()
+
+	require.NoError(t, database.Create(&types.Entry{
+		ID:        triggerID,
+		Timestamp: now,
+		NodeName:  "webhook",
+		Source:    "webhook",
+		Service:   "radarr",
+		Event:     "down",
+		Content:   "radarr monitor down",
+		Metadata:  `{}`,
+	}).Error)
+	require.NoError(t, database.Create(&types.Entry{
+		ID:        causeID,
+		Timestamp: now.Add(-30 * time.Second),
+		NodeName:  "media-node",
+		Source:    "docker",
+		Service:   "radarr",
+		Event:     "stop",
+		Content:   "container stopped before outage",
+		Metadata:  `{"log_snippet":["rss sync panic"]}`,
+	}).Error)
+	require.NoError(t, database.Create(&types.Entry{
+		ID:        timelineID,
+		Timestamp: now.Add(-15 * time.Second),
+		NodeName:  "media-node",
+		Source:    "systemd",
+		Service:   "radarr.service",
+		Event:     "failed",
+		Content:   "radarr service failed",
+		Metadata:  `{"log_snippet":["unit entered failed state"]}`,
+	}).Error)
+
+	incidentID := ulid.Make().String()
+	require.NoError(t, database.Create(&models.Incident{
+		ID:         incidentID,
+		OpenedAt:   now,
+		Status:     "open",
+		Confidence: "confirmed",
+		Title:      "radarr down",
+		Services:   `["radarr"]`,
+		NodeNames:  `["webhook"]`,
+		TriggerID:  triggerID,
+		Metadata:   `{}`,
+	}).Error)
+	require.NoError(t, database.Create(&models.IncidentEntry{
+		IncidentID: incidentID,
+		EntryID:    triggerID,
+		Role:       "trigger",
+		Score:      0,
+	}).Error)
+	require.NoError(t, database.Create(&models.IncidentEntry{
+		IncidentID: incidentID,
+		EntryID:    causeID,
+		Role:       "cause",
+		Score:      90,
+	}).Error)
+
+	promptSeen := make(chan string, 1)
+	originalCall := callOllamaCorrelateFunc
+	originalDelay := correlateDelay
+	callOllamaCorrelateFunc = func(baseURL, model, prompt string) (string, error) {
+		promptSeen <- prompt
+		return `{"summary":"radarr failed on media-node","verified":true,"causes":[]}`, nil
+	}
+	correlateDelay = 0
+	defer func() {
+		callOllamaCorrelateFunc = originalCall
+		correlateDelay = originalDelay
+	}()
+
+	enricher := NewOllamaEnricher(database, nil)
+	enricher.CorrelateAsync(incidentID, nil, "webhook")
+
+	var incident models.Incident
+	require.Eventually(t, func() bool {
+		if err := database.First(&incident, "id = ?", incidentID).Error; err != nil {
+			return false
+		}
+		meta := parseIncidentTestMetadata(t, incident.Metadata)
+		return meta["ai_analysis"] == "radarr failed on media-node" && meta["ai_verified"] == true
+	}, time.Second, 10*time.Millisecond)
+
+	select {
+	case prompt := <-promptSeen:
+		require.Contains(t, prompt, "Recent events from the scoped incident timeline")
+		require.Contains(t, prompt, "node=media-node")
+		require.Contains(t, prompt, "Log: rss sync panic")
+		require.Contains(t, prompt, "Log: unit entered failed state")
+		require.Contains(t, prompt, timelineID)
+	default:
+		t.Fatal("expected Ollama correlation prompt")
+	}
+}
+
 func TestCorrelateAsync_DropsHallucinatedEntryIDs(t *testing.T) {
 	database, err := db.Init(":memory:")
 	require.NoError(t, err)
@@ -260,6 +365,117 @@ func TestCorrelateAsync_DropsHallucinatedEntryIDs(t *testing.T) {
 	var links []models.IncidentEntry
 	require.NoError(t, database.Where("incident_id = ? AND role = ?", incidentID, "ai_cause").Find(&links).Error)
 	require.Empty(t, links)
+}
+
+func TestCorrelationScopeNodes_DropsEmptyFallback(t *testing.T) {
+	require.Empty(t, correlationScopeNodes("", nil, "   "))
+	require.Equal(t, []string{"node-01"}, correlationScopeNodes("", nil, " node-01 "))
+	require.Equal(t, []string{"node-01"}, correlationScopeNodes(`[""]`, nil, " node-01 "))
+}
+
+func TestCorrelateAsync_ExcludesPriorAICauseLinksFromDeterministicPrompt(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	require.NoError(t, database.Create(&models.AppSetting{Key: ollamaURLKey, Value: "http://ollama.local"}).Error)
+	require.NoError(t, database.Create(&models.AppSetting{Key: ollamaModelKey, Value: "llama3.2"}).Error)
+
+	now := time.Now().UTC()
+	triggerID := ulid.Make().String()
+	causeID := ulid.Make().String()
+	oldAIID := ulid.Make().String()
+
+	require.NoError(t, database.Create(&types.Entry{
+		ID:        triggerID,
+		Timestamp: now,
+		NodeName:  "node-01",
+		Source:    "webhook",
+		Service:   "nginx",
+		Event:     "down",
+		Content:   "nginx monitor down",
+		Metadata:  `{}`,
+	}).Error)
+	require.NoError(t, database.Create(&types.Entry{
+		ID:        causeID,
+		Timestamp: now.Add(-30 * time.Second),
+		NodeName:  "node-01",
+		Source:    "docker",
+		Service:   "nginx",
+		Event:     "stop",
+		Content:   "container stopped",
+		Metadata:  `{}`,
+	}).Error)
+	require.NoError(t, database.Create(&types.Entry{
+		ID:        oldAIID,
+		Timestamp: now.Add(-20 * time.Second),
+		NodeName:  "node-01",
+		Source:    "systemd",
+		Service:   "nginx.service",
+		Event:     "failed",
+		Content:   "old ai cause",
+		Metadata:  `{}`,
+	}).Error)
+
+	incidentID := ulid.Make().String()
+	require.NoError(t, database.Create(&models.Incident{
+		ID:         incidentID,
+		OpenedAt:   now,
+		Status:     "open",
+		Confidence: "confirmed",
+		Title:      "nginx down",
+		Services:   `["nginx"]`,
+		NodeNames:  `["node-01"]`,
+		TriggerID:  triggerID,
+		Metadata:   `{"ai_verified":true}`,
+	}).Error)
+	require.NoError(t, database.Create(&models.IncidentEntry{
+		IncidentID: incidentID,
+		EntryID:    triggerID,
+		Role:       "trigger",
+		Score:      0,
+	}).Error)
+	require.NoError(t, database.Create(&models.IncidentEntry{
+		IncidentID: incidentID,
+		EntryID:    causeID,
+		Role:       "cause",
+		Score:      90,
+	}).Error)
+	require.NoError(t, database.Create(&models.IncidentEntry{
+		IncidentID: incidentID,
+		EntryID:    oldAIID,
+		Role:       "ai_cause",
+		Score:      70,
+		Reason:     "old ai output",
+	}).Error)
+
+	promptSeen := make(chan string, 1)
+	originalCall := callOllamaCorrelateFunc
+	originalDelay := correlateDelay
+	callOllamaCorrelateFunc = func(baseURL, model, prompt string) (string, error) {
+		promptSeen <- prompt
+		return `{"summary":"nginx down","verified":true,"causes":[]}`, nil
+	}
+	correlateDelay = 0
+	defer func() {
+		callOllamaCorrelateFunc = originalCall
+		correlateDelay = originalDelay
+	}()
+
+	enricher := NewOllamaEnricher(database, nil)
+	enricher.CorrelateAsync(incidentID, nil, "node-01")
+
+	var prompt string
+	require.Eventually(t, func() bool {
+		select {
+		case prompt = <-promptSeen:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, 10*time.Millisecond)
+	require.NotContains(t, prompt, "old ai cause")
+	require.NotContains(t, prompt, "[ai_cause")
+	require.Contains(t, prompt, "[cause score=90]")
 }
 
 func parseIncidentTestMetadata(t *testing.T, raw string) map[string]interface{} {

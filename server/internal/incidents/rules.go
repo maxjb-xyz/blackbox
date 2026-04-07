@@ -67,6 +67,7 @@ func (m *Manager) handleMonitorDown(entry types.Entry) {
 	if len(candidates) > 0 {
 		rootCauseID = candidates[0].Entry.ID
 	}
+	nodeNames := incidentNodeNames(entry.NodeName, candidates)
 
 	incident := models.Incident{
 		ID:          incidentID,
@@ -77,7 +78,7 @@ func (m *Manager) handleMonitorDown(entry types.Entry) {
 		Services:    jsonStrings([]string{svc}),
 		RootCauseID: rootCauseID,
 		TriggerID:   entry.ID,
-		NodeNames:   jsonStrings([]string{entry.NodeName}),
+		NodeNames:   jsonStrings(nodeNames),
 		Metadata:    "{}",
 	}
 	if err := m.db.Create(&incident).Error; err != nil {
@@ -90,7 +91,7 @@ func (m *Manager) handleMonitorDown(entry types.Entry) {
 		m.linkEntry(incidentID, c.Entry.ID, "cause", c.Score)
 	}
 
-	m.openIncidents[incidentKey(svc, entry.NodeName)] = incidentID
+	m.registerOpenIncidentKeys(incidentID, svc, nodeNames)
 	m.broadcastOpened(incident)
 
 	m.dispatchIncidentEnrichment(incidentID, entry.NodeName)
@@ -112,8 +113,15 @@ func (m *Manager) handleMonitorUp(entry types.Entry) {
 	}
 
 	now := entry.Timestamp
+	handled := make(map[string]struct{}, len(keys))
 	for _, key := range keys {
 		incidentID := m.openIncidents[key]
+		if _, ok := handled[incidentID]; ok {
+			delete(m.openIncidents, key)
+			delete(m.pendingSystemdRecover, key)
+			continue
+		}
+		handled[incidentID] = struct{}{}
 		m.linkEntry(incidentID, entry.ID, "recovery", 0)
 		if err := m.db.Model(&models.Incident{}).
 			Where("id = ?", incidentID).
@@ -677,6 +685,46 @@ func buildDownTitle(svc string, candidates []correlation.CauseCandidate) string 
 		return svc + " — monitor down"
 	}
 	return svc + " — " + candidates[0].Reason
+}
+
+func incidentNodeNames(fallback string, candidates []correlation.CauseCandidate) []string {
+	nodes := make([]string, 0, len(candidates)+1)
+	seen := make(map[string]struct{}, len(candidates)+1)
+
+	for _, candidate := range candidates {
+		if candidate.Entry == nil {
+			continue
+		}
+		node := strings.TrimSpace(candidate.Entry.NodeName)
+		if node == "" {
+			continue
+		}
+		if _, ok := seen[node]; ok {
+			continue
+		}
+		seen[node] = struct{}{}
+		nodes = append(nodes, node)
+	}
+
+	if len(nodes) > 0 {
+		return nodes
+	}
+
+	fallback = strings.TrimSpace(fallback)
+	if fallback == "" {
+		return []string{}
+	}
+	return []string{fallback}
+}
+
+func (m *Manager) registerOpenIncidentKeys(incidentID, service string, nodes []string) {
+	if len(nodes) == 0 {
+		nodes = []string{""}
+	}
+	for _, node := range nodes {
+		node = strings.TrimSpace(node)
+		m.openIncidents[incidentKey(service, node)] = incidentID
+	}
 }
 
 func jsonStrings(ss []string) string {
