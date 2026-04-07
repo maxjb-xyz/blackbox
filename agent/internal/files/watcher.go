@@ -35,9 +35,9 @@ var (
 const debounceDelay = 500 * time.Millisecond
 
 const (
-	maxTrackedFileBytes = 16 << 10
-	maxDiffLines        = 400
-	maxDiffBytes        = 8 << 10
+	maxTrackedFileBytes = 64 << 10
+	maxDiffLines        = 1600
+	maxDiffBytes        = 32 << 10
 	diffContextLines    = 2
 )
 
