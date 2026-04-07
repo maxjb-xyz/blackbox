@@ -370,6 +370,112 @@ func TestCorrelateAsync_DropsHallucinatedEntryIDs(t *testing.T) {
 func TestCorrelationScopeNodes_DropsEmptyFallback(t *testing.T) {
 	require.Empty(t, correlationScopeNodes("", nil, "   "))
 	require.Equal(t, []string{"node-01"}, correlationScopeNodes("", nil, " node-01 "))
+	require.Equal(t, []string{"node-01"}, correlationScopeNodes(`[""]`, nil, " node-01 "))
+}
+
+func TestCorrelateAsync_ExcludesPriorAICauseLinksFromDeterministicPrompt(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	require.NoError(t, database.Create(&models.AppSetting{Key: ollamaURLKey, Value: "http://ollama.local"}).Error)
+	require.NoError(t, database.Create(&models.AppSetting{Key: ollamaModelKey, Value: "llama3.2"}).Error)
+
+	now := time.Now().UTC()
+	triggerID := ulid.Make().String()
+	causeID := ulid.Make().String()
+	oldAIID := ulid.Make().String()
+
+	require.NoError(t, database.Create(&types.Entry{
+		ID:        triggerID,
+		Timestamp: now,
+		NodeName:  "node-01",
+		Source:    "webhook",
+		Service:   "nginx",
+		Event:     "down",
+		Content:   "nginx monitor down",
+		Metadata:  `{}`,
+	}).Error)
+	require.NoError(t, database.Create(&types.Entry{
+		ID:        causeID,
+		Timestamp: now.Add(-30 * time.Second),
+		NodeName:  "node-01",
+		Source:    "docker",
+		Service:   "nginx",
+		Event:     "stop",
+		Content:   "container stopped",
+		Metadata:  `{}`,
+	}).Error)
+	require.NoError(t, database.Create(&types.Entry{
+		ID:        oldAIID,
+		Timestamp: now.Add(-20 * time.Second),
+		NodeName:  "node-01",
+		Source:    "systemd",
+		Service:   "nginx.service",
+		Event:     "failed",
+		Content:   "old ai cause",
+		Metadata:  `{}`,
+	}).Error)
+
+	incidentID := ulid.Make().String()
+	require.NoError(t, database.Create(&models.Incident{
+		ID:         incidentID,
+		OpenedAt:   now,
+		Status:     "open",
+		Confidence: "confirmed",
+		Title:      "nginx down",
+		Services:   `["nginx"]`,
+		NodeNames:  `["node-01"]`,
+		TriggerID:  triggerID,
+		Metadata:   `{"ai_verified":true}`,
+	}).Error)
+	require.NoError(t, database.Create(&models.IncidentEntry{
+		IncidentID: incidentID,
+		EntryID:    triggerID,
+		Role:       "trigger",
+		Score:      0,
+	}).Error)
+	require.NoError(t, database.Create(&models.IncidentEntry{
+		IncidentID: incidentID,
+		EntryID:    causeID,
+		Role:       "cause",
+		Score:      90,
+	}).Error)
+	require.NoError(t, database.Create(&models.IncidentEntry{
+		IncidentID: incidentID,
+		EntryID:    oldAIID,
+		Role:       "ai_cause",
+		Score:      70,
+		Reason:     "old ai output",
+	}).Error)
+
+	promptSeen := make(chan string, 1)
+	originalCall := callOllamaCorrelateFunc
+	originalDelay := correlateDelay
+	callOllamaCorrelateFunc = func(baseURL, model, prompt string) (string, error) {
+		promptSeen <- prompt
+		return `{"summary":"nginx down","verified":true,"causes":[]}`, nil
+	}
+	correlateDelay = 0
+	defer func() {
+		callOllamaCorrelateFunc = originalCall
+		correlateDelay = originalDelay
+	}()
+
+	enricher := NewOllamaEnricher(database, nil)
+	enricher.CorrelateAsync(incidentID, nil, "node-01")
+
+	var prompt string
+	require.Eventually(t, func() bool {
+		select {
+		case prompt = <-promptSeen:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, 10*time.Millisecond)
+	require.NotContains(t, prompt, "old ai cause")
+	require.NotContains(t, prompt, "[ai_cause")
+	require.Contains(t, prompt, "[cause score=90]")
 }
 
 func parseIncidentTestMetadata(t *testing.T, raw string) map[string]interface{} {

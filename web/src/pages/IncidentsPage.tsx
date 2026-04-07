@@ -255,7 +255,7 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
               <div style={{ marginBottom: 8 }}>
                 <div style={{ color: 'var(--muted)', marginBottom: 4, letterSpacing: '0.1em', display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span>EVENT CHAIN</span>
-                  {aiCauseEntries.length === 0 && meta.ai_verified === true && (
+                  {aiCauseEntries.length === 0 && meta.ai_verified === true && !aiPending && (
                     <span
                       style={{
                         border: '1px solid var(--accent)',

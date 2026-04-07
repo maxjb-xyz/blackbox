@@ -91,7 +91,7 @@ func (m *Manager) handleMonitorDown(entry types.Entry) {
 		m.linkEntry(incidentID, c.Entry.ID, "cause", c.Score)
 	}
 
-	m.openIncidents[incidentKey(svc, entry.NodeName)] = incidentID
+	m.registerOpenIncidentKeys(incidentID, svc, nodeNames)
 	m.broadcastOpened(incident)
 
 	m.dispatchIncidentEnrichment(incidentID, entry.NodeName)
@@ -113,8 +113,15 @@ func (m *Manager) handleMonitorUp(entry types.Entry) {
 	}
 
 	now := entry.Timestamp
+	handled := make(map[string]struct{}, len(keys))
 	for _, key := range keys {
 		incidentID := m.openIncidents[key]
+		if _, ok := handled[incidentID]; ok {
+			delete(m.openIncidents, key)
+			delete(m.pendingSystemdRecover, key)
+			continue
+		}
+		handled[incidentID] = struct{}{}
 		m.linkEntry(incidentID, entry.ID, "recovery", 0)
 		if err := m.db.Model(&models.Incident{}).
 			Where("id = ?", incidentID).
@@ -708,6 +715,16 @@ func incidentNodeNames(fallback string, candidates []correlation.CauseCandidate)
 		return []string{}
 	}
 	return []string{fallback}
+}
+
+func (m *Manager) registerOpenIncidentKeys(incidentID, service string, nodes []string) {
+	if len(nodes) == 0 {
+		nodes = []string{""}
+	}
+	for _, node := range nodes {
+		node = strings.TrimSpace(node)
+		m.openIncidents[incidentKey(service, node)] = incidentID
+	}
 }
 
 func jsonStrings(ss []string) string {

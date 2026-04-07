@@ -164,13 +164,22 @@ func (e *OllamaEnricher) correlate(incidentID, nodeName, ollamaURL, ollamaModel 
 		return
 	}
 
+	excludedNodeEntryIDs := make(map[string]struct{}, len(detLinks))
 	detEntryIDs := make([]string, 0, len(detLinks))
+	filteredDetLinks := detLinks[:0]
 	for _, link := range detLinks {
-		if strings.TrimSpace(link.EntryID) == "" {
+		entryID := strings.TrimSpace(link.EntryID)
+		if entryID == "" {
 			continue
 		}
-		detEntryIDs = append(detEntryIDs, link.EntryID)
+		if link.Role == "ai_cause" {
+			excludedNodeEntryIDs[entryID] = struct{}{}
+			continue
+		}
+		filteredDetLinks = append(filteredDetLinks, link)
+		detEntryIDs = append(detEntryIDs, entryID)
 	}
+	detLinks = filteredDetLinks
 
 	var detEntries []types.Entry
 	if len(detEntryIDs) > 0 {
@@ -201,9 +210,12 @@ func (e *OllamaEnricher) correlate(incidentID, nodeName, ollamaURL, ollamaModel 
 		e.clearPending(incidentID)
 		return
 	}
-	if len(detEntryIDs) > 0 {
-		existing := make(map[string]struct{}, len(detEntryIDs))
+	if len(detEntryIDs) > 0 || len(excludedNodeEntryIDs) > 0 {
+		existing := make(map[string]struct{}, len(detEntryIDs)+len(excludedNodeEntryIDs))
 		for _, entryID := range detEntryIDs {
+			existing[entryID] = struct{}{}
+		}
+		for entryID := range excludedNodeEntryIDs {
 			existing[entryID] = struct{}{}
 		}
 		filtered := nodeEntries[:0]
@@ -336,6 +348,7 @@ func (e *OllamaEnricher) setPending(incidentID, ollamaModel string) bool {
 	return e.updateIncidentMetadata(incidentID, func(meta map[string]interface{}) {
 		meta["ai_pending"] = true
 		meta["ai_model"] = ollamaModel
+		delete(meta, "ai_verified")
 	})
 }
 
@@ -370,16 +383,17 @@ func (e *OllamaEnricher) updateIncidentMetadata(incidentID string, apply func(ma
 }
 
 func correlationScopeNodes(rawNodeNames string, detEntries []types.Entry, fallbackNode string) []string {
-	nodes := parseJSONStringSlice(rawNodeNames)
+	nodes := preferNonWebhookValues(parseJSONStringSlice(rawNodeNames))
 	for _, entry := range detEntries {
 		nodes = append(nodes, entry.NodeName)
 	}
+	nodes = preferNonWebhookValues(nodes)
 	fallbackNode = strings.TrimSpace(fallbackNode)
 	if len(nodes) == 0 && fallbackNode != "" {
 		nodes = append(nodes, fallbackNode)
 	}
 
-	return preferNonWebhookValues(nodes)
+	return uniqueStrings(nodes)
 }
 
 func parseJSONStringSlice(raw string) []string {

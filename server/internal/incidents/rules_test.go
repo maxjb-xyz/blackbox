@@ -81,6 +81,46 @@ func TestConfirmedIncident_OpenOnDown_UsesCorrelatedCauseNodeNames(t *testing.T)
 	assert.Equal(t, causeEntry.ID, incident.RootCauseID)
 }
 
+func TestConfirmedIncident_OpenOnDown_BindsFollowUpNodeEventsToScopedIncident(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	now := time.Now().UTC()
+	causeEntry := makeEntryAt("radarr", "docker", "stop", `{}`, now.Add(-30*time.Second))
+	causeEntry.NodeName = "media-node"
+	require.NoError(t, database.Create(&causeEntry).Error)
+
+	mgr := NewManager(database, hub.New())
+	ch := NewChannel()
+	go mgr.Run(t.Context(), ch)
+
+	downEntry := makeEntryAt("radarr", "webhook", "down", `{"monitor":"radarr"}`, now)
+	downEntry.NodeName = "webhook"
+	require.NoError(t, database.Create(&downEntry).Error)
+	ch <- downEntry
+
+	var incident models.Incident
+	require.Eventually(t, func() bool {
+		if err := database.Where("status = ? AND confidence = ?", "open", "confirmed").First(&incident).Error; err != nil {
+			return false
+		}
+		return incident.TriggerID == downEntry.ID
+	}, time.Second, 10*time.Millisecond)
+
+	followup := makeEntryAt("radarr", "docker", "die", `{"exitCode":137}`, now.Add(10*time.Second))
+	followup.NodeName = "media-node"
+	require.NoError(t, database.Create(&followup).Error)
+	ch <- followup
+
+	require.Eventually(t, func() bool {
+		var link models.IncidentEntry
+		if err := database.Where("incident_id = ? AND entry_id = ?", incident.ID, followup.ID).First(&link).Error; err != nil {
+			return false
+		}
+		return link.Role == "evidence"
+	}, time.Second, 10*time.Millisecond)
+}
+
 func TestConfirmedIncident_ResolveOnUp(t *testing.T) {
 	database, err := db.Init(":memory:")
 	require.NoError(t, err)
