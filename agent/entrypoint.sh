@@ -4,20 +4,27 @@
 # host group IDs. Drops from root to UID/GID 65532 (nonroot) before exec.
 set -e
 
-GROUPS_ARG=""
+# Helper function to add unique GID to GROUPS_ARG
+add_unique_gid() {
+    if [ -z "$GROUPS_ARG" ]; then
+        GROUPS_ARG="$1"
+    elif ! echo "$GROUPS_ARG" | grep -qE "(^|,)$1(,|$)"; then
+        GROUPS_ARG="$GROUPS_ARG,$1"
+    fi
+}
 
 if [ -e /var/run/docker.sock ]; then
     DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)
-    GROUPS_ARG="$DOCKER_GID"
+    add_unique_gid "$DOCKER_GID"
 fi
 
+# Check both common journal paths and add the first one found
 if [ -d /run/log/journal ]; then
     JOURNAL_GID=$(stat -c '%g' /run/log/journal)
-    if [ -n "$GROUPS_ARG" ]; then
-        GROUPS_ARG="$GROUPS_ARG,$JOURNAL_GID"
-    else
-        GROUPS_ARG="$JOURNAL_GID"
-    fi
+    add_unique_gid "$JOURNAL_GID"
+elif [ -d /var/log/journal ]; then
+    JOURNAL_GID=$(stat -c '%g' /var/log/journal)
+    add_unique_gid "$JOURNAL_GID"
 fi
 
 if [ -n "$GROUPS_ARG" ]; then
