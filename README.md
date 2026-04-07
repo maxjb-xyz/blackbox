@@ -35,7 +35,7 @@ When your homelab breaks, Blackbox tells you what happened. You don't need to li
 ## Quick Start
 
 > This gets a single-node setup running in minutes. For multi-node, see [Multi-Node Deployment](#multi-node-deployment).
-> The server image runs as distroless `nonroot` and can write a named volume mounted at `/data` without `user: "0:0"`. The agent example still uses `root` because read-only access to `/var/run/docker.sock` commonly requires it unless you map the host Docker socket group into the container.
+> Both images run as non-root (UID 65532). The agent entrypoint auto-detects the GIDs of any mounted resources (Docker socket, systemd journal) at startup — no manual group configuration needed.
 
 **1. Create a `docker-compose.yml`:**
 
@@ -58,14 +58,22 @@ services:
 
   blackbox-agent:
     image: ghcr.io/maxjb-xyz/blackbox-agent:latest
-    user: "0:0"
     container_name: blackbox-agent
     restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETUID
+      - SETGID
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /etc:/watch/etc:ro
       - /run/log/journal:/run/log/journal:ro
       - /var/log/journal:/var/log/journal:ro
+      - /etc/machine-id:/etc/machine-id:ro
     environment:
       SERVER_URL: "http://blackbox-server:8080"
       AGENT_TOKEN: "change-me-to-a-secret-agent-token"
@@ -135,7 +143,7 @@ docker compose up -d
 - Invite-code-based user registration
 
 ### Security
-- Distroless container images (no shell, non-root server image)
+- Non-root container images — server runs distroless (no shell, UID 65532), agent runs as UID 65532 with all capabilities dropped and a read-only filesystem
 - Constant-time token comparison for all shared secrets
 - Rate limiting on auth endpoints
 - Security headers middleware
@@ -181,12 +189,13 @@ docker compose up -d
 - The watcher emits `started`, `stopped`, `restart`, and `failed` events for configured units, plus `oom_kill` events from the kernel journal.
 - Failed unit entries include a recent journal snippet in entry metadata, which Blackbox also uses as a correlation scoring bonus.
 - A watched unit `failed` or `oom_kill` opens a suspected incident immediately. Repeated watched `restart`/`failed` events within 5 minutes also open a suspected incident, while a lone `restart` does not.
-- For containerized agents, mount the host journal read-only so the agent can read systemd entries. Typical mounts are:
+- For containerized agents, mount the host journal read-only. The agent entrypoint auto-detects the journal GID at startup — no manual group configuration needed:
 
 ```yaml
 volumes:
   - /run/log/journal:/run/log/journal:ro
   - /var/log/journal:/var/log/journal:ro
+  - /etc/machine-id:/etc/machine-id:ro
 ```
 
 ### Incident Enrichment
@@ -223,8 +232,7 @@ openssl rand -hex 32
 ## Multi-Node Deployment
 
 Deploy an agent on each machine you want to monitor. All agents point at the same central server.
-> The server should run with its default distroless `nonroot` user. The agent example keeps `user: "0:0"` because `/var/run/docker.sock` often requires elevated access unless you align the container group with the host Docker socket group.
-> If you also want systemd monitoring from a containerized agent, set `WATCH_SYSTEMD=true` and mount the host journal read-only as described in [Systemd Monitoring](#systemd-monitoring).
+> Both images run as non-root (UID 65532). The agent entrypoint auto-detects the GIDs of any mounted resources (Docker socket, systemd journal) at startup — no manual group configuration needed.
 
 **Node 01 — Primary server (also runs an agent):**
 
@@ -244,12 +252,20 @@ services:
 
   blackbox-agent:
     image: ghcr.io/maxjb-xyz/blackbox-agent:latest
-    user: "0:0"
     restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETUID
+      - SETGID
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /run/log/journal:/run/log/journal:ro
       - /var/log/journal:/var/log/journal:ro
+      - /etc/machine-id:/etc/machine-id:ro
     environment:
       SERVER_URL: "http://blackbox-server:8080"
       AGENT_TOKEN: "token-for-node-01"
@@ -266,13 +282,21 @@ volumes:
 services:
   blackbox-agent:
     image: ghcr.io/maxjb-xyz/blackbox-agent:latest
-    user: "0:0"
     restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETUID
+      - SETGID
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /etc:/watch/etc:ro
+      - /opt/appdata:/watch/appdata:ro
       - /run/log/journal:/run/log/journal:ro
       - /var/log/journal:/var/log/journal:ro
+      - /etc/machine-id:/etc/machine-id:ro
     environment:
       SERVER_URL: "http://node-01.lan:8080"
       AGENT_TOKEN: "token-for-node-02"
@@ -557,6 +581,7 @@ The database is automatically migrated on startup — no manual schema managemen
 - [ ] Timeline UI polish and interaction improvements
 - [ ] Grafana data source plugin
 - [ ] Optional AI-Enhanced correlation engine
+- [ ] Dynamic notifications to Discord
 - [ ] Mobile-friendly view
 - [ ] Dynamic notifications to Discord
 
