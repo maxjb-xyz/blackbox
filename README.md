@@ -64,6 +64,8 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /etc:/watch/etc:ro
+      - /run/log/journal:/run/log/journal:ro
+      - /var/log/journal:/var/log/journal:ro
     environment:
       SERVER_URL: "http://blackbox-server:8080"
       AGENT_TOKEN: "change-me-to-a-secret-agent-token"
@@ -246,6 +248,8 @@ services:
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /run/log/journal:/run/log/journal:ro
+      - /var/log/journal:/var/log/journal:ro
     environment:
       SERVER_URL: "http://blackbox-server:8080"
       AGENT_TOKEN: "token-for-node-01"
@@ -266,7 +270,9 @@ services:
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /opt/appdata:/watch/appdata:ro
+      - /etc:/watch/etc:ro
+      - /run/log/journal:/run/log/journal:ro
+      - /var/log/journal:/var/log/journal:ro
     environment:
       SERVER_URL: "http://node-01.lan:8080"
       AGENT_TOKEN: "token-for-node-02"
