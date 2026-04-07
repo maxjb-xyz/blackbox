@@ -3,6 +3,7 @@ package db_test
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -21,6 +22,15 @@ type sqliteIndexInfoRow struct {
 	Name  string `gorm:"column:name"`
 }
 
+func closeDBOnCleanup(t *testing.T, database *gorm.DB) {
+	t.Helper()
+	t.Cleanup(func() {
+		sqlDB, err := database.DB()
+		require.NoError(t, err)
+		require.NoError(t, sqlDB.Close())
+	})
+}
+
 func TestInit_CreatesTablesAndMigrates(t *testing.T) {
 	tmp, err := os.CreateTemp("", "blackbox-test-*.db")
 	require.NoError(t, err)
@@ -32,6 +42,7 @@ func TestInit_CreatesTablesAndMigrates(t *testing.T) {
 	database, err := db.Init(tmp.Name())
 	require.NoError(t, err)
 	assert.NotNil(t, database)
+	closeDBOnCleanup(t, database)
 
 	user := models.User{ID: "01TESTUSER", Username: "admin", IsAdmin: true}
 	assert.NoError(t, database.Create(&user).Error)
@@ -48,6 +59,7 @@ func TestInit_CreatesTablesAndMigrates(t *testing.T) {
 func TestIncidentTablesExist(t *testing.T) {
 	database, err := db.Init(":memory:")
 	require.NoError(t, err)
+	closeDBOnCleanup(t, database)
 
 	assert.True(t, database.Migrator().HasTable(&models.Incident{}))
 	assert.True(t, database.Migrator().HasTable(&models.IncidentEntry{}))
@@ -63,6 +75,7 @@ func TestInit_CreatesCompositeEntryCursorIndex(t *testing.T) {
 
 	database, err := db.Init(tmp.Name())
 	require.NoError(t, err)
+	closeDBOnCleanup(t, database)
 
 	require.True(t, database.Migrator().HasIndex(&types.Entry{}, "idx_entries_timestamp_id"))
 	require.False(t, database.Migrator().HasIndex(&types.Entry{}, "idx_entries_timestamp"))
@@ -108,6 +121,7 @@ func TestInit_DropsLegacyTimestampOnlyEntryIndex(t *testing.T) {
 
 	database, err := db.Init(tmp.Name())
 	require.NoError(t, err)
+	closeDBOnCleanup(t, database)
 
 	require.True(t, database.Migrator().HasIndex(&types.Entry{}, "idx_entries_timestamp_id"))
 	require.False(t, database.Migrator().HasIndex(&types.Entry{}, "idx_entries_timestamp"))
@@ -123,6 +137,7 @@ func TestInit_MigratesInviteCodeOIDCStateAndOIDCConfig(t *testing.T) {
 
 	database, err := db.Init(tmp.Name())
 	require.NoError(t, err)
+	closeDBOnCleanup(t, database)
 
 	invite := models.InviteCode{
 		ID:        "01INVITEID0000000",
@@ -197,6 +212,7 @@ func TestInit_MigratesServiceAliases(t *testing.T) {
 
 	database, err := db.Init(tmp.Name())
 	require.NoError(t, err)
+	closeDBOnCleanup(t, database)
 
 	assert.NoError(t, database.Create(&models.ServiceAlias{Canonical: "traefik", Alias: "traefik-dashboard"}).Error)
 
@@ -232,6 +248,7 @@ func TestInit_CreatesMissingDatabasePath(t *testing.T) {
 	database, err := db.Init(dbPath)
 	require.NoError(t, err)
 	assert.NotNil(t, database)
+	closeDBOnCleanup(t, database)
 
 	info, err := os.Stat(dbPath)
 	require.NoError(t, err)
@@ -239,6 +256,9 @@ func TestInit_CreatesMissingDatabasePath(t *testing.T) {
 }
 
 func TestInit_ReturnsHelpfulErrorForReadOnlyDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows directory mode bits do not reliably simulate a read-only directory for this test")
+	}
 	if os.Getuid() == 0 {
 		t.Skip("root can bypass directory permissions")
 	}

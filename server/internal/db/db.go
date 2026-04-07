@@ -86,7 +86,6 @@ func Init(path string) (*gorm.DB, error) {
 			return nil, err
 		}
 	}
-	go sweepExpiredOIDCStates(database)
 	return database, nil
 }
 
@@ -183,4 +182,8 @@ func sweepExpiredOIDCStates(database *gorm.DB) {
 			log.Printf("oidc state sweep error: %v", result.Error)
 		}
 	}
+}
+
+func StartOIDCStateSweeper(database *gorm.DB) {
+	go sweepExpiredOIDCStates(database)
 }

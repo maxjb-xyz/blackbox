@@ -55,6 +55,7 @@ func main() {
 		log.Fatalf("database init failed: %v", err)
 	}
 	log.Printf("database initialized at %s", dbPath)
+	db.StartOIDCStateSweeper(database)
 	eventHub := hub.New()
 	incidentCh := incidents.NewChannel()
 	incidentMgr := incidents.NewManager(database, eventHub)
