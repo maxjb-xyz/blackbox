@@ -24,6 +24,7 @@ import type { AdminUser, Node, OIDCProviderConfig } from '../api/client'
 import { readErrorMessage } from '../api/errorUtils'
 import { useSession } from '../session'
 import PageHeader from '../components/PageHeader'
+import { formatLocalDate, formatLocalTimestamp } from '../utils/time'
 
 interface InviteCode {
   id: string
@@ -71,7 +72,7 @@ function formatInviteTimestamp(value: string): string {
   if (!value) return '-'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '-'
-  return date.toISOString().substring(0, 16).replace('T', ' ')
+  return formatLocalTimestamp(date) || '-'
 }
 
 function emptyOIDCProviderForm(): OIDCProviderFormState {
@@ -583,7 +584,7 @@ function UsersTab({ currentUserId }: { currentUserId: string }) {
                 {u.is_admin ? 'ADMIN' : 'USER'}
               </td>
               <td style={{ padding: '8px', color: 'var(--muted)' }}>
-                {u.created_at ? new Date(u.created_at).toISOString().substring(0, 10) : '-'}
+                {u.created_at ? formatLocalDate(u.created_at) || '-' : '-'}
               </td>
               <td style={{ padding: '8px 0 8px 8px' }}>
                 {u.id !== currentUserId && (

@@ -10,6 +10,7 @@ import {
   parseIncidentServices,
 } from '../api/client'
 import { useWebSocketContext } from '../components/WebSocketProvider'
+import { formatLocalTimestamp } from '../utils/time'
 
 function incidentBorderColor(inc: Incident): string {
   if (inc.status === 'resolved') return 'var(--success)'
@@ -37,7 +38,7 @@ function formatTs(ts?: string | null) {
   if (!ts) return '—'
   const d = new Date(ts)
   if (Number.isNaN(d.getTime())) return '—'
-  return d.toISOString().replace('T', ' ').substring(0, 16)
+  return formatLocalTimestamp(d) || 'â€”'
 }
 
 function duration(opened: string, resolved?: string | null) {

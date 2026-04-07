@@ -1,11 +1,12 @@
 import { useNodePulse } from '../components/NodePulse'
 import PageHeader from '../components/PageHeader'
+import { formatLocalTimestamp } from '../utils/time'
 
-function formatTimestamp(ts?: string | null) {
+function formatTimestamp(ts?: string | null | Date) {
   if (!ts) return '-'
   const date = new Date(ts)
   if (Number.isNaN(date.getTime())) return '-'
-  return date.toISOString().replace('T', ' ').substring(0, 19)
+  return formatLocalTimestamp(date, { includeSeconds: true }) || '-'
 }
 
 export default function NodesPage() {
@@ -20,8 +21,8 @@ export default function NodesPage() {
           <div style={{ padding: '10px 24px', borderBottom: '1px solid var(--border)', fontSize: '11px', color: 'var(--muted)' }}>
             {loading && !lastUpdated && 'checking agent registry...'}
             {!loading && error && !lastUpdated && 'failed to load agent registry'}
-            {error && lastUpdated && `showing cached node data from ${formatTimestamp(lastUpdated.toISOString())}`}
-            {!error && lastUpdated && `last updated ${formatTimestamp(lastUpdated.toISOString())}`}
+            {error && lastUpdated && `showing cached node data from ${formatTimestamp(lastUpdated)}`}
+            {!error && lastUpdated && `last updated ${formatTimestamp(lastUpdated)}`}
           </div>
         )}
 

@@ -12,6 +12,7 @@ import {
 import type { Entry, EntryNote } from '../api/client'
 import { useNodePulse } from '../components/NodePulse'
 import { useWebSocketContext } from '../components/WebSocketProvider'
+import { formatLocalTimestamp } from '../utils/time'
 
 const SOURCE_OPTIONS = ['', 'docker', 'files', 'agent', 'webhook']
 
@@ -53,7 +54,7 @@ function formatTimestamp(ts?: string | null) {
   if (!ts) return ''
   const d = new Date(ts)
   if (Number.isNaN(d.getTime())) return ''
-  return d.toISOString().replace('T', ' ').substring(0, 16)
+  return formatLocalTimestamp(d)
 }
 
 function parsePossibleCause(metadata: string): string | null {
