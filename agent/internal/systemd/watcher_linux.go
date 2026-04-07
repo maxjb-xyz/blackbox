@@ -56,9 +56,7 @@ func watch(ctx context.Context, nodeName string, settings *Settings, out chan<- 
 		units := settings.Units()
 
 		if !stringSlicesEqual(units, lastUnits) {
-			if err := j.FlushMatches(); err != nil {
-				return err
-			}
+			j.FlushMatches()
 			for _, unit := range units {
 				if err := j.AddMatch("_SYSTEMD_UNIT=" + unit); err != nil {
 					return err
@@ -208,13 +206,9 @@ func captureUnitLogs(unit string) ([]string, error) {
 	cachedJournalMu.Lock()
 	defer cachedJournalMu.Unlock()
 
-	if err := j.FlushMatches(); err != nil {
-		return nil, err
-	}
+	j.FlushMatches()
 	defer func() {
-		if err := j.FlushMatches(); err != nil {
-			log.Printf("systemd watcher: flush journal matches: %v", err)
-		}
+		j.FlushMatches()
 	}()
 	if err := j.AddMatch("_SYSTEMD_UNIT=" + unit); err != nil {
 		return nil, err
