@@ -30,6 +30,8 @@ RUN cd agent && \
 
 # Stage 2: Runtime image with libsystemd available for journal access
 FROM debian:bookworm-slim
+# hadolint ignore=DL3008
+# NOTE: Packages are intentionally unpinned for flexibility with Debian updates.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates libsystemd0 util-linux && \
     rm -rf /var/lib/apt/lists/* && \
