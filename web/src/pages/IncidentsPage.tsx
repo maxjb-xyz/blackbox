@@ -253,8 +253,23 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
           {detail && (
             <>
               <div style={{ marginBottom: 8 }}>
-                <div style={{ color: 'var(--muted)', marginBottom: 4, letterSpacing: '0.1em' }}>
-                  EVENT CHAIN
+                <div style={{ color: 'var(--muted)', marginBottom: 4, letterSpacing: '0.1em', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span>EVENT CHAIN</span>
+                  {aiCauseEntries.length === 0 && meta.ai_verified === true && (
+                    <span
+                      style={{
+                        border: '1px solid var(--accent)',
+                        color: 'var(--accent)',
+                        fontSize: 10,
+                        lineHeight: 1,
+                        padding: '2px 5px',
+                        borderRadius: 999,
+                        letterSpacing: '0.08em',
+                      }}
+                    >
+                      AI VERIFIED
+                    </span>
+                  )}
                 </div>
                 <div style={{ borderTop: '1px solid var(--border)', paddingTop: 4 }}>
                   {deterministicEntries.map(({ link, entry }) => (

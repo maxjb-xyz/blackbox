@@ -48,8 +48,9 @@ type ollamaResponse struct {
 }
 
 type correlationResponse struct {
-	Summary string `json:"summary"`
-	Causes  []struct {
+	Summary  string `json:"summary"`
+	Verified bool   `json:"verified"`
+	Causes   []struct {
 		EntryID    string  `json:"entry_id"`
 		Confidence float64 `json:"confidence"`
 		Reason     string  `json:"reason"`
@@ -180,6 +181,7 @@ func (e *OllamaEnricher) correlate(incidentID, nodeName, ollamaURL, ollamaModel 
 		}
 	}
 
+	scopeNodes := correlationScopeNodes(inc.NodeNames, detEntries, nodeName)
 	windowStart := inc.OpenedAt.Add(-5 * time.Minute)
 	windowEnd := inc.OpenedAt.Add(time.Minute)
 	query := e.db.Where(
@@ -189,8 +191,8 @@ func (e *OllamaEnricher) correlate(incidentID, nodeName, ollamaURL, ollamaModel 
 		"webhook",
 		[]string{"down", "up"},
 	)
-	if strings.TrimSpace(nodeName) != "" {
-		query = query.Where("node_name = ?", nodeName)
+	if len(scopeNodes) > 0 {
+		query = query.Where("node_name IN ?", scopeNodes)
 	}
 
 	var nodeEntries []types.Entry
@@ -198,6 +200,20 @@ func (e *OllamaEnricher) correlate(incidentID, nodeName, ollamaURL, ollamaModel 
 		log.Printf("incidents: correlate load node entries for %s: %v", incidentID, err)
 		e.clearPending(incidentID)
 		return
+	}
+	if len(detEntryIDs) > 0 {
+		existing := make(map[string]struct{}, len(detEntryIDs))
+		for _, entryID := range detEntryIDs {
+			existing[entryID] = struct{}{}
+		}
+		filtered := nodeEntries[:0]
+		for _, entry := range nodeEntries {
+			if _, ok := existing[entry.ID]; ok {
+				continue
+			}
+			filtered = append(filtered, entry)
+		}
+		nodeEntries = filtered
 	}
 
 	prompt := buildCorrelationPrompt(inc, detLinks, detEntries, nodeEntries)
@@ -281,6 +297,11 @@ func (e *OllamaEnricher) correlate(incidentID, nodeName, ollamaURL, ollamaModel 
 		if summary := sanitizeExternalText(response.Summary); summary != "" {
 			meta["ai_analysis"] = summary
 		}
+		if response.Verified && len(response.Causes) == 0 {
+			meta["ai_verified"] = true
+		} else {
+			delete(meta, "ai_verified")
+		}
 		meta["ai_model"] = ollamaModel
 		meta["ai_enriched_at"] = time.Now().UTC().Format(time.RFC3339)
 	})
@@ -348,6 +369,60 @@ func (e *OllamaEnricher) updateIncidentMetadata(incidentID string, apply func(ma
 	return true
 }
 
+func correlationScopeNodes(rawNodeNames string, detEntries []types.Entry, fallbackNode string) []string {
+	nodes := parseJSONStringSlice(rawNodeNames)
+	for _, entry := range detEntries {
+		nodes = append(nodes, entry.NodeName)
+	}
+	if len(nodes) == 0 {
+		nodes = append(nodes, strings.TrimSpace(fallbackNode))
+	}
+
+	return preferNonWebhookValues(nodes)
+}
+
+func parseJSONStringSlice(raw string) []string {
+	var values []string
+	if err := json.Unmarshal([]byte(raw), &values); err != nil {
+		return []string{}
+	}
+	return values
+}
+
+func preferNonWebhookValues(values []string) []string {
+	trimmed := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			trimmed = append(trimmed, value)
+		}
+	}
+
+	nonWebhook := make([]string, 0, len(trimmed))
+	for _, value := range trimmed {
+		if value != "webhook" {
+			nonWebhook = append(nonWebhook, value)
+		}
+	}
+	if len(nonWebhook) > 0 {
+		return uniqueStrings(nonWebhook)
+	}
+	return uniqueStrings(trimmed)
+}
+
+func uniqueStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	unique := make([]string, 0, len(values))
+	for _, value := range values {
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		unique = append(unique, value)
+	}
+	return unique
+}
+
 func buildPrompt(inc models.Incident, entries []enrichEntry) string {
 	var b strings.Builder
 	b.WriteString("You are analyzing a server incident. Provide a concise root cause analysis.\n\n")
@@ -362,6 +437,22 @@ func buildPrompt(inc models.Incident, entries []enrichEntry) string {
 	}
 	b.WriteString("\nProvide: 1) Root cause in one sentence. 2) Why you think so. 3) A better incident title if applicable.\n")
 	return b.String()
+}
+
+func writePromptEntry(b *strings.Builder, prefix string, entry types.Entry) {
+	fmt.Fprintf(b, "%s[id=%s svc=%s node=%s] %s/%s (%s): %s\n",
+		prefix,
+		entry.ID,
+		entry.Service,
+		entry.NodeName,
+		entry.Source,
+		entry.Event,
+		entry.Timestamp.UTC().Format(time.RFC3339),
+		sanitizeExternalText(truncate(entry.Content, 200)),
+	)
+	if logSnippet := extractLogSnippet(&entry); logSnippet != "" {
+		fmt.Fprintf(b, "  Log: %s\n", sanitizeExternalText(truncate(logSnippet, 300)))
+	}
 }
 
 func buildCorrelationPrompt(inc models.Incident, detLinks []models.IncidentEntry, detEntries []types.Entry, nodeEntries []types.Entry) string {
@@ -380,40 +471,30 @@ func buildCorrelationPrompt(inc models.Incident, detLinks []models.IncidentEntry
 	if len(detEntries) > 0 {
 		b.WriteString("Deterministic links already identified by the correlation engine:\n")
 		for _, entry := range detEntries {
-			fmt.Fprintf(&b, "- [%s score=%d id=%s svc=%s] %s/%s (%s): %s\n",
+			fmt.Fprintf(&b, "- [%s score=%d] ",
 				roleByID[entry.ID],
 				scoreByID[entry.ID],
-				entry.ID,
-				entry.Service,
-				entry.Source,
-				entry.Event,
-				entry.Timestamp.UTC().Format(time.RFC3339),
-				sanitizeExternalText(truncate(entry.Content, 200)),
 			)
+			writePromptEntry(&b, "", entry)
 		}
 		b.WriteString("\n")
 	}
 
-	b.WriteString("Recent events on this node. Use entry_id values exactly as written if you identify additional causes:\n")
+	b.WriteString("Recent events from the scoped incident timeline. Use entry_id values exactly as written if you identify additional causes:\n")
 	for _, entry := range nodeEntries {
-		fmt.Fprintf(&b, "- [id=%s svc=%s] %s/%s (%s): %s\n",
-			entry.ID,
-			entry.Service,
-			entry.Source,
-			entry.Event,
-			entry.Timestamp.UTC().Format(time.RFC3339),
-			sanitizeExternalText(truncate(entry.Content, 200)),
-		)
+		writePromptEntry(&b, "- ", entry)
 	}
 
 	b.WriteString(`
 Return JSON exactly matching this schema:
 {
   "summary": "<one sentence root cause summary>",
+  "verified": true,
   "causes": [
     {"entry_id": "<verbatim id from the events above>", "confidence": 0.0, "reason": "<why this event caused the incident>"}
   ]
 }
+Set "verified" to true when the deterministic links already explain the incident and no extra AI-only causes are needed.
 If no additional causes are found beyond the deterministic links, return an empty causes array.`)
 
 	return b.String()

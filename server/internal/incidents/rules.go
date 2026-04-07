@@ -67,6 +67,7 @@ func (m *Manager) handleMonitorDown(entry types.Entry) {
 	if len(candidates) > 0 {
 		rootCauseID = candidates[0].Entry.ID
 	}
+	nodeNames := incidentNodeNames(entry.NodeName, candidates)
 
 	incident := models.Incident{
 		ID:          incidentID,
@@ -77,7 +78,7 @@ func (m *Manager) handleMonitorDown(entry types.Entry) {
 		Services:    jsonStrings([]string{svc}),
 		RootCauseID: rootCauseID,
 		TriggerID:   entry.ID,
-		NodeNames:   jsonStrings([]string{entry.NodeName}),
+		NodeNames:   jsonStrings(nodeNames),
 		Metadata:    "{}",
 	}
 	if err := m.db.Create(&incident).Error; err != nil {
@@ -677,6 +678,36 @@ func buildDownTitle(svc string, candidates []correlation.CauseCandidate) string 
 		return svc + " — monitor down"
 	}
 	return svc + " — " + candidates[0].Reason
+}
+
+func incidentNodeNames(fallback string, candidates []correlation.CauseCandidate) []string {
+	nodes := make([]string, 0, len(candidates)+1)
+	seen := make(map[string]struct{}, len(candidates)+1)
+
+	for _, candidate := range candidates {
+		if candidate.Entry == nil {
+			continue
+		}
+		node := strings.TrimSpace(candidate.Entry.NodeName)
+		if node == "" {
+			continue
+		}
+		if _, ok := seen[node]; ok {
+			continue
+		}
+		seen[node] = struct{}{}
+		nodes = append(nodes, node)
+	}
+
+	if len(nodes) > 0 {
+		return nodes
+	}
+
+	fallback = strings.TrimSpace(fallback)
+	if fallback == "" {
+		return []string{}
+	}
+	return []string{fallback}
 }
 
 func jsonStrings(ss []string) string {
