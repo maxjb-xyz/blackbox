@@ -178,8 +178,47 @@ docker compose up -d
 
 - `WATCH_PATHS` must match the container-side mount target, not the host source path. Example: `- /srv/stacks:/watch/stacks:ro` pairs with `WATCH_PATHS=/watch/stacks`.
 - On startup, the agent now logs a per-root registration line. If you see `failed to register root /watch/stacks`, the bind mount and `WATCH_PATHS` do not line up inside the container.
+- The agent runs as non-root UID/GID `65532`. For watched bind mounts, that user must be able to traverse every directory under each watched root and read the files you want diffed. A single unreadable subdirectory can cause the whole watched root to fail registration.
+- `WATCH_IGNORE` helps skip noisy paths after they are reachable, but it cannot bypass a directory the container user cannot traverse at all. If a tree contains unreadable secrets, narrow `WATCH_PATHS` to a readable subdirectory instead of mounting the whole parent.
 - Some editors save by replacing files instead of writing them in place. Blackbox now emits alerts for those `rename` and `chmod-style` config-file changes as well.
 - File-change metadata now includes a small line diff when the file is UTF-8 text and under the tracking limit. Obvious secret values such as `TOKEN`, `PASSWORD`, and `CLIENT_SECRET` are redacted before upload.
+
+#### Granting File Watcher Access
+
+If you bind-mount host directories into the agent for file watching, give UID `65532` permission to traverse the directories and read the files inside them.
+
+**Recommended on Linux: grant ACLs to UID `65532` on the watched tree.**
+
+```bash
+# Example host path mounted as /watch/stacks in the agent
+WATCH_ROOT=/srv/stacks
+
+# Allow the agent user to traverse directories
+sudo find "$WATCH_ROOT" -type d -exec setfacl -m u:65532:rx {} +
+
+# Allow the agent user to read files
+sudo find "$WATCH_ROOT" -type f -exec setfacl -m u:65532:r {} +
+
+# Make new files/directories inherit the same access
+sudo setfacl -d -m u:65532:rx "$WATCH_ROOT"
+sudo find "$WATCH_ROOT" -type d -exec setfacl -d -m u:65532:rx {} +
+```
+
+**Alternative: use traditional Unix ownership/mode bits if ACLs are unavailable.**
+
+```bash
+# If you are comfortable assigning the tree to group 65532
+sudo chgrp -R 65532 /srv/stacks
+sudo find /srv/stacks -type d -exec chmod 750 {} +
+sudo find /srv/stacks -type f -exec chmod 640 {} +
+```
+
+Notes:
+
+- The agent's primary UID/GID inside the container is `65532`, so numeric ownership is what matters on the host.
+- Parent directories must also be traversable (`x` bit), not just the final config file.
+- If part of a tree should stay unreadable, do not mount the whole parent. Mount only the readable subtree and point `WATCH_PATHS` at that container-side path instead.
+- After changing permissions, restart the agent container and look for `files watcher: registered ... directories` instead of `permission denied`.
 
 ### Systemd Monitoring
 
