@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
-import Sidebar from './Sidebar'
+import Topbar from './Topbar'
 import { NodePulseProvider } from './NodePulse'
 import { WebSocketProvider } from './WebSocketProvider'
 import { useSession } from '../session'
@@ -22,8 +22,8 @@ export default function Shell() {
   return (
     <WebSocketProvider>
       <NodePulseProvider>
-        <div style={{ display: 'flex', minHeight: '100vh' }}>
-          <Sidebar />
+        <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+          <Topbar />
           <main style={{ flex: 1, overflow: 'auto', background: 'var(--bg)' }}>
             <div
               className="terminal-startup"
