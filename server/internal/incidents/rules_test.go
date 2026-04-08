@@ -552,3 +552,12 @@ func TestWatchtowerUpdateFollowedByRestart_OpensSuspectedIncident(t *testing.T) 
 	}, time.Second, 10*time.Millisecond)
 	assert.Equal(t, update.ID, cause.EntryID)
 }
+
+func TestWatchtowerTargetServices_NormalizesCase(t *testing.T) {
+	entry := types.Entry{
+		Service:  "WatchTower",
+		Metadata: `{"watchtower.services":[" Sonarr ","sonarr","SONARR"]}`,
+	}
+
+	assert.Equal(t, []string{"sonarr"}, watchtowerTargetServices(entry))
+}

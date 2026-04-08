@@ -23,7 +23,7 @@ type watchtowerPayload struct {
 
 var watchtowerParensPattern = regexp.MustCompile(`\([^)]*\)`)
 
-func WebhookWatchtower(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry) http.HandlerFunc {
+func WebhookWatchtower(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry, shutdown <-chan struct{}) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var payload watchtowerPayload
 		if !decodeJSONBody(w, r, 1<<20, &payload) {
@@ -73,15 +73,15 @@ func WebhookWatchtower(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.En
 			Content:   payload.Message,
 			Metadata:  string(metaBytes),
 		}
-			if err := database.Create(&entry).Error; err != nil {
-				writeError(w, http.StatusInternalServerError, "failed to save entry")
-				return
+		if err := database.Create(&entry).Error; err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to save entry")
+			return
+		}
+		dispatchToIncidentChannelWithShutdown(incidentCh, shutdown, entry)
+		if h != nil {
+			if msg := MarshalWSMessage("entry", entry); msg != nil {
+				h.Broadcast(msg)
 			}
-			dispatchToIncidentChannel(incidentCh, entry)
-			if h != nil {
-				if msg := MarshalWSMessage("entry", entry); msg != nil {
-					h.Broadcast(msg)
-				}
 		}
 
 		w.WriteHeader(http.StatusCreated)

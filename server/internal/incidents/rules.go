@@ -800,7 +800,7 @@ func watchtowerTargetServices(entry types.Entry) []string {
 	seen := map[string]struct{}{}
 
 	addService := func(value string) {
-		value = strings.TrimSpace(value)
+		value = strings.ToLower(strings.TrimSpace(value))
 		if value == "" {
 			return
 		}
