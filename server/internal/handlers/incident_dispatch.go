@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"log"
+	"sync"
 	"time"
 
 	"blackbox/shared/types"
@@ -13,6 +14,7 @@ const (
 )
 
 var incidentDispatchSem = make(chan struct{}, maxPendingIncidentSends)
+var incidentDispatchWG sync.WaitGroup
 
 func dispatchToIncidentChannelWithShutdown(ch chan<- types.Entry, shutdown <-chan struct{}, entry types.Entry) {
 	if ch == nil {
@@ -33,7 +35,9 @@ func dispatchToIncidentChannelWithShutdown(ch chan<- types.Entry, shutdown <-cha
 		return
 	}
 
+	incidentDispatchWG.Add(1)
 	go func(e types.Entry) {
+		defer incidentDispatchWG.Done()
 		defer func() { <-incidentDispatchSem }()
 
 		timer := time.NewTimer(incidentDispatchTimeout)
@@ -52,4 +56,27 @@ func dispatchToIncidentChannelWithShutdown(ch chan<- types.Entry, shutdown <-cha
 		case <-shutdown:
 		}
 	}(entry)
+}
+
+func WaitForIncidentDispatches(timeout time.Duration) bool {
+	done := make(chan struct{})
+	go func() {
+		incidentDispatchWG.Wait()
+		close(done)
+	}()
+
+	if timeout <= 0 {
+		<-done
+		return true
+	}
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	select {
+	case <-done:
+		return true
+	case <-timer.C:
+		return false
+	}
 }

@@ -64,7 +64,13 @@ func main() {
 	eventHub := hub.New()
 	incidentCh := incidents.NewChannel()
 	incidentMgr := incidents.NewManager(database, eventHub)
-	go incidentMgr.Run(rootCtx, incidentCh)
+	managerCtx, stopManager := context.WithCancel(context.Background())
+	defer stopManager()
+	managerDone := make(chan struct{})
+	go func() {
+		defer close(managerDone)
+		incidentMgr.Run(managerCtx, incidentCh)
+	}()
 
 	registry := auth.NewOIDCRegistry(database)
 
@@ -166,7 +172,7 @@ func main() {
 		r.Get("/api/incidents/{id}", handlers.GetIncident(database))
 		r.Get("/api/entries", handlers.ListEntries(database))
 		r.Get("/api/entries/services", handlers.ListEntryServices(database))
-		r.Post("/api/entries", handlers.CreateEntry(database, eventHub, incidentCh, rootCtx.Done()))
+		r.Post("/api/entries", handlers.CreateEntry(database, eventHub, incidentCh, managerCtx.Done()))
 		r.Get("/api/entries/{id}", handlers.GetEntry(database))
 		r.Post("/api/entries/{id}/notes", handlers.CreateNote(database))
 		r.Get("/api/entries/{id}/notes", handlers.ListNotes(database))
@@ -202,13 +208,13 @@ func main() {
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.AgentAuth(agentConfig))
 		r.Get("/api/agent/config", handlers.AgentConfig(database))
-		r.Post("/api/agent/push", handlers.AgentPush(database, eventHub, incidentCh, rootCtx.Done()))
+		r.Post("/api/agent/push", handlers.AgentPush(database, eventHub, incidentCh, managerCtx.Done()))
 	})
 
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.WebhookAuth(webhookSecret))
-		r.Post("/api/webhooks/uptime", handlers.WebhookUptime(database, eventHub, incidentCh, rootCtx.Done()))
-		r.Post("/api/webhooks/watchtower", handlers.WebhookWatchtower(database, eventHub, incidentCh, rootCtx.Done()))
+		r.Post("/api/webhooks/uptime", handlers.WebhookUptime(database, eventHub, incidentCh, managerCtx.Done()))
+		r.Post("/api/webhooks/watchtower", handlers.WebhookWatchtower(database, eventHub, incidentCh, managerCtx.Done()))
 	})
 
 	spaHandler := static.Handler(staticFiles)
@@ -233,6 +239,11 @@ func main() {
 		if err := server.Shutdown(shutdownCtx); err != nil && !errors.Is(err, context.Canceled) {
 			log.Printf("server shutdown error: %v", err)
 		}
+		if !handlers.WaitForIncidentDispatches(35 * time.Second) {
+			log.Printf("incidents: timed out waiting for dispatch goroutines to drain")
+		}
+		close(incidentCh)
+		<-managerDone
 	}()
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("server failed: %v", err)
