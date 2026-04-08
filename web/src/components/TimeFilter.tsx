@@ -44,7 +44,6 @@ export default function TimeFilter({ onChange }: TimeFilterProps) {
     onChange({ start, end })
   }, [onChange])
 
-  // Apply default 6h preset on mount
   useEffect(() => {
     applyPreset('6h')
   }, [applyPreset])
@@ -123,7 +122,7 @@ export default function TimeFilter({ onChange }: TimeFilterProps) {
         placeholder="YYYY-MM-DD HH:MM"
         aria-label="Time range start"
       />
-      <span style={{ color: ‘#444’, fontSize: 12 }}>→</span>
+      <span style={{ color: '#444', fontSize: 12 }}>{'->'}</span>
       <input
         type="text"
         style={inputStyle}
