@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 type Preset = '15m' | '1h' | '6h' | '24h' | '7d'
 
@@ -33,6 +33,8 @@ export default function TimeFilter({ onChange }: TimeFilterProps) {
   const [activePreset, setActivePreset] = useState<Preset | null>('6h')
   const [startInput, setStartInput] = useState('')
   const [endInput, setEndInput] = useState('')
+  const emittedStartRef = useRef<Date | null>(null)
+  const emittedEndRef = useRef<Date | null>(null)
 
   const applyPreset = useCallback((preset: Preset) => {
     const ms = PRESETS.find(p => p.value === preset)!.ms
@@ -41,6 +43,8 @@ export default function TimeFilter({ onChange }: TimeFilterProps) {
     setActivePreset(preset)
     setStartInput(formatForInput(start))
     setEndInput(formatForInput(end))
+    emittedStartRef.current = start
+    emittedEndRef.current = end
     onChange({ start, end })
   }, [onChange])
 
@@ -50,14 +54,34 @@ export default function TimeFilter({ onChange }: TimeFilterProps) {
 
   function handleStartChange(value: string) {
     setStartInput(value)
+    const start = parseInput(value)
+    if (!start) return
+    emittedStartRef.current = start
     setActivePreset(null)
-    onChange({ start: parseInput(value), end: parseInput(endInput) })
+    onChange({ start, end: emittedEndRef.current })
   }
 
   function handleEndChange(value: string) {
     setEndInput(value)
+    const end = parseInput(value)
+    if (!end) return
+    emittedEndRef.current = end
     setActivePreset(null)
-    onChange({ start: parseInput(startInput), end: parseInput(value) })
+    onChange({ start: emittedStartRef.current, end })
+  }
+
+  function commitRange() {
+    const start = parseInput(startInput)
+    const end = parseInput(endInput)
+    emittedStartRef.current = start
+    emittedEndRef.current = end
+    setActivePreset(null)
+    onChange({ start, end })
+  }
+
+  function handleInputKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== 'Enter') return
+    commitRange()
   }
 
   const btnBase: React.CSSProperties = {
@@ -107,6 +131,7 @@ export default function TimeFilter({ onChange }: TimeFilterProps) {
         <button
           key={p.value}
           type="button"
+          aria-pressed={activePreset === p.value}
           style={activePreset === p.value ? btnActive : btnBase}
           onClick={() => applyPreset(p.value)}
         >
@@ -119,6 +144,8 @@ export default function TimeFilter({ onChange }: TimeFilterProps) {
         style={inputStyle}
         value={startInput}
         onChange={e => handleStartChange(e.target.value)}
+        onBlur={commitRange}
+        onKeyDown={handleInputKeyDown}
         placeholder="YYYY-MM-DD HH:MM"
         aria-label="Time range start"
       />
@@ -128,6 +155,8 @@ export default function TimeFilter({ onChange }: TimeFilterProps) {
         style={inputStyle}
         value={endInput}
         onChange={e => handleEndChange(e.target.value)}
+        onBlur={commitRange}
+        onKeyDown={handleInputKeyDown}
         placeholder="YYYY-MM-DD HH:MM"
         aria-label="Time range end"
       />

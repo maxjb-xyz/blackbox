@@ -10,11 +10,11 @@ function formatTimestamp(ts?: string | null | Date) {
 }
 
 function OsCell({ osInfo }: { osInfo: string | null | undefined }) {
-  if (!osInfo) return <span style={{ color: 'var(--muted)' }}>-</span>
+  if (!osInfo || !osInfo.trim()) return <span style={{ color: 'var(--muted)' }}>-</span>
 
   // Try to split "linux/amd64 Ubuntu 24.04" into arch and tag
-  const parts = osInfo.split(' ')
-  const arch = parts[0]
+  const parts = osInfo.trim().split(/\s+/)
+  const arch = parts[0] || ''
   const tag = parts.slice(1).join(' ')
 
   return (
@@ -90,7 +90,7 @@ export default function NodesPage() {
           <table className="nodes-table">
             <thead>
               <tr>
-                <th scope="col" />
+                <th scope="col" aria-hidden="true" />
                 <th scope="col">NAME</th>
                 <th scope="col">STATUS</th>
                 <th scope="col">LAST SEEN</th>
@@ -107,11 +107,10 @@ export default function NodesPage() {
                     <td>
                       <span
                         className="nodes-status-dot"
+                        aria-hidden="true"
                         style={{
                           background: isOnline ? 'var(--success)' : 'var(--danger)',
                         }}
-                        role="img"
-                        aria-label={node.status}
                       />
                     </td>
                     <td className="nodes-cell-truncate" style={{ color: 'var(--text)' }}>

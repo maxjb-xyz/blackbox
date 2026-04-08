@@ -92,7 +92,11 @@ export default function UserDropdown({ onClose }: UserDropdownProps) {
             textAlign: 'left',
           }}
           onClick={() => {
-            void logout().finally(() => navigate('/login'))
+            void logout()
+              .catch(err => {
+                console.error('logout:', err)
+              })
+              .finally(() => navigate('/login'))
           }}
         >
           <LogOut size={13} />

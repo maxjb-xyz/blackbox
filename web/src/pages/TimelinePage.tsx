@@ -884,11 +884,6 @@ function TimelineFeed({
   }, [])
 
   useEffect(() => {
-    if (loading || done || !nextCursor || !sentinelVisible) return
-    void loadPage(nextCursor)
-  }, [done, loading, nextCursor, nodeFilter, qFilter, sentinelVisible, serviceFilter, sourceFilter])
-
-  useEffect(() => {
     if (!lastMessage || lastMessage.type !== 'entry') return
     onEntriesChanged()
     const newEntry = lastMessage.data as Entry
@@ -984,9 +979,21 @@ function TimelineFeed({
     if (timeEnd && ts > timeEnd) return false
     return true
   })
+  const oldestLoadedEntry = entries[entries.length - 1]
+  const reachedTimeStartBoundary = Boolean(
+    timeStart &&
+    oldestLoadedEntry &&
+    entryTimestampMs(oldestLoadedEntry) < timeStart.getTime(),
+  )
+  const reachedFilteredEnd = done || reachedTimeStartBoundary
   const visibleEntryIDs = displayEntries.map(entry => entry.id)
   const visibleEntryIDsKey = visibleEntryIDs.join('|')
   visibleEntryIDsRef.current = visibleEntryIDs
+
+  useEffect(() => {
+    if (loading || done || !nextCursor || !sentinelVisible || reachedTimeStartBoundary) return
+    void loadPage(nextCursor)
+  }, [done, loading, nextCursor, nodeFilter, qFilter, reachedTimeStartBoundary, sentinelVisible, serviceFilter, sourceFilter, timeEnd, timeStart])
 
   useEffect(() => {
     void loadIncidentMembership(visibleEntryIDsRef.current)
@@ -1068,12 +1075,12 @@ function TimelineFeed({
         {loading && (
           <div style={{ padding: '8px 24px', color: 'var(--muted)', fontSize: '12px' }}>loading...</div>
         )}
-        {done && !loading && entries.length > 0 && (
+        {reachedFilteredEnd && !loading && timeFilteredEntries.length > 0 && (
           <div style={{ padding: '8px 24px', color: 'var(--muted)', fontSize: '12px', textAlign: 'center' }}>
             - end of timeline -
           </div>
         )}
-        {done && entries.length === 0 && (
+        {reachedFilteredEnd && !loading && timeFilteredEntries.length === 0 && (
           <div style={{ padding: '24px', color: 'var(--muted)', fontSize: '12px', textAlign: 'center' }}>
             no entries found
           </div>

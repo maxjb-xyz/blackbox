@@ -458,6 +458,18 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
   )
 }
 
+function isToday(dateString: string | null | undefined): boolean {
+  if (!dateString) return false
+  const d = new Date(dateString)
+  if (Number.isNaN(d.getTime())) return false
+  const now = new Date()
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  )
+}
+
 export default function IncidentsPage() {
   const [openIncidents, setOpenIncidents] = useState<Incident[]>([])
   const [resolvedIncidents, setResolvedIncidents] = useState<Incident[]>([])
@@ -536,18 +548,6 @@ export default function IncidentsPage() {
 
   const confirmed = openIncidents.filter(i => i.confidence === 'confirmed').length
   const suspected = openIncidents.filter(i => i.confidence !== 'confirmed').length
-
-  function isToday(dateString: string | null | undefined): boolean {
-    if (!dateString) return false
-    const d = new Date(dateString)
-    if (Number.isNaN(d.getTime())) return false
-    const now = new Date()
-    return (
-      d.getFullYear() === now.getFullYear() &&
-      d.getMonth() === now.getMonth() &&
-      d.getDate() === now.getDate()
-    )
-  }
 
   const resolvedToday = resolvedIncidents.filter(i => isToday(i.resolved_at)).length
 

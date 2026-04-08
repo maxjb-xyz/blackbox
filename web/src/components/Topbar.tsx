@@ -45,8 +45,8 @@ export default function Topbar() {
   const nodeColor = totalCount > 0 && onlineCount < totalCount ? 'var(--danger)' : 'var(--success)'
 
   const wsTitle = wsConnected
-    ? `CONNECTED${lastConnectedAt ? ` â€” LAST MSG ${lastConnectedAt.toLocaleTimeString()}` : ''}`
-    : wsConnecting ? 'CONNECTING...' : 'DISCONNECTED â€” CLICK TO RECONNECT'
+    ? `CONNECTED${lastConnectedAt ? ` \u2014 LAST MSG ${lastConnectedAt.toLocaleTimeString()}` : ''}`
+    : wsConnecting ? 'CONNECTING...' : 'DISCONNECTED \u2014 CLICK TO RECONNECT'
 
   function navClass(isActive: boolean) {
     return [
