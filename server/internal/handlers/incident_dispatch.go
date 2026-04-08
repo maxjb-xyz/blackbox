@@ -14,10 +14,6 @@ const (
 
 var incidentDispatchSem = make(chan struct{}, maxPendingIncidentSends)
 
-func dispatchToIncidentChannel(ch chan<- types.Entry, entry types.Entry) {
-	dispatchToIncidentChannelWithShutdown(ch, nil, entry)
-}
-
 func dispatchToIncidentChannelWithShutdown(ch chan<- types.Entry, shutdown <-chan struct{}, entry types.Entry) {
 	if ch == nil {
 		log.Printf("incidents: skipping incident dispatch for entry %s (service %s): channel is nil", entry.ID, entry.Service)
