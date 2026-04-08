@@ -14,7 +14,7 @@ import { useNodePulse } from '../components/NodePulse'
 import { useWebSocketContext } from '../components/WebSocketProvider'
 import { formatLocalTimestamp } from '../utils/time'
 
-const SOURCE_OPTIONS = ['', 'docker', 'files', 'agent', 'webhook']
+const SOURCE_OPTIONS = ['', 'docker', 'files', 'systemd', 'agent', 'webhook']
 
 const FILTER_CONTROL_STYLE = {
   background: 'var(--bg)',

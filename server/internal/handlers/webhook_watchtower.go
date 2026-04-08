@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"regexp"
+	"strings"
 	"time"
 
 	"blackbox/server/internal/hub"
@@ -19,7 +21,9 @@ type watchtowerPayload struct {
 	Level   string `json:"Level"`
 }
 
-func WebhookWatchtower(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry) http.HandlerFunc {
+var watchtowerParensPattern = regexp.MustCompile(`\([^)]*\)`)
+
+func WebhookWatchtower(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry, shutdown <-chan struct{}) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var payload watchtowerPayload
 		if !decodeJSONBody(w, r, 1<<20, &payload) {
@@ -37,6 +41,14 @@ func WebhookWatchtower(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.En
 		}
 		if payload.Level != "" {
 			meta["watchtower.level"] = payload.Level
+		}
+		updatedServices, err := extractWatchtowerServices(database, payload.Message)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to normalize watchtower services")
+			return
+		}
+		if len(updatedServices) > 0 {
+			meta["watchtower.services"] = updatedServices
 		}
 
 		metaBytes, err := json.Marshal(meta)
@@ -61,17 +73,64 @@ func WebhookWatchtower(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.En
 			Content:   payload.Message,
 			Metadata:  string(metaBytes),
 		}
-			if err := database.Create(&entry).Error; err != nil {
-				writeError(w, http.StatusInternalServerError, "failed to save entry")
-				return
+		if err := database.Create(&entry).Error; err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to save entry")
+			return
+		}
+		dispatchToIncidentChannelWithShutdown(incidentCh, shutdown, entry)
+		if h != nil {
+			if msg := MarshalWSMessage("entry", entry); msg != nil {
+				h.Broadcast(msg)
 			}
-			dispatchToIncidentChannel(incidentCh, entry)
-			if h != nil {
-				if msg := MarshalWSMessage("entry", entry); msg != nil {
-					h.Broadcast(msg)
-				}
 		}
 
 		w.WriteHeader(http.StatusCreated)
 	}
+}
+
+func extractWatchtowerServices(database *gorm.DB, message string) ([]string, error) {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return nil, nil
+	}
+
+	candidateSection := message
+	idx := strings.Index(candidateSection, ":")
+	if idx < 0 {
+		return nil, nil
+	}
+	candidateSection = candidateSection[idx+1:]
+	candidateSection = strings.TrimSpace(candidateSection)
+	if candidateSection == "" {
+		return nil, nil
+	}
+
+	parts := strings.FieldsFunc(candidateSection, func(r rune) bool {
+		return r == ',' || r == '\n' || r == ';'
+	})
+	servicesSeen := make(map[string]struct{}, len(parts))
+	servicesList := make([]string, 0, len(parts))
+
+	for _, part := range parts {
+		part = watchtowerParensPattern.ReplaceAllString(part, "")
+		part = strings.TrimSpace(strings.Trim(part, `"'[]`))
+		if part == "" {
+			continue
+		}
+
+		normalized, err := services.NormalizeService(database, part)
+		if err != nil {
+			return nil, err
+		}
+		if normalized == "" {
+			continue
+		}
+		if _, ok := servicesSeen[normalized]; ok {
+			continue
+		}
+		servicesSeen[normalized] = struct{}{}
+		servicesList = append(servicesList, normalized)
+	}
+
+	return servicesList, nil
 }

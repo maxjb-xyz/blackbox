@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -86,7 +87,6 @@ func Init(path string) (*gorm.DB, error) {
 			return nil, err
 		}
 	}
-	go sweepExpiredOIDCStates(database)
 	return database, nil
 }
 
@@ -173,14 +173,29 @@ func ensureWritablePath(path string) error {
 	return nil
 }
 
-func sweepExpiredOIDCStates(database *gorm.DB) {
+func deleteExpiredOIDCStates(database *gorm.DB) {
+	result := database.Delete(&models.OIDCState{}, "expires_at < ?", time.Now())
+	if result.Error != nil {
+		log.Printf("oidc state sweep error: %v", result.Error)
+	}
+}
+
+func sweepExpiredOIDCStates(ctx context.Context, database *gorm.DB) {
+	deleteExpiredOIDCStates(database)
+
 	ticker := time.NewTicker(15 * time.Minute)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		result := database.Delete(&models.OIDCState{}, "expires_at < ?", time.Now())
-		if result.Error != nil {
-			log.Printf("oidc state sweep error: %v", result.Error)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			deleteExpiredOIDCStates(database)
 		}
 	}
+}
+
+func StartOIDCStateSweeper(ctx context.Context, database *gorm.DB) {
+	go sweepExpiredOIDCStates(ctx, database)
 }

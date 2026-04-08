@@ -517,3 +517,47 @@ func TestSystemdFailureDuringRecoveryWindow_KeepsIncidentOpen(t *testing.T) {
 	assert.Equal(t, "open", incident.Status)
 	assert.Nil(t, incident.ResolvedAt)
 }
+
+func TestWatchtowerUpdateFollowedByRestart_OpensSuspectedIncident(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	mgr := NewManager(database, hub.New())
+	ch := NewChannel()
+	go mgr.Run(t.Context(), ch)
+
+	base := time.Now().UTC()
+	update := makeEntryAt("watchtower", "webhook", "update", `{"watchtower.services":["sonarr"]}`, base)
+	update.NodeName = "webhook"
+	require.NoError(t, database.Create(&update).Error)
+	ch <- update
+
+	restart := makeEntryAt("sonarr", "docker", "start", `{}`, base.Add(15*time.Second))
+	restart.NodeName = "media-node"
+	require.NoError(t, database.Create(&restart).Error)
+	ch <- restart
+
+	var incident models.Incident
+	require.Eventually(t, func() bool {
+		if err := database.Where("confidence = ?", "suspected").First(&incident).Error; err != nil {
+			return false
+		}
+		return incident.TriggerID == restart.ID && incident.RootCauseID == update.ID
+	}, time.Second, 10*time.Millisecond)
+	assert.Equal(t, `["sonarr"]`, incident.Services)
+
+	var cause models.IncidentEntry
+	require.Eventually(t, func() bool {
+		return database.Where("incident_id = ? AND role = ?", incident.ID, "cause").First(&cause).Error == nil
+	}, time.Second, 10*time.Millisecond)
+	assert.Equal(t, update.ID, cause.EntryID)
+}
+
+func TestWatchtowerTargetServices_NormalizesCase(t *testing.T) {
+	entry := types.Entry{
+		Service:  "WatchTower",
+		Metadata: `{"watchtower.services":[" Sonarr ","sonarr","SONARR"]}`,
+	}
+
+	assert.Equal(t, []string{"sonarr"}, watchtowerTargetServices(entry))
+}

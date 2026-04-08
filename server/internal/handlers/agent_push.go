@@ -18,7 +18,7 @@ import (
 
 const maxAgentEntryBodyBytes = 64 << 10
 
-func AgentPush(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry) http.HandlerFunc {
+func AgentPush(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry, shutdown <-chan struct{}) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		nodeName, ok := middleware.AgentNodeFromContext(r.Context())
 		if !ok {
@@ -49,15 +49,15 @@ func AgentPush(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry) htt
 			return
 		}
 		entry.Service = serviceName
-			if err := database.Create(&entry).Error; err != nil {
-				writeError(w, http.StatusInternalServerError, "failed to save entry")
-				return
+		if err := database.Create(&entry).Error; err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to save entry")
+			return
+		}
+		dispatchToIncidentChannelWithShutdown(incidentCh, shutdown, entry)
+		if h != nil {
+			if msg := MarshalWSMessage("entry", entry); msg != nil {
+				h.Broadcast(msg)
 			}
-			dispatchToIncidentChannel(incidentCh, entry)
-			if h != nil {
-				if msg := MarshalWSMessage("entry", entry); msg != nil {
-					h.Broadcast(msg)
-				}
 		}
 		if upsertNode(database, entry) {
 			broadcastNodeStatus(database, h)

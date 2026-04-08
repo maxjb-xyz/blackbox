@@ -28,7 +28,7 @@ type uptimePayload struct {
 	} `json:"monitor"`
 }
 
-func WebhookUptime(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry) http.HandlerFunc {
+func WebhookUptime(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry, shutdown <-chan struct{}) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var payload uptimePayload
 		if !decodeJSONBody(w, r, 1<<20, &payload) {
@@ -126,15 +126,15 @@ func WebhookUptime(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry)
 			Metadata:     string(metaBytes),
 			CorrelatedID: correlatedID,
 		}
-			if err := database.Create(&entry).Error; err != nil {
-				writeError(w, http.StatusInternalServerError, "failed to save entry")
-				return
+		if err := database.Create(&entry).Error; err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to save entry")
+			return
+		}
+		dispatchToIncidentChannelWithShutdown(incidentCh, shutdown, entry)
+		if h != nil {
+			if msg := MarshalWSMessage("entry", entry); msg != nil {
+				h.Broadcast(msg)
 			}
-			dispatchToIncidentChannel(incidentCh, entry)
-			if h != nil {
-				if msg := MarshalWSMessage("entry", entry); msg != nil {
-					h.Broadcast(msg)
-				}
 		}
 
 		w.WriteHeader(http.StatusCreated)

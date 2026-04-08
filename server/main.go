@@ -3,10 +3,13 @@ package main
 import (
 	"context"
 	"embed"
+	"errors"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"blackbox/server/internal/auth"
@@ -33,6 +36,8 @@ const defaultDBPath = "/data/blackbox.db"
 
 func main() {
 	log.Printf("Blackbox Server %s (%s) starting", Version, Commit)
+	rootCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
@@ -55,10 +60,17 @@ func main() {
 		log.Fatalf("database init failed: %v", err)
 	}
 	log.Printf("database initialized at %s", dbPath)
+	db.StartOIDCStateSweeper(rootCtx, database)
 	eventHub := hub.New()
 	incidentCh := incidents.NewChannel()
 	incidentMgr := incidents.NewManager(database, eventHub)
-	go incidentMgr.Run(context.Background(), incidentCh)
+	managerCtx, stopManager := context.WithCancel(context.Background())
+	defer stopManager()
+	managerDone := make(chan struct{})
+	go func() {
+		defer close(managerDone)
+		incidentMgr.Run(managerCtx, incidentCh)
+	}()
 
 	registry := auth.NewOIDCRegistry(database)
 
@@ -97,10 +109,16 @@ func main() {
 		const retryInterval = 10 * time.Second
 		lastOIDCRegistryStatus := oidcRegistryStatusUnknown
 		for attempt := 1; ; attempt++ {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			if err := rootCtx.Err(); err != nil {
+				return
+			}
+			ctx, cancel := context.WithTimeout(rootCtx, 30*time.Second)
 			err := registry.Reload(ctx)
 			cancel()
 			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					return
+				}
 				log.Printf("OIDC registry reload attempt %d failed: %v", attempt, err)
 			} else {
 				providers, listErr := registry.ListEnabled()
@@ -114,7 +132,11 @@ func main() {
 					lastOIDCRegistryStatus = currentOIDCRegistryStatus
 				}
 			}
-			time.Sleep(retryInterval)
+			select {
+			case <-rootCtx.Done():
+				return
+			case <-time.After(retryInterval):
+			}
 		}
 	}()
 
@@ -150,7 +172,7 @@ func main() {
 		r.Get("/api/incidents/{id}", handlers.GetIncident(database))
 		r.Get("/api/entries", handlers.ListEntries(database))
 		r.Get("/api/entries/services", handlers.ListEntryServices(database))
-		r.Post("/api/entries", handlers.CreateEntry(database, eventHub, incidentCh))
+		r.Post("/api/entries", handlers.CreateEntry(database, eventHub, incidentCh, managerCtx.Done()))
 		r.Get("/api/entries/{id}", handlers.GetEntry(database))
 		r.Post("/api/entries/{id}/notes", handlers.CreateNote(database))
 		r.Get("/api/entries/{id}/notes", handlers.ListNotes(database))
@@ -186,13 +208,13 @@ func main() {
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.AgentAuth(agentConfig))
 		r.Get("/api/agent/config", handlers.AgentConfig(database))
-		r.Post("/api/agent/push", handlers.AgentPush(database, eventHub, incidentCh))
+		r.Post("/api/agent/push", handlers.AgentPush(database, eventHub, incidentCh, managerCtx.Done()))
 	})
 
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.WebhookAuth(webhookSecret))
-		r.Post("/api/webhooks/uptime", handlers.WebhookUptime(database, eventHub, incidentCh))
-		r.Post("/api/webhooks/watchtower", handlers.WebhookWatchtower(database, eventHub, incidentCh))
+		r.Post("/api/webhooks/uptime", handlers.WebhookUptime(database, eventHub, incidentCh, managerCtx.Done()))
+		r.Post("/api/webhooks/watchtower", handlers.WebhookWatchtower(database, eventHub, incidentCh, managerCtx.Done()))
 	})
 
 	spaHandler := static.Handler(staticFiles)
@@ -207,8 +229,27 @@ func main() {
 
 	addr := getEnv("LISTEN_ADDR", ":8080")
 	log.Printf("listening on %s", addr)
-	if err := http.ListenAndServe(addr, r); err != nil {
+	server := &http.Server{Addr: addr, Handler: r}
+	shutdownDone := make(chan struct{})
+	go func() {
+		defer close(shutdownDone)
+		<-rootCtx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil && !errors.Is(err, context.Canceled) {
+			log.Printf("server shutdown error: %v", err)
+		}
+		if !handlers.WaitForIncidentDispatches(35 * time.Second) {
+			log.Printf("incidents: timed out waiting for dispatch goroutines to drain")
+		}
+		close(incidentCh)
+		<-managerDone
+	}()
+	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("server failed: %v", err)
+	}
+	if rootCtx.Err() != nil {
+		<-shutdownDone
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"blackbox/server/internal/models"
@@ -35,6 +36,21 @@ var callOllamaCorrelateFunc = func(baseURL, model, prompt string) (string, error
 type OllamaEnricher struct {
 	db            *gorm.DB
 	onIncidentSet func(string)
+	dispatchMu    sync.Mutex
+	dispatches    map[string]ollamaDispatchState
+}
+
+type ollamaDispatch struct {
+	incidentID    string
+	mode          string
+	linkedEntries []enrichEntry
+	nodeName      string
+	ollamaURL     string
+	ollamaModel   string
+}
+
+type ollamaDispatchState struct {
+	queued *ollamaDispatch
 }
 
 type ollamaRequest struct {
@@ -69,6 +85,7 @@ func NewOllamaEnricher(db *gorm.DB, onIncidentSet func(string)) *OllamaEnricher 
 	return &OllamaEnricher{
 		db:            db,
 		onIncidentSet: onIncidentSet,
+		dispatches:    make(map[string]ollamaDispatchState),
 	}
 }
 
@@ -103,10 +120,13 @@ func (e *OllamaEnricher) EnrichAsync(incidentID string, linkedEntries []enrichEn
 	if ollamaURL == "" || ollamaModel == "" {
 		return
 	}
-	if !e.setPending(incidentID, ollamaModel) {
-		return
-	}
-	go e.enrich(incidentID, linkedEntries, ollamaURL, ollamaModel)
+	e.enqueueDispatch(ollamaDispatch{
+		incidentID:    incidentID,
+		mode:          "analysis",
+		linkedEntries: linkedEntries,
+		ollamaURL:     ollamaURL,
+		ollamaModel:   ollamaModel,
+	})
 }
 
 // CorrelateAsync spawns a goroutine that waits for deterministic links to
@@ -119,10 +139,82 @@ func (e *OllamaEnricher) CorrelateAsync(incidentID string, _ []enrichEntry, node
 	if ollamaURL == "" || ollamaModel == "" {
 		return
 	}
-	if !e.setPending(incidentID, ollamaModel) {
+	e.enqueueDispatch(ollamaDispatch{
+		incidentID:  incidentID,
+		mode:        "enhanced",
+		nodeName:    nodeName,
+		ollamaURL:   ollamaURL,
+		ollamaModel: ollamaModel,
+	})
+}
+
+func (e *OllamaEnricher) enqueueDispatch(dispatch ollamaDispatch) {
+	if e == nil {
 		return
 	}
-	go e.correlate(incidentID, nodeName, ollamaURL, ollamaModel)
+	if !e.registerDispatch(dispatch) {
+		return
+	}
+	go e.runDispatchLoop(dispatch)
+}
+
+func (e *OllamaEnricher) registerDispatch(dispatch ollamaDispatch) bool {
+	e.dispatchMu.Lock()
+	defer e.dispatchMu.Unlock()
+
+	state, ok := e.dispatches[dispatch.incidentID]
+	if ok {
+		state.queued = &dispatch
+		e.dispatches[dispatch.incidentID] = state
+		return false
+	}
+
+	e.dispatches[dispatch.incidentID] = ollamaDispatchState{}
+	return true
+}
+
+func (e *OllamaEnricher) nextQueuedDispatch(incidentID string) (ollamaDispatch, bool) {
+	e.dispatchMu.Lock()
+	defer e.dispatchMu.Unlock()
+
+	state, ok := e.dispatches[incidentID]
+	if !ok {
+		return ollamaDispatch{}, false
+	}
+	if state.queued == nil {
+		delete(e.dispatches, incidentID)
+		return ollamaDispatch{}, false
+	}
+
+	next := *state.queued
+	state.queued = nil
+	e.dispatches[incidentID] = state
+	return next, true
+}
+
+func (e *OllamaEnricher) runDispatchLoop(dispatch ollamaDispatch) {
+	current := dispatch
+	for {
+		if !e.setPending(current.incidentID, current.ollamaModel) {
+			if next, ok := e.nextQueuedDispatch(current.incidentID); ok {
+				current = next
+				continue
+			}
+			return
+		}
+
+		if current.mode == "enhanced" {
+			e.correlate(current.incidentID, current.nodeName, current.ollamaURL, current.ollamaModel)
+		} else {
+			e.enrich(current.incidentID, current.linkedEntries, current.ollamaURL, current.ollamaModel)
+		}
+
+		next, ok := e.nextQueuedDispatch(current.incidentID)
+		if !ok {
+			return
+		}
+		current = next
+	}
 }
 
 func (e *OllamaEnricher) enrich(incidentID string, entries []enrichEntry, ollamaURL, ollamaModel string) {

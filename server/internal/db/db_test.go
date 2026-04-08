@@ -1,8 +1,10 @@
 package db_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -21,6 +23,15 @@ type sqliteIndexInfoRow struct {
 	Name  string `gorm:"column:name"`
 }
 
+func closeDBOnCleanup(t *testing.T, database *gorm.DB) {
+	t.Helper()
+	t.Cleanup(func() {
+		sqlDB, err := database.DB()
+		require.NoError(t, err)
+		require.NoError(t, sqlDB.Close())
+	})
+}
+
 func TestInit_CreatesTablesAndMigrates(t *testing.T) {
 	tmp, err := os.CreateTemp("", "blackbox-test-*.db")
 	require.NoError(t, err)
@@ -32,6 +43,7 @@ func TestInit_CreatesTablesAndMigrates(t *testing.T) {
 	database, err := db.Init(tmp.Name())
 	require.NoError(t, err)
 	assert.NotNil(t, database)
+	closeDBOnCleanup(t, database)
 
 	user := models.User{ID: "01TESTUSER", Username: "admin", IsAdmin: true}
 	assert.NoError(t, database.Create(&user).Error)
@@ -48,6 +60,7 @@ func TestInit_CreatesTablesAndMigrates(t *testing.T) {
 func TestIncidentTablesExist(t *testing.T) {
 	database, err := db.Init(":memory:")
 	require.NoError(t, err)
+	closeDBOnCleanup(t, database)
 
 	assert.True(t, database.Migrator().HasTable(&models.Incident{}))
 	assert.True(t, database.Migrator().HasTable(&models.IncidentEntry{}))
@@ -63,6 +76,7 @@ func TestInit_CreatesCompositeEntryCursorIndex(t *testing.T) {
 
 	database, err := db.Init(tmp.Name())
 	require.NoError(t, err)
+	closeDBOnCleanup(t, database)
 
 	require.True(t, database.Migrator().HasIndex(&types.Entry{}, "idx_entries_timestamp_id"))
 	require.False(t, database.Migrator().HasIndex(&types.Entry{}, "idx_entries_timestamp"))
@@ -108,6 +122,7 @@ func TestInit_DropsLegacyTimestampOnlyEntryIndex(t *testing.T) {
 
 	database, err := db.Init(tmp.Name())
 	require.NoError(t, err)
+	closeDBOnCleanup(t, database)
 
 	require.True(t, database.Migrator().HasIndex(&types.Entry{}, "idx_entries_timestamp_id"))
 	require.False(t, database.Migrator().HasIndex(&types.Entry{}, "idx_entries_timestamp"))
@@ -123,6 +138,7 @@ func TestInit_MigratesInviteCodeOIDCStateAndOIDCConfig(t *testing.T) {
 
 	database, err := db.Init(tmp.Name())
 	require.NoError(t, err)
+	closeDBOnCleanup(t, database)
 
 	invite := models.InviteCode{
 		ID:        "01INVITEID0000000",
@@ -134,13 +150,13 @@ func TestInit_MigratesInviteCodeOIDCStateAndOIDCConfig(t *testing.T) {
 	assert.NoError(t, database.Create(&invite).Error)
 
 	state := models.OIDCState{
-		ID:        "01STATEID00000000",
-		State:     "randomstate123456789012345678901234567890123456789012345678901234",
-		Nonce:     "randomnonce123456789012345678901234567890123456789012345678901234",
+		ID:         "01STATEID00000000",
+		State:      "randomstate123456789012345678901234567890123456789012345678901234",
+		Nonce:      "randomnonce123456789012345678901234567890123456789012345678901234",
 		ProviderID: "01PROVIDERID000000",
 		InviteCode: "invite-code-123",
-		ExpiresAt: time.Now().Add(10 * time.Minute),
-		CreatedAt: time.Now(),
+		ExpiresAt:  time.Now().Add(10 * time.Minute),
+		CreatedAt:  time.Now(),
 	}
 	assert.NoError(t, database.Create(&state).Error)
 
@@ -197,6 +213,7 @@ func TestInit_MigratesServiceAliases(t *testing.T) {
 
 	database, err := db.Init(tmp.Name())
 	require.NoError(t, err)
+	closeDBOnCleanup(t, database)
 
 	assert.NoError(t, database.Create(&models.ServiceAlias{Canonical: "traefik", Alias: "traefik-dashboard"}).Error)
 
@@ -232,6 +249,7 @@ func TestInit_CreatesMissingDatabasePath(t *testing.T) {
 	database, err := db.Init(dbPath)
 	require.NoError(t, err)
 	assert.NotNil(t, database)
+	closeDBOnCleanup(t, database)
 
 	info, err := os.Stat(dbPath)
 	require.NoError(t, err)
@@ -239,6 +257,9 @@ func TestInit_CreatesMissingDatabasePath(t *testing.T) {
 }
 
 func TestInit_ReturnsHelpfulErrorForReadOnlyDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows directory mode bits do not reliably simulate a read-only directory for this test")
+	}
 	if os.Getuid() == 0 {
 		t.Skip("root can bypass directory permissions")
 	}
@@ -252,4 +273,45 @@ func TestInit_ReturnsHelpfulErrorForReadOnlyDirectory(t *testing.T) {
 	assert.Contains(t, err.Error(), "database directory")
 	assert.Contains(t, err.Error(), "uid=")
 	assert.Contains(t, err.Error(), "gid=")
+}
+
+func TestStartOIDCStateSweeper_DeletesExpiredStatesImmediately(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+	closeDBOnCleanup(t, database)
+
+	expired := models.OIDCState{
+		ID:         "01STATEEXPIRED0000",
+		State:      "expiredstate1234567890123456789012345678901234567890123456789012",
+		Nonce:      "expirednonce1234567890123456789012345678901234567890123456789012",
+		ProviderID: "01PROVIDEREXPIRED0",
+		ExpiresAt:  time.Now().Add(-time.Minute),
+		CreatedAt:  time.Now().Add(-2 * time.Minute),
+	}
+	fresh := models.OIDCState{
+		ID:         "01STATEFRESH000000",
+		State:      "freshstate123456789012345678901234567890123456789012345678901234",
+		Nonce:      "freshnonce123456789012345678901234567890123456789012345678901234",
+		ProviderID: "01PROVIDERFRESH000",
+		ExpiresAt:  time.Now().Add(time.Hour),
+		CreatedAt:  time.Now(),
+	}
+	require.NoError(t, database.Create(&expired).Error)
+	require.NoError(t, database.Create(&fresh).Error)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	db.StartOIDCStateSweeper(ctx, database)
+
+	require.Eventually(t, func() bool {
+		var expiredCount int64
+		if err := database.Model(&models.OIDCState{}).Where("id = ?", expired.ID).Count(&expiredCount).Error; err != nil {
+			return false
+		}
+		return expiredCount == 0
+	}, time.Second, 10*time.Millisecond)
+
+	var freshCount int64
+	require.NoError(t, database.Model(&models.OIDCState{}).Where("id = ?", fresh.ID).Count(&freshCount).Error)
+	assert.Equal(t, int64(1), freshCount)
 }

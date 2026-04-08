@@ -209,22 +209,22 @@ func isExcluded(path string, ignorePatterns []string) bool {
 }
 
 func rootFor(path string, roots []watchRoot) string {
-	p := filepath.Clean(path)
+	p := slashClean(path)
 	for _, r := range roots {
 		for _, candidate := range []string{r.configured, r.resolved} {
-			candidate = filepath.Clean(candidate)
-			if p == candidate || strings.HasPrefix(p, candidate+string(os.PathSeparator)) {
-				return r.configured
+			candidate = slashClean(candidate)
+			if p == candidate || strings.HasPrefix(p, candidate+"/") {
+				return slashClean(r.configured)
 			}
 		}
 	}
-	return filepath.Dir(path)
+	return slashClean(filepath.Dir(path))
 }
 
 // serviceFromPath extracts a service name from a file path by stripping
 // common config directory prefixes. Falls back to the watch root path.
 func serviceFromPath(filePath string, roots []watchRoot) string {
-	logical := logicalPathFor(filePath, roots)
+	logical := slashClean(logicalPathFor(filePath, roots))
 
 	prefixes := []string{"/etc/", "/opt/", "/var/lib/"}
 	for _, prefix := range prefixes {
@@ -254,6 +254,10 @@ func serviceFromPath(filePath string, roots []watchRoot) string {
 	}
 
 	return rootFor(filePath, roots)
+}
+
+func slashClean(path string) string {
+	return filepath.ToSlash(filepath.Clean(path))
 }
 
 func logicalPathFor(path string, roots []watchRoot) string {

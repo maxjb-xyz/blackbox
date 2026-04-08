@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -76,8 +77,8 @@ func TestWatch_EmitsWriteForConfigFile(t *testing.T) {
 	if entry.Event != "write" {
 		t.Fatalf("entry event = %q, want write", entry.Event)
 	}
-	if entry.Service != filepath.Clean(root) {
-		t.Fatalf("entry service = %q, want %q", entry.Service, filepath.Clean(root))
+	if entry.Service != filepath.ToSlash(filepath.Clean(root)) {
+		t.Fatalf("entry service = %q, want %q", entry.Service, filepath.ToSlash(filepath.Clean(root)))
 	}
 
 	var meta map[string]any
@@ -100,6 +101,10 @@ func TestWatch_EmitsWriteForConfigFile(t *testing.T) {
 }
 
 func TestWatch_FollowsSymlinkedRootDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("creating directory symlinks requires elevated Windows privileges in this environment")
+	}
+
 	base := t.TempDir()
 	realRoot := filepath.Join(base, "real-stacks")
 	if err := os.MkdirAll(filepath.Join(realRoot, "sonarr"), 0o755); err != nil {
@@ -130,8 +135,8 @@ func TestWatch_FollowsSymlinkedRootDirectory(t *testing.T) {
 
 	entry := waitForEntry(t, out)
 	wantPath := filepath.Join(linkRoot, "sonarr", "docker-compose.yml")
-	if entry.Service != filepath.Clean(linkRoot) {
-		t.Fatalf("entry service = %q, want %q", entry.Service, filepath.Clean(linkRoot))
+	if entry.Service != filepath.ToSlash(filepath.Clean(linkRoot)) {
+		t.Fatalf("entry service = %q, want %q", entry.Service, filepath.ToSlash(filepath.Clean(linkRoot)))
 	}
 	if entry.Content != "file write: "+wantPath {
 		t.Fatalf("entry content = %q, want %q", entry.Content, "file write: "+wantPath)
