@@ -1,0 +1,104 @@
+import { useEffect, useRef } from 'react'
+import { NavLink, useNavigate } from 'react-router-dom'
+import { LogOut } from 'lucide-react'
+import { useSession } from '../session'
+
+interface UserDropdownProps {
+  onClose: () => void
+}
+
+export default function UserDropdown({ onClose }: UserDropdownProps) {
+  const { user, logout } = useSession()
+  const navigate = useNavigate()
+  const ref = useRef<HTMLDivElement>(null)
+  const isAdmin = user?.is_admin === true
+
+  useEffect(() => {
+    function handleMouseDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        onClose()
+      }
+    }
+    document.addEventListener('mousedown', handleMouseDown)
+    return () => document.removeEventListener('mousedown', handleMouseDown)
+  }, [onClose])
+
+  const linkStyle: React.CSSProperties = {
+    display: 'block',
+    padding: '8px 16px',
+    fontSize: 12,
+    letterSpacing: '0.1em',
+    color: 'var(--muted)',
+    textDecoration: 'none',
+    transition: 'color 0.15s',
+  }
+
+  return (
+    <div
+      ref={ref}
+      style={{
+        position: 'absolute',
+        top: 'calc(100% + 4px)',
+        right: 0,
+        width: 180,
+        background: '#0D0D0D',
+        border: '1px solid #242424',
+        zIndex: 200,
+        boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+      }}
+    >
+      <div style={{ padding: '10px 16px 8px', borderBottom: '1px solid #1a1a1a' }}>
+        <span style={{ fontSize: 11, color: 'var(--text)', letterSpacing: '0.08em' }}>
+          {user?.username ?? 'USER'}
+        </span>
+      </div>
+
+      <NavLink to="/account" onClick={onClose} style={linkStyle}>
+        ACCOUNT
+      </NavLink>
+
+      {isAdmin && (
+        <>
+          <div style={{ padding: '8px 16px 2px', fontSize: 10, color: '#333', letterSpacing: '0.12em' }}>
+            ADMIN
+          </div>
+          <NavLink to="/admin" onClick={onClose} style={linkStyle}>
+            ADMIN PANEL
+          </NavLink>
+          <NavLink to="/webhooks" onClick={onClose} style={linkStyle}>
+            WEBHOOKS
+          </NavLink>
+        </>
+      )}
+
+      <NavLink to="/diagnostics" onClick={onClose} style={linkStyle}>
+        DIAGNOSTICS
+      </NavLink>
+
+      <div style={{ borderTop: '1px solid #1a1a1a', padding: '4px 0' }}>
+        <button
+          type="button"
+          style={{
+            ...linkStyle,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            background: 'transparent',
+            border: 'none',
+            width: '100%',
+            fontFamily: 'inherit',
+            cursor: 'pointer',
+            color: 'var(--danger)',
+            textAlign: 'left',
+          }}
+          onClick={() => {
+            void logout().finally(() => navigate('/login'))
+          }}
+        >
+          <LogOut size={13} />
+          LOGOUT
+        </button>
+      </div>
+    </div>
+  )
+}
