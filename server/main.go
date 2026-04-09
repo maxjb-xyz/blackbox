@@ -168,6 +168,7 @@ func main() {
 		r.Get("/api/auth/invite", handlers.ListInvites(database))
 		r.Get("/api/nodes", handlers.ListNodes(database))
 		r.Get("/api/incidents", handlers.ListIncidents(database))
+		r.Get("/api/incidents/summary", handlers.GetIncidentSummary(database))
 		r.Post("/api/incidents/membership", handlers.ListIncidentMembership(database))
 		r.Get("/api/incidents/{id}", handlers.GetIncident(database))
 		r.Get("/api/entries", handlers.ListEntries(database))

@@ -173,6 +173,8 @@ export async function fetchEntries(params: {
   service?: string
   q?: string
   hideHeartbeat?: boolean
+  timeStart?: Date | null
+  timeEnd?: Date | null
 }): Promise<EntriesPage> {
   const url = new URL('/api/entries', window.location.origin)
   if (params.cursor) url.searchParams.set('cursor', params.cursor)
@@ -182,6 +184,8 @@ export async function fetchEntries(params: {
   if (params.service) url.searchParams.set('service', params.service)
   if (params.q) url.searchParams.set('q', params.q)
   if (params.hideHeartbeat) url.searchParams.set('hide_heartbeat', 'true')
+  if (params.timeStart) url.searchParams.set('time_start', params.timeStart.toISOString())
+  if (params.timeEnd) url.searchParams.set('time_end', params.timeEnd.toISOString())
 
   const res = await apiFetch(url.toString())
   if (!res.ok) throw new Error('Failed to fetch entries')
@@ -427,6 +431,11 @@ export interface IncidentMembership {
   confidence: Incident['confidence']
 }
 
+export interface IncidentSummary {
+  openCount: number
+  hasConfirmedOpen: boolean
+}
+
 export function parseIncidentServices(inc: Incident): string[] {
   try { return JSON.parse(inc.services) as string[] } catch { return [] }
 }
@@ -454,6 +463,16 @@ export async function fetchIncidents(params?: {
   const res = await apiFetch(url)
   if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to fetch incidents'))
   return res.json() as Promise<IncidentsPage>
+}
+
+export async function fetchIncidentSummary(): Promise<IncidentSummary> {
+  const res = await apiFetch('/api/incidents/summary')
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to fetch incident summary'))
+  const data = await res.json() as { open_count: number, has_confirmed_open: boolean }
+  return {
+    openCount: data.open_count ?? 0,
+    hasConfirmedOpen: data.has_confirmed_open === true,
+  }
 }
 
 export async function fetchIncident(id: string): Promise<IncidentDetail> {

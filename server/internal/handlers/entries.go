@@ -27,6 +27,8 @@ func ListEntries(database *gorm.DB) http.HandlerFunc {
 		source := r.URL.Query().Get("source")
 		service := r.URL.Query().Get("service")
 		q := r.URL.Query().Get("q")
+		timeStartStr := r.URL.Query().Get("time_start")
+		timeEndStr := r.URL.Query().Get("time_end")
 
 		limit := 50
 		if limitStr != "" {
@@ -48,6 +50,22 @@ func ListEntries(database *gorm.DB) http.HandlerFunc {
 				parsedCursor.Timestamp,
 				parsedCursor.ID,
 			)
+		}
+		if timeStartStr != "" {
+			parsedTimeStart, err := time.Parse(time.RFC3339Nano, timeStartStr)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "invalid time_start")
+				return
+			}
+			tx = tx.Where("timestamp >= ?", parsedTimeStart)
+		}
+		if timeEndStr != "" {
+			parsedTimeEnd, err := time.Parse(time.RFC3339Nano, timeEndStr)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "invalid time_end")
+				return
+			}
+			tx = tx.Where("timestamp <= ?", parsedTimeEnd)
 		}
 		if node != "" {
 			tx = tx.Where("node_name = ?", node)

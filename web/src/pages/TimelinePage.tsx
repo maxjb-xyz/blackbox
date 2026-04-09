@@ -11,6 +11,8 @@ import {
 } from '../api/client'
 import type { Entry, EntryNote } from '../api/client'
 import { useNodePulse } from '../components/NodePulse'
+import TimeFilter from '../components/TimeFilter'
+import type { TimeRange } from '../components/TimeFilter'
 import { useWebSocketContext } from '../components/WebSocketProvider'
 import { formatLocalTimestamp } from '../utils/time'
 
@@ -40,14 +42,6 @@ function eventTextColor(event: string): string {
   if (event === 'pull') return 'var(--info)'
   if (event === 'restart' || event === 'update') return 'var(--warning)'
   return 'var(--text)'
-}
-
-function eventCardBackground(event: string): string {
-  if (event === 'stop' || event === 'die' || event === 'down') return 'var(--danger-bg)'
-  if (event === 'start' || event === 'up') return 'var(--success-bg)'
-  if (event === 'pull') return 'var(--info-bg)'
-  if (event === 'restart' || event === 'update') return 'var(--warning-bg)'
-  return 'var(--surface)'
 }
 
 function formatTimestamp(ts?: string | null) {
@@ -542,6 +536,7 @@ export default function TimelinePage() {
   const [viewMode, setViewMode] = useState<ViewMode>(getStoredViewMode)
   const [hideHeartbeat, setHideHeartbeat] = useState<boolean>(getStoredHideHeartbeat)
   const [serviceOptions, setServiceOptions] = useState<string[]>([])
+  const [timeRange, setTimeRange] = useState<TimeRange>({ start: null, end: null })
 
   const serviceMountedRef = useRef(true)
   const serviceRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -623,6 +618,7 @@ export default function TimelinePage() {
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <TimeFilter onChange={setTimeRange} />
       <div
         style={{
           display: 'flex',
@@ -740,7 +736,7 @@ export default function TimelinePage() {
       </div>
 
       <TimelineFeed
-        key={`${nodeFilter}:${sourceFilter}:${serviceFilter}:${qFilter}:${hideHeartbeat}`}
+        key={`${nodeFilter}:${sourceFilter}:${serviceFilter}:${qFilter}:${hideHeartbeat}:${timeRange.start?.toISOString() ?? ''}:${timeRange.end?.toISOString() ?? ''}`}
         nodeFilter={nodeFilter}
         sourceFilter={sourceFilter}
         serviceFilter={serviceFilter}
@@ -748,6 +744,8 @@ export default function TimelinePage() {
         hideHeartbeat={hideHeartbeat}
         viewMode={viewMode}
         onEntriesChanged={refreshServices}
+        timeStart={timeRange.start}
+        timeEnd={timeRange.end}
       />
     </div>
   )
@@ -761,6 +759,8 @@ interface TimelineFeedProps {
   hideHeartbeat: boolean
   viewMode: ViewMode
   onEntriesChanged: () => void
+  timeStart?: Date | null
+  timeEnd?: Date | null
 }
 
 function TimelineFeed({
@@ -771,6 +771,8 @@ function TimelineFeed({
   hideHeartbeat,
   viewMode,
   onEntriesChanged,
+  timeStart,
+  timeEnd,
 }: TimelineFeedProps) {
   const { lastMessage } = useWebSocketContext()
   const [entries, setEntries] = useState<Entry[]>([])
@@ -835,6 +837,8 @@ function TimelineFeed({
         service: serviceFilter || undefined,
         q: qFilter || undefined,
         hideHeartbeat,
+        timeStart,
+        timeEnd,
       })
       if (!mountedRef.current) return
 
@@ -880,11 +884,6 @@ function TimelineFeed({
     observer.observe(sentinel)
     return () => observer.disconnect()
   }, [])
-
-  useEffect(() => {
-    if (loading || done || !nextCursor || !sentinelVisible) return
-    void loadPage(nextCursor)
-  }, [done, loading, nextCursor, nodeFilter, qFilter, sentinelVisible, serviceFilter, sourceFilter])
 
   useEffect(() => {
     if (!lastMessage || lastMessage.type !== 'entry') return
@@ -975,9 +974,34 @@ function TimelineFeed({
     result.splice(expandedIndex, 0, ghostEntry)
     return result
   })()
-  const visibleEntryIDs = displayEntries.map(entry => entry.id)
+  const timeFilteredEntries = displayEntries.filter(entry => {
+    if (!timeStart && !timeEnd) return true
+    const ts = new Date(entry.timestamp)
+    if (timeStart && ts < timeStart) return false
+    if (timeEnd && ts > timeEnd) return false
+    return true
+  })
+  const expandedVisibleInFilteredEntries = expandedId == null || timeFilteredEntries.some(entry => entry.id === expandedId)
+  const reachedFilteredEnd = done
+  const visibleEntryIDs = timeFilteredEntries.map(entry => entry.id)
   const visibleEntryIDsKey = visibleEntryIDs.join('|')
   visibleEntryIDsRef.current = visibleEntryIDs
+
+  useEffect(() => {
+    if (expandedVisibleInFilteredEntries) return
+    if (ghostEntryRef.current) {
+      renderedIdsRef.current.delete(ghostEntryRef.current.id)
+      ghostEntryRef.current = null
+    }
+    expandedIdRef.current = null
+    setExpandedId(null)
+    setGhostEntry(null)
+  }, [expandedVisibleInFilteredEntries])
+
+  useEffect(() => {
+    if (loading || done || !nextCursor || !sentinelVisible) return
+    void loadPage(nextCursor)
+  }, [done, loading, nextCursor, nodeFilter, qFilter, sentinelVisible, serviceFilter, sourceFilter, timeEnd, timeStart])
 
   useEffect(() => {
     void loadIncidentMembership(visibleEntryIDsRef.current)
@@ -1022,7 +1046,7 @@ function TimelineFeed({
         {viewMode === 'cards' ? (
           <div style={{ maxWidth: 760, margin: '0 auto', padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
             <AnimatePresence initial={false}>
-              {displayEntries.map(entry => (
+              {timeFilteredEntries.map(entry => (
                 <TimelineCard
                   key={entry.id}
                   entry={entry}
@@ -1038,7 +1062,7 @@ function TimelineFeed({
           </div>
         ) : (
           <AnimatePresence initial={false}>
-            {displayEntries.map(entry => (
+            {timeFilteredEntries.map(entry => (
               <TimelineRow
                 key={entry.id}
                 entry={entry}
@@ -1059,14 +1083,19 @@ function TimelineFeed({
         {loading && (
           <div style={{ padding: '8px 24px', color: 'var(--muted)', fontSize: '12px' }}>loading...</div>
         )}
-        {done && !loading && entries.length > 0 && (
+        {reachedFilteredEnd && !loading && timeFilteredEntries.length > 0 && (
           <div style={{ padding: '8px 24px', color: 'var(--muted)', fontSize: '12px', textAlign: 'center' }}>
             - end of timeline -
           </div>
         )}
-        {done && entries.length === 0 && (
+        {reachedFilteredEnd && !loading && entries.length === 0 && (
           <div style={{ padding: '24px', color: 'var(--muted)', fontSize: '12px', textAlign: 'center' }}>
             no entries found
+          </div>
+        )}
+        {reachedFilteredEnd && !loading && entries.length > 0 && timeFilteredEntries.length === 0 && (
+          <div style={{ padding: '24px', color: 'var(--muted)', fontSize: '12px', textAlign: 'center' }}>
+            no entries in selected time range
           </div>
         )}
       </div>
@@ -1411,9 +1440,9 @@ function TimelineCard({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip
       }
       onMouseLeave={possibleCause ? onTooltipClear : undefined}
       style={{
-        background: eventCardBackground(entry.event),
+        background: '#0F0F0F',
+        border: '1px solid #1E1E1E',
         borderLeft: `3px solid ${eventBorderColor(entry.event)}`,
-        padding: '14px 18px',
         cursor: 'pointer',
         filter: isDimmed ? 'blur(2px)' : 'none',
         pointerEvents: isDimmed ? 'none' : 'auto',
@@ -1423,59 +1452,101 @@ function TimelineCard({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip
         overflow: 'hidden',
       }}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, gap: 12 }}>
-        <span style={{ color: 'var(--muted)', fontSize: '12px', minWidth: 0 }}>
-          {formatTimestamp(entry.timestamp)}
-          {entry.node_name && <span style={{ margin: '0 6px' }}>|</span>}
-          {entry.node_name}
-          {entry.source && <span style={{ margin: '0 6px' }}>|</span>}
-          <span style={{ color: 'var(--muted)' }}>{sourceLabel}</span>
-        </span>
+      {/* Header row */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: '14px 16px 10px',
+          flexWrap: 'wrap',
+        }}
+      >
         <span
           style={{
+            fontSize: 14,
+            fontWeight: 600,
+            letterSpacing: '0.04em',
             color: eventTextColor(entry.event),
-            fontSize: '10px',
-            fontWeight: 'bold',
-            letterSpacing: '0.1em',
-            background: 'var(--bg)',
-            padding: '2px 6px',
-            border: `1px solid ${eventBorderColor(entry.event)}`,
           }}
-      >
-          {entry.event.toUpperCase()}
+        >
+          {entry.event}
+        </span>
+        {entry.service && (
+          <span style={{ fontSize: 13, color: '#D0D0D0' }}>{entry.service}</span>
+        )}
+        {isGhost && (
+          <span
+            style={{
+              fontSize: 10,
+              color: 'var(--accent)',
+              border: '1px solid var(--accent)',
+              padding: '2px 6px',
+              letterSpacing: '0.08em',
+            }}
+          >
+            LINKED
+          </span>
+        )}
+        {entry.correlated_id && !isGhost && (
+          <span style={{ fontSize: 10, color: 'var(--accent)' }}>^</span>
+        )}
+        <span
+          style={{
+            marginLeft: 'auto',
+            fontSize: 12,
+            color: '#AAB4BD',
+            letterSpacing: '0.04em',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {formatTimestamp(entry.timestamp)}
         </span>
       </div>
 
-      <div style={{ color: 'var(--text)', fontSize: '13px', marginBottom: 0, minWidth: 0 }}>
-        {entry.content}
-        {isGhost && (
-          <span style={{ marginLeft: 8, color: 'var(--accent)', fontSize: '10px', letterSpacing: '0.05em' }}>[LINKED]</span>
+      {/* Meta row */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 14,
+          padding: '0 16px 14px',
+          flexWrap: 'wrap',
+        }}
+      >
+        {entry.node_name && (
+          <span style={{ fontSize: 11 }}>
+            <span style={{ color: '#8B949E', letterSpacing: '0.1em', fontSize: 10 }}>NODE </span>
+            <span style={{ color: '#C3CDD6' }}>{entry.node_name}</span>
+          </span>
         )}
-        {entry.correlated_id && (
-          <span style={{ marginLeft: 8, color: 'var(--accent)', fontSize: '10px' }}>^</span>
+        <span style={{ fontSize: 11 }}>
+          <span style={{ color: '#8B949E', letterSpacing: '0.1em', fontSize: 10 }}>SOURCE </span>
+          <span style={{ color: '#C3CDD6' }}>{sourceLabel}</span>
+        </span>
+        {entry.content && (
+          <span
+            style={{
+              fontSize: 12,
+              color: '#888',
+              fontStyle: 'italic',
+              marginLeft: 'auto',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              maxWidth: '50%',
+            }}
+          >
+            {entry.content}
+          </span>
         )}
       </div>
 
-      {entry.service && (
-        <div
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            marginTop: 8,
-            border: '1px solid var(--border)',
-            padding: '2px 6px',
-            color: 'var(--muted)',
-            fontSize: '10px',
-            letterSpacing: '0.05em',
-            background: 'rgba(0, 0, 0, 0.18)',
-          }}
-        >
-          [{` ${entry.service} `}]
-        </div>
-      )}
-
+      {/* Expanded details */}
       <ExpandableSection isOpen={isExpanded}>
-        <ExpandedDetails entry={entry} />
+        <div style={{ borderTop: '1px solid #181818', padding: '14px 16px 14px 20px' }}>
+          <ExpandedDetails entry={entry} />
+        </div>
       </ExpandableSection>
     </motion.div>
   )

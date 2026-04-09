@@ -4,7 +4,7 @@
   --bg: #0B0B0B;
   --surface: #111111;
   --border: #222222;
-  --text: #E0E0E0;
+  --text: #E8E8E8;
   --muted: #666666;
   --accent: #FF3333;
   --success: #00CC44;
@@ -26,7 +26,7 @@ body {
   background-color: var(--bg);
   color: var(--text);
   font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
-  font-size: 13px;
+  font-size: 14px;
   margin: 0;
 }
 
@@ -39,6 +39,11 @@ body {
   animation: cursor-blink 1s step-end infinite;
   color: var(--accent);
   margin-left: 2px;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
 
 @keyframes terminal-startup {
@@ -58,8 +63,11 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .cursor-blink,
-  .terminal-startup {
-    animation: none;
+  .terminal-startup,
+  .pulse-dot,
+  .ws-status-dot {
+    animation: none !important;
+    transition: none !important;
   }
 }
 
@@ -112,55 +120,28 @@ body {
 
 .nodes-table th {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 400;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.12em;
   text-align: left;
-  padding: 4px 8px;
+  padding: 8px 14px;
   border-bottom: 1px solid var(--border);
 }
 
 .nodes-table td {
-  padding: 6px 8px;
+  padding: 12px 14px;
   border-bottom: 1px solid var(--border);
   font-size: 13px;
 }
 
-.nodes-table th:first-child,
-.nodes-table td:first-child {
-  width: 24px;
-  padding-left: 16px;
-}
-
-.nodes-table th:nth-child(2),
-.nodes-table td:nth-child(2) {
-  width: 120px;
-}
-
-.nodes-table th:nth-child(3),
-.nodes-table td:nth-child(3) {
-  width: 160px;
-}
-
-.nodes-table th:nth-child(4),
-.nodes-table td:nth-child(4) {
-  width: 180px;
-}
-
-.nodes-table th:nth-child(5),
-.nodes-table td:nth-child(5) {
-  width: 120px;
-}
-
-.nodes-table th:last-child,
-.nodes-table td:last-child {
-  width: 120px;
-  padding-right: 16px;
-}
-
 .nodes-status-dot {
-  font-size: 14px;
-  line-height: 1;
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+}
+
+.pulse-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
 }
 
 .nodes-cell-truncate {

@@ -39,11 +39,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const logout = useCallback(async () => {
-    try {
-      await logoutRequest()
-    } finally {
-      updateSession(null)
-    }
+    await logoutRequest()
+    updateSession(null)
   }, [updateSession])
 
   useEffect(() => {

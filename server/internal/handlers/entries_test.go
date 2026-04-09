@@ -119,6 +119,41 @@ func TestListEntries_FilterByNode(t *testing.T) {
 	assert.Equal(t, "node-a", resp.Entries[0].NodeName)
 }
 
+func TestListEntries_FilterByTimeRange(t *testing.T) {
+	database := newTestDB(t)
+
+	base := time.Date(2026, 4, 4, 20, 0, 0, 0, time.UTC)
+	for i := 0; i < 4; i++ {
+		entry := types.Entry{
+			ID:        fmt.Sprintf("01TIMERANGEENTRY%d", i),
+			Timestamp: base.Add(time.Duration(i) * time.Minute),
+			NodeName:  "homelab-01",
+			Source:    "docker",
+			Event:     "start",
+			Content:   fmt.Sprintf("entry %d", i),
+		}
+		require.NoError(t, database.Create(&entry).Error)
+	}
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/entries?time_start="+base.Add(time.Minute).Format(time.RFC3339Nano)+"&time_end="+base.Add(2*time.Minute).Format(time.RFC3339Nano),
+		nil,
+	)
+	rr := httptest.NewRecorder()
+
+	handlers.ListEntries(database)(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	var resp struct {
+		Entries []types.Entry `json:"entries"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	require.Len(t, resp.Entries, 2)
+	assert.Equal(t, "entry 2", resp.Entries[0].Content)
+	assert.Equal(t, "entry 1", resp.Entries[1].Content)
+}
+
 func TestListEntries_HidesHeartbeatsWithHideHeartbeatTrue(t *testing.T) {
 	database := newTestDB(t)
 	require.NoError(t, database.Create(&types.Entry{ID: "01", Source: "agent", Event: "heartbeat", NodeName: "n1", Content: "hb"}).Error)

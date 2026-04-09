@@ -1,27 +1,49 @@
 import type { CSSProperties, ReactNode } from 'react'
 
 const barStyle: CSSProperties = {
-  padding: '18px 24px',
+  padding: '24px 24px 18px',
   borderBottom: '1px solid var(--border)',
-  background: 'var(--surface)',
   display: 'flex',
-  alignItems: 'center',
+  alignItems: 'baseline',
   justifyContent: 'space-between',
   gap: 12,
   flexWrap: 'wrap',
 }
 
 const titleStyle: CSSProperties = {
-  color: 'var(--muted)',
-  fontSize: '12px',
-  letterSpacing: '0.1em',
+  fontSize: '18px',
+  fontWeight: 700,
+  letterSpacing: '0.12em',
+  color: '#F0F0F0',
 }
 
-export default function PageHeader({ title, actions }: { title: ReactNode; actions?: ReactNode }) {
+const subtitleStyle: CSSProperties = {
+  fontSize: '12px',
+  color: 'var(--muted)',
+  letterSpacing: '0.08em',
+  marginLeft: 14,
+}
+
+export default function PageHeader({
+  title,
+  subtitle,
+  actions,
+}: {
+  title: ReactNode
+  subtitle?: ReactNode
+  actions?: ReactNode
+}) {
   return (
     <div style={barStyle}>
-      <span style={titleStyle}>{title}</span>
-      {actions ? <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>{actions}</div> : null}
+      <div style={{ display: 'flex', alignItems: 'baseline' }}>
+        <span style={titleStyle}>{title}</span>
+        {subtitle && <span style={subtitleStyle}>{subtitle}</span>}
+      </div>
+      {actions ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {actions}
+        </div>
+      ) : null}
     </div>
   )
 }

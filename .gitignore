@@ -55,3 +55,4 @@ web/dist/
 server/web/dist/*
 !server/web/dist/placeholder.txt
 
+.superpowers/

@@ -1,5 +1,5 @@
 ﻿import { useCallback, useEffect, useRef, useState } from 'react'
-import { AlertTriangle, CheckCircle, ChevronDown, ChevronRight } from 'lucide-react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import {
   fetchIncident,
   fetchIncidents,
@@ -9,7 +9,10 @@ import {
   parseIncidentNodes,
   parseIncidentServices,
 } from '../api/client'
+import { useNodePulse } from '../components/NodePulse'
 import { useWebSocketContext } from '../components/WebSocketProvider'
+import PageHeader from '../components/PageHeader'
+import StatRow from '../components/StatRow'
 import { formatLocalTimestamp } from '../utils/time'
 
 function incidentBorderColor(inc: Incident): string {
@@ -229,7 +232,7 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
         </span>
         {statusLabel(incident)}
         {aiPending && (
-          <span style={{ color: 'var(--accent)', fontSize: 11, marginLeft: 12, whiteSpace: 'nowrap', letterSpacing: '0.1em' }}>
+          <span style={{ color: 'var(--accent)', fontSize: 11, marginLeft: 12, whiteSpace: 'nowrap', letterSpacing: '0.1em', border: '1px solid var(--accent)', padding: '2px 6px', lineHeight: 1.4 }}>
             AI THINKING
           </span>
         )}
@@ -263,9 +266,8 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
                         border: '1px solid var(--accent)',
                         color: 'var(--accent)',
                         fontSize: 10,
-                        lineHeight: 1,
-                        padding: '2px 5px',
-                        borderRadius: 999,
+                        lineHeight: 1.4,
+                        padding: '2px 6px',
                         letterSpacing: '0.08em',
                       }}
                     >
@@ -321,9 +323,8 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
                         border: '1px solid #a855f7',
                         color: '#a855f7',
                         fontSize: 10,
-                        lineHeight: 1,
-                        padding: '2px 5px',
-                        borderRadius: 999,
+                        lineHeight: 1.4,
+                        padding: '2px 6px',
                         letterSpacing: '0.08em',
                       }}
                     >
@@ -457,11 +458,24 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
   )
 }
 
+function isToday(dateString: string | null | undefined): boolean {
+  if (!dateString) return false
+  const d = new Date(dateString)
+  if (Number.isNaN(d.getTime())) return false
+  const now = new Date()
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  )
+}
+
 export default function IncidentsPage() {
   const [openIncidents, setOpenIncidents] = useState<Incident[]>([])
   const [resolvedIncidents, setResolvedIncidents] = useState<Incident[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const { onlineCount, totalCount } = useNodePulse()
   const { lastMessage } = useWebSocketContext()
   const loadedRef = useRef(false)
 
@@ -532,58 +546,56 @@ export default function IncidentsPage() {
     )
   }
 
+  const confirmed = openIncidents.filter(i => i.confidence === 'confirmed').length
+  const suspected = openIncidents.filter(i => i.confidence !== 'confirmed').length
+
+  const resolvedToday = resolvedIncidents.filter(i => isToday(i.resolved_at)).length
+
   return (
-    <div style={{ padding: '16px 24px', fontFamily: 'inherit' }}>
-      <div style={{ marginBottom: 24 }}>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            marginBottom: 8,
-            fontSize: 11,
-            color: 'var(--muted)',
-            letterSpacing: '0.1em',
-          }}
-        >
-          <AlertTriangle size={12} />
-          OPEN
-          {openIncidents.length > 0 && (
-            <span style={{ color: 'var(--danger)' }}>({openIncidents.length})</span>
+    <div style={{ fontFamily: 'inherit' }}>
+      <PageHeader title="INCIDENTS" subtitle="real-time incident tracking" />
+      <div style={{ padding: '20px 28px 48px' }}>
+        <StatRow
+          confirmed={confirmed}
+          suspected={suspected}
+          nodesOnline={onlineCount}
+          nodesTotal={totalCount}
+          resolvedToday={resolvedToday}
+        />
+
+        <div style={{ marginBottom: 28 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+            <span style={{ fontSize: 11, color: 'var(--muted)', letterSpacing: '0.14em' }}>OPEN</span>
+            {openIncidents.length > 0 && (
+              <span style={{ fontSize: 11, color: 'var(--danger)', letterSpacing: '0.1em' }}>
+                {openIncidents.length}
+              </span>
+            )}
+            <div style={{ flex: 1, height: 1, background: '#1E1E1E' }} />
+          </div>
+          {openIncidents.length === 0 ? (
+            <div style={{ fontSize: 12, color: 'var(--muted)', padding: '8px 0' }}>
+              No open incidents.
+            </div>
+          ) : (
+            openIncidents.map(inc => (
+              <IncidentCard key={inc.id} incident={inc} />
+            ))
           )}
         </div>
-        {openIncidents.length === 0 ? (
-          <div style={{ fontSize: 12, color: 'var(--muted)', padding: '8px 0' }}>
-            No open incidents.
+
+        {resolvedIncidents.length > 0 && (
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+              <span style={{ fontSize: 11, color: 'var(--muted)', letterSpacing: '0.14em' }}>RECENTLY RESOLVED</span>
+              <div style={{ flex: 1, height: 1, background: '#1E1E1E' }} />
+            </div>
+            {resolvedIncidents.map(inc => (
+              <IncidentCard key={inc.id} incident={inc} />
+            ))}
           </div>
-        ) : (
-          openIncidents.map(inc => (
-            <IncidentCard key={inc.id} incident={inc} />
-          ))
         )}
       </div>
-
-      {resolvedIncidents.length > 0 && (
-        <div>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              marginBottom: 8,
-              fontSize: 11,
-              color: 'var(--muted)',
-              letterSpacing: '0.1em',
-            }}
-          >
-            <CheckCircle size={12} />
-            RESOLVED
-          </div>
-          {resolvedIncidents.map(inc => (
-            <IncidentCard key={inc.id} incident={inc} />
-          ))}
-        </div>
-      )}
     </div>
   )
 }
