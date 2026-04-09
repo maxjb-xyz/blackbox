@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
 
 type Preset = '15m' | '1h' | '6h' | '24h' | '7d'
 
@@ -35,6 +35,9 @@ export default function TimeFilter({ onChange }: TimeFilterProps) {
   const [endInput, setEndInput] = useState('')
   const emittedStartRef = useRef<Date | null>(null)
   const emittedEndRef = useRef<Date | null>(null)
+  const emitChange = useEffectEvent((range: TimeRange) => {
+    onChange(range)
+  })
 
   const applyPreset = useCallback((preset: Preset) => {
     const ms = PRESETS.find(p => p.value === preset)!.ms
@@ -45,8 +48,8 @@ export default function TimeFilter({ onChange }: TimeFilterProps) {
     setEndInput(formatForInput(end))
     emittedStartRef.current = start
     emittedEndRef.current = end
-    onChange({ start, end })
-  }, [onChange])
+    emitChange({ start, end })
+  }, [emitChange])
 
   useEffect(() => {
     applyPreset('6h')
@@ -58,7 +61,7 @@ export default function TimeFilter({ onChange }: TimeFilterProps) {
     if (!start) return
     emittedStartRef.current = start
     setActivePreset(null)
-    onChange({ start, end: emittedEndRef.current })
+    emitChange({ start, end: emittedEndRef.current })
   }
 
   function handleEndChange(value: string) {
@@ -67,7 +70,7 @@ export default function TimeFilter({ onChange }: TimeFilterProps) {
     if (!end) return
     emittedEndRef.current = end
     setActivePreset(null)
-    onChange({ start: emittedStartRef.current, end })
+    emitChange({ start: emittedStartRef.current, end })
   }
 
   function commitRange() {
@@ -76,7 +79,7 @@ export default function TimeFilter({ onChange }: TimeFilterProps) {
     emittedStartRef.current = start
     emittedEndRef.current = end
     setActivePreset(null)
-    onChange({ start, end })
+    emitChange({ start, end })
   }
 
   function handleInputKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
