@@ -214,9 +214,9 @@ sudo find "$WATCH_ROOT" -type d -exec setfacl -d -m u:${AGENT_UID}:rx {} +
 **Alternative: traditional Unix mode bits** (if ACLs are unavailable)
 
 ```bash
-AGENT_UID="${PUID:-65532}"
+AGENT_GID="${PGID:-65532}"   # match whatever PGID you set
 
-sudo chgrp -R "$AGENT_UID" /srv/stacks
+sudo chgrp -R "$AGENT_GID" /srv/stacks
 sudo find /srv/stacks -type d -exec chmod 750 {} +
 sudo find /srv/stacks -type f -exec chmod 640 {} +
 ```

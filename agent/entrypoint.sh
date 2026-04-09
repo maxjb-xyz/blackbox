@@ -7,8 +7,28 @@ set -e
 # Runtime identity. Set PUID/PGID to your host user's IDs when you own the
 # watched paths — no host permission changes are needed in that case.
 # Defaults to 65532 (distroless nonroot).
-TARGET_UID="${PUID:-65532}"
-TARGET_GID="${PGID:-65532}"
+#
+# validate_id VALUE DEFAULT LABEL — returns DEFAULT (with a warning) if VALUE
+# is empty, non-numeric, or zero (root). Prevents accidentally running as root
+# or passing garbage to setpriv.
+validate_id() {
+    val="$1" default="$2" label="$3"
+    case "$val" in
+        ''|*[!0-9]*)
+            printf 'entrypoint: %s="%s" is not a valid integer; using default %s\n' \
+                "$label" "$val" "$default" >&2
+            printf '%s' "$default"; return ;;
+    esac
+    if [ "$val" -eq 0 ]; then
+        printf 'entrypoint: %s=0 would run as root; using default %s\n' \
+            "$label" "$default" >&2
+        printf '%s' "$default"; return
+    fi
+    printf '%s' "$val"
+}
+
+TARGET_UID=$(validate_id "${PUID:-}" 65532 PUID)
+TARGET_GID=$(validate_id "${PGID:-}" 65532 PGID)
 
 # Helper function to add unique GID to GROUPS_ARG
 add_unique_gid() {
