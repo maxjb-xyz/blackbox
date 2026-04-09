@@ -1080,9 +1080,14 @@ function TimelineFeed({
             - end of timeline -
           </div>
         )}
-        {reachedFilteredEnd && !loading && timeFilteredEntries.length === 0 && (
+        {reachedFilteredEnd && !loading && entries.length === 0 && (
           <div style={{ padding: '24px', color: 'var(--muted)', fontSize: '12px', textAlign: 'center' }}>
             no entries found
+          </div>
+        )}
+        {reachedFilteredEnd && !loading && entries.length > 0 && timeFilteredEntries.length === 0 && (
+          <div style={{ padding: '24px', color: 'var(--muted)', fontSize: '12px', textAlign: 'center' }}>
+            no entries in selected time range
           </div>
         )}
       </div>
