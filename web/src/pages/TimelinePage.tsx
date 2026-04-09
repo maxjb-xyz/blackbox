@@ -390,7 +390,7 @@ function SearchableSelect({ value, options, placeholder, onChange }: SearchableS
   }
 
   return (
-    <div ref={rootRef} style={{ position: 'relative', width: 200 }}>
+    <div ref={rootRef} style={{ position: 'relative', width: 140 }}>
       <button
         type="button"
         aria-haspopup="listbox"
@@ -556,6 +556,7 @@ export default function TimelinePage() {
   const [hideHeartbeat, setHideHeartbeat] = useState<boolean>(getStoredHideHeartbeat)
   const [serviceOptions, setServiceOptions] = useState<string[]>([])
   const [timeRange, setTimeRange] = useState<TimeRange>({ start: null, end: null })
+  const [visibleCount, setVisibleCount] = useState(0)
 
   const serviceMountedRef = useRef(true)
   const serviceRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -639,8 +640,8 @@ export default function TimelinePage() {
       <div
         style={{
           display: 'flex',
-          gap: 12,
-          padding: '10px 24px',
+          gap: 16,
+          padding: '8px 24px',
           borderBottom: '1px solid var(--border)',
           background: 'var(--surface)',
           alignItems: 'center',
@@ -648,59 +649,61 @@ export default function TimelinePage() {
           flexWrap: 'wrap',
         }}
       >
-        <span style={{ color: 'var(--muted)', fontSize: '12px', letterSpacing: '0.1em' }}>FILTER:</span>
+        {/* SOURCE */}
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ color: '#555', fontSize: 10, letterSpacing: '0.12em' }}>SOURCE</span>
+          <select
+            value={sourceFilter}
+            onChange={e => setFilter('source', e.target.value)}
+            style={{ ...FILTER_CONTROL_STYLE, color: sourceFilter ? 'var(--text)' : 'var(--muted)' }}
+          >
+            {SOURCE_OPTIONS.map(source => (
+              <option key={source} value={source}>
+                {source ? source.toUpperCase() : 'ALL'}
+              </option>
+            ))}
+          </select>
+        </span>
 
-        <select
-          value={nodeFilter}
-          onChange={e => setFilter('node', e.target.value)}
-          style={{
-            ...FILTER_CONTROL_STYLE,
-            color: nodeFilter ? 'var(--text)' : 'var(--muted)',
-          }}
-        >
-          <option value="">ALL NODES</option>
-          {nodes.map(node => (
-            <option key={node.id} value={node.name}>{node.name}</option>
-          ))}
-        </select>
+        {/* SERVICE */}
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ color: '#555', fontSize: 10, letterSpacing: '0.12em' }}>SERVICE</span>
+          <SearchableSelect
+            value={serviceFilter}
+            options={serviceOptions}
+            placeholder="ALL"
+            onChange={value => setFilter('service', value)}
+          />
+        </span>
 
-        <select
-          value={sourceFilter}
-          onChange={e => setFilter('source', e.target.value)}
-          style={{
-            ...FILTER_CONTROL_STYLE,
-            color: sourceFilter ? 'var(--text)' : 'var(--muted)',
-          }}
-        >
-          {SOURCE_OPTIONS.map(source => (
-            <option key={source} value={source}>
-              {source ? source.toUpperCase() : 'ALL SOURCES'}
-            </option>
-          ))}
-        </select>
+        {/* NODE */}
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ color: '#555', fontSize: 10, letterSpacing: '0.12em' }}>NODE</span>
+          <select
+            value={nodeFilter}
+            onChange={e => setFilter('node', e.target.value)}
+            style={{ ...FILTER_CONTROL_STYLE, color: nodeFilter ? 'var(--text)' : 'var(--muted)' }}
+          >
+            <option value="">ALL</option>
+            {nodes.map(node => (
+              <option key={node.id} value={node.name}>{node.name}</option>
+            ))}
+          </select>
+        </span>
 
-        <SearchableSelect
-          value={serviceFilter}
-          options={serviceOptions}
-          placeholder="ALL SERVICES"
-          onChange={value => setFilter('service', value)}
-        />
-
+        {/* SEARCH */}
         <input
           type="text"
           placeholder="SEARCH..."
           value={qFilter}
           onChange={e => setFilter('q', e.target.value)}
-          style={{
-            ...FILTER_CONTROL_STYLE,
-            color: 'var(--text)',
-            padding: '2px 8px',
-            width: 200,
-          }}
+          style={{ ...FILTER_CONTROL_STYLE, color: 'var(--text)', padding: '2px 8px', width: 160 }}
         />
 
         {(nodeFilter || sourceFilter || serviceFilter || qFilter) && (
           <span
+            role="button"
+            tabIndex={0}
             onClick={() => {
               setSearchParams(prev => {
                 const next = new URLSearchParams(prev)
@@ -711,29 +714,32 @@ export default function TimelinePage() {
                 return next
               })
             }}
-            style={{ color: 'var(--muted)', fontSize: '12px', cursor: 'pointer', letterSpacing: '0.05em' }}
+            onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.click() }}
+            style={{ color: '#555', fontSize: '11px', cursor: 'pointer', letterSpacing: '0.08em' }}
           >
             CLEAR
           </span>
         )}
 
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
-          <button
-            onClick={toggleHideHeartbeat}
-            style={{
-              background: 'none',
-              border: '1px solid var(--border)',
-              color: hideHeartbeat ? 'var(--muted)' : 'var(--accent)',
-              fontSize: '12px',
-              padding: '2px 8px',
-              fontFamily: 'inherit',
-              cursor: 'pointer',
-              letterSpacing: '0.08em',
-            }}
-          >
-            {hideHeartbeat ? 'HEARTBEATS HIDDEN' : 'SHOW HEARTBEATS'}
-          </button>
+        {/* Right side */}
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 16 }}>
+          {/* Heartbeat checkbox */}
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', userSelect: 'none' }}>
+            <input
+              type="checkbox"
+              checked={hideHeartbeat}
+              onChange={toggleHideHeartbeat}
+              style={{ accentColor: 'var(--accent)', width: 12, height: 12, cursor: 'pointer' }}
+            />
+            <span style={{ fontSize: 11, letterSpacing: '0.08em', color: 'var(--muted)' }}>HIDE HEARTBEATS</span>
+          </label>
 
+          {/* Entry count */}
+          <span style={{ fontSize: 11, color: '#555', letterSpacing: '0.08em' }}>
+            {visibleCount} {visibleCount === 1 ? 'ENTRY' : 'ENTRIES'}
+          </span>
+
+          {/* CARDS / ROWS */}
           <div style={{ display: 'flex' }}>
             {(['cards', 'rows'] as ViewMode[]).map((mode, i) => (
               <button
@@ -767,6 +773,7 @@ export default function TimelinePage() {
         hideHeartbeat={hideHeartbeat}
         viewMode={viewMode}
         onEntriesChanged={refreshServices}
+        onCountChanged={setVisibleCount}
         timeStart={timeRange.start}
         timeEnd={timeRange.end}
       />
@@ -782,6 +789,7 @@ interface TimelineFeedProps {
   hideHeartbeat: boolean
   viewMode: ViewMode
   onEntriesChanged: () => void
+  onCountChanged: (count: number) => void
   timeStart?: Date | null
   timeEnd?: Date | null
 }
@@ -794,6 +802,7 @@ function TimelineFeed({
   hideHeartbeat,
   viewMode,
   onEntriesChanged,
+  onCountChanged,
   timeStart,
   timeEnd,
 }: TimelineFeedProps) {
@@ -1020,6 +1029,10 @@ function TimelineFeed({
     setExpandedId(null)
     setGhostEntry(null)
   }, [expandedVisibleInFilteredEntries])
+
+  useEffect(() => {
+    onCountChanged(timeFilteredEntries.length)
+  }, [onCountChanged, timeFilteredEntries.length])
 
   useEffect(() => {
     if (loading || done || !nextCursor || !sentinelVisible) return
