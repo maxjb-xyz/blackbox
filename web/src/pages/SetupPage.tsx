@@ -96,8 +96,9 @@ export default function SetupPage({ onBootstrapped }: SetupPageProps) {
 
           <form onSubmit={handleSubmit}>
             <div className="auth-field">
-              <label className="auth-label">USERNAME</label>
+              <label htmlFor="setup-username" className="auth-label">USERNAME</label>
               <input
+                id="setup-username"
                 type="text"
                 className="auth-input"
                 value={username}
@@ -108,8 +109,9 @@ export default function SetupPage({ onBootstrapped }: SetupPageProps) {
             </div>
 
             <div className="auth-field">
-              <label className="auth-label">EMAIL</label>
+              <label htmlFor="setup-email" className="auth-label">EMAIL</label>
               <input
+                id="setup-email"
                 type="email"
                 className="auth-input"
                 value={email}
@@ -119,8 +121,9 @@ export default function SetupPage({ onBootstrapped }: SetupPageProps) {
             </div>
 
             <div className="auth-field" style={{ marginBottom: 18 }}>
-              <label className="auth-label">PASSWORD</label>
+              <label htmlFor="setup-password" className="auth-label">PASSWORD</label>
               <input
+                id="setup-password"
                 type="password"
                 className="auth-input"
                 value={password}
@@ -130,14 +133,14 @@ export default function SetupPage({ onBootstrapped }: SetupPageProps) {
             </div>
 
             {!dbOK && !healthLoading && (
-              <div className="auth-error">
+              <div role="alert" aria-live="assertive" className="auth-error">
                 <AlertCircle size={13} className="auth-error-icon" />
                 <span>Database unavailable — cannot create account</span>
               </div>
             )}
 
             {error && (
-              <div className="auth-error">
+              <div role="alert" aria-live="assertive" className="auth-error">
                 <AlertCircle size={13} className="auth-error-icon" />
                 <span>{error}</span>
               </div>

@@ -250,7 +250,6 @@ body {
   letter-spacing: 0.1em;
   text-align: center;
   text-decoration: none;
-  box-sizing: border-box;
   cursor: pointer;
   transition: border-color 0.12s, color 0.12s;
 }
@@ -275,7 +274,7 @@ body {
 }
 
 .auth-tagline {
-  color: #2a2a2a;
+  color: var(--muted);
   font-size: 10px;
   letter-spacing: 0.14em;
   text-align: center;
