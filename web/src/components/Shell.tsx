@@ -27,7 +27,7 @@ export default function Shell() {
           <main style={{ flex: 1, overflow: 'auto', background: 'var(--bg)' }}>
             <div
               className="terminal-startup"
-              style={{ width: '100%', maxWidth: 1400, margin: '0 auto', minHeight: '100%' }}
+              style={{ width: '100%', minHeight: '100%' }}
             >
               <Outlet />
             </div>

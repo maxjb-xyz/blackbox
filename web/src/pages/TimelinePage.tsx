@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
+import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
@@ -10,9 +10,11 @@ import {
   fetchNotes,
 } from '../api/client'
 import type { Entry, EntryNote } from '../api/client'
+import PageHeader from '../components/PageHeader'
 import { useNodePulse } from '../components/NodePulse'
 import TimeFilter from '../components/TimeFilter'
 import type { TimeRange } from '../components/TimeFilter'
+import { DEFAULT_TIME_PRESET, getPresetRange } from '../components/timeFilterPresets'
 import { useWebSocketContext } from '../components/WebSocketProvider'
 import { formatLocalTimestamp } from '../utils/time'
 
@@ -148,6 +150,24 @@ function extractFileDiffMetadata(entry: Entry): FileDiffMetadata | null {
   }
 }
 
+const DIFF_STATUS_LABELS: Record<string, string> = {
+  no_baseline: 'no baseline snapshot — diff available on next change',
+  unchanged: 'file content unchanged',
+  skipped_too_large: 'file too large to diff',
+  skipped_binary: 'binary file — diff skipped',
+  skipped_read_error: 'file read error — diff skipped',
+  skipped_too_many_lines: 'too many changed lines to diff',
+}
+
+function extractFileDiffStatus(entry: Entry): { path: string; status: string } | null {
+  if (entry.source !== 'files') return null
+  const parsed = parseMetadataObject(entry.metadata)
+  if (!parsed) return null
+  if (typeof parsed.path !== 'string' || typeof parsed.diff_status !== 'string') return null
+  if (parsed.diff_status === 'included') return null // handled by extractFileDiffMetadata
+  return { path: parsed.path, status: parsed.diff_status }
+}
+
 function buildDiffRows(diff: string): DiffRow[] {
   const sourceLines = diff.split('\n')
   const rows: DiffRow[] = []
@@ -278,6 +298,10 @@ function SearchableSelect({ value, options, placeholder, onChange }: SearchableS
   const listboxId = 'timeline-service-filter-options'
 
   const filteredOptions = options.filter(option => option.toLowerCase().includes(query.trim().toLowerCase()))
+  const highlightedOptionIndex = (() => {
+    if (filteredOptions.length === 0) return 0
+    return Math.min(highlightedIndex, filteredOptions.length - 1)
+  })()
 
   useEffect(() => {
     if (!isOpen) return
@@ -300,22 +324,13 @@ function SearchableSelect({ value, options, placeholder, onChange }: SearchableS
 
   useEffect(() => {
     if (!isOpen) return
-    setHighlightedIndex(current => {
-      if (filteredOptions.length === 0) return 0
-      if (!query) {
-        const selectedIndex = value ? filteredOptions.findIndex(option => option === value) : 0
-        if (selectedIndex >= 0) return selectedIndex
-      }
-      return Math.min(current, filteredOptions.length - 1)
-    })
-  }, [filteredOptions, isOpen, query, value])
-
-  useEffect(() => {
-    if (!isOpen) return
-    optionRefs.current[highlightedIndex]?.scrollIntoView({ block: 'nearest' })
-  }, [highlightedIndex, isOpen])
+    optionRefs.current[highlightedOptionIndex]?.scrollIntoView({ block: 'nearest' })
+  }, [highlightedOptionIndex, isOpen])
 
   function openMenu(nextQuery = '') {
+    const nextOptions = options.filter(option => option.toLowerCase().includes(nextQuery.trim().toLowerCase()))
+    const selectedIndex = value ? nextOptions.findIndex(option => option === value) : -1
+    setHighlightedIndex(selectedIndex >= 0 ? selectedIndex : 0)
     setQuery(nextQuery)
     setIsOpen(true)
   }
@@ -333,17 +348,17 @@ function SearchableSelect({ value, options, placeholder, onChange }: SearchableS
   function handleInputKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key === 'ArrowDown') {
       event.preventDefault()
-      setHighlightedIndex(current => Math.min(current + 1, Math.max(filteredOptions.length - 1, 0)))
+      setHighlightedIndex(Math.min(highlightedOptionIndex + 1, Math.max(filteredOptions.length - 1, 0)))
       return
     }
     if (event.key === 'ArrowUp') {
       event.preventDefault()
-      setHighlightedIndex(current => Math.max(current - 1, 0))
+      setHighlightedIndex(Math.max(highlightedOptionIndex - 1, 0))
       return
     }
     if (event.key === 'Enter') {
       event.preventDefault()
-      const nextOption = filteredOptions[highlightedIndex]
+      const nextOption = filteredOptions[highlightedOptionIndex]
       if (nextOption) handleSelect(nextOption)
       return
     }
@@ -371,7 +386,7 @@ function SearchableSelect({ value, options, placeholder, onChange }: SearchableS
   }
 
   return (
-    <div ref={rootRef} style={{ position: 'relative', width: 200 }}>
+    <div ref={rootRef} style={{ position: 'relative', width: 140 }}>
       <button
         type="button"
         aria-haspopup="listbox"
@@ -469,7 +484,7 @@ function SearchableSelect({ value, options, placeholder, onChange }: SearchableS
               role="combobox"
               aria-expanded={isOpen}
               aria-controls={listboxId}
-              aria-activedescendant={filteredOptions[highlightedIndex] ? `${listboxId}-option-${highlightedIndex}` : undefined}
+              aria-activedescendant={filteredOptions[highlightedOptionIndex] ? `${listboxId}-option-${highlightedOptionIndex}` : undefined}
               value={query}
               onChange={event => setQuery(event.target.value)}
               onKeyDown={handleInputKeyDown}
@@ -508,7 +523,7 @@ function SearchableSelect({ value, options, placeholder, onChange }: SearchableS
                   onMouseEnter={() => setHighlightedIndex(index)}
                   style={{
                     width: '100%',
-                    background: index === highlightedIndex ? 'var(--bg)' : 'transparent',
+                    background: index === highlightedOptionIndex ? 'var(--bg)' : 'transparent',
                     color: option === value ? 'var(--accent)' : 'var(--text)',
                     border: 'none',
                     borderBottom: index === filteredOptions.length - 1 ? 'none' : '1px solid var(--border)',
@@ -536,7 +551,8 @@ export default function TimelinePage() {
   const [viewMode, setViewMode] = useState<ViewMode>(getStoredViewMode)
   const [hideHeartbeat, setHideHeartbeat] = useState<boolean>(getStoredHideHeartbeat)
   const [serviceOptions, setServiceOptions] = useState<string[]>([])
-  const [timeRange, setTimeRange] = useState<TimeRange>({ start: null, end: null })
+  const [timeRange, setTimeRange] = useState<TimeRange>(() => getPresetRange(DEFAULT_TIME_PRESET))
+  const [visibleCount, setVisibleCount] = useState(0)
 
   const serviceMountedRef = useRef(true)
   const serviceRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -600,12 +616,9 @@ export default function TimelinePage() {
     })
   }
 
-  function toggleViewMode() {
-    setViewMode(prev => {
-      const next: ViewMode = prev === 'cards' ? 'rows' : 'cards'
-      localStorage.setItem('timeline_view', next)
-      return next
-    })
+  function selectViewMode(mode: ViewMode) {
+    localStorage.setItem('timeline_view', mode)
+    setViewMode(mode)
   }
 
   function toggleHideHeartbeat() {
@@ -617,13 +630,14 @@ export default function TimelinePage() {
   }
 
   return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <TimeFilter onChange={setTimeRange} />
+    <div style={{ height: 'calc(100vh - var(--topbar-height))', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <PageHeader title="TIMELINE" subtitle="chronological event feed" />
+      <TimeFilter initialRange={timeRange} onChange={setTimeRange} />
       <div
         style={{
           display: 'flex',
-          gap: 12,
-          padding: '10px 24px',
+          gap: 16,
+          padding: '8px 24px',
           borderBottom: '1px solid var(--border)',
           background: 'var(--surface)',
           alignItems: 'center',
@@ -631,59 +645,60 @@ export default function TimelinePage() {
           flexWrap: 'wrap',
         }}
       >
-        <span style={{ color: 'var(--muted)', fontSize: '12px', letterSpacing: '0.1em' }}>FILTER:</span>
+        {/* SOURCE */}
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ color: '#555', fontSize: 10, letterSpacing: '0.12em' }}>SOURCE</span>
+          <select
+            value={sourceFilter}
+            onChange={e => setFilter('source', e.target.value)}
+            style={{ ...FILTER_CONTROL_STYLE, color: sourceFilter ? 'var(--text)' : 'var(--muted)' }}
+          >
+            {SOURCE_OPTIONS.map(source => (
+              <option key={source} value={source}>
+                {source ? source.toUpperCase() : 'ALL'}
+              </option>
+            ))}
+          </select>
+        </span>
 
-        <select
-          value={nodeFilter}
-          onChange={e => setFilter('node', e.target.value)}
-          style={{
-            ...FILTER_CONTROL_STYLE,
-            color: nodeFilter ? 'var(--text)' : 'var(--muted)',
-          }}
-        >
-          <option value="">ALL NODES</option>
-          {nodes.map(node => (
-            <option key={node.id} value={node.name}>{node.name}</option>
-          ))}
-        </select>
+        {/* SERVICE */}
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ color: '#555', fontSize: 10, letterSpacing: '0.12em' }}>SERVICE</span>
+          <SearchableSelect
+            value={serviceFilter}
+            options={serviceOptions}
+            placeholder="ALL"
+            onChange={value => setFilter('service', value)}
+          />
+        </span>
 
-        <select
-          value={sourceFilter}
-          onChange={e => setFilter('source', e.target.value)}
-          style={{
-            ...FILTER_CONTROL_STYLE,
-            color: sourceFilter ? 'var(--text)' : 'var(--muted)',
-          }}
-        >
-          {SOURCE_OPTIONS.map(source => (
-            <option key={source} value={source}>
-              {source ? source.toUpperCase() : 'ALL SOURCES'}
-            </option>
-          ))}
-        </select>
+        {/* NODE */}
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ color: '#555', fontSize: 10, letterSpacing: '0.12em' }}>NODE</span>
+          <select
+            value={nodeFilter}
+            onChange={e => setFilter('node', e.target.value)}
+            style={{ ...FILTER_CONTROL_STYLE, color: nodeFilter ? 'var(--text)' : 'var(--muted)' }}
+          >
+            <option value="">ALL</option>
+            {nodes.map(node => (
+              <option key={node.id} value={node.name}>{node.name}</option>
+            ))}
+          </select>
+        </span>
 
-        <SearchableSelect
-          value={serviceFilter}
-          options={serviceOptions}
-          placeholder="ALL SERVICES"
-          onChange={value => setFilter('service', value)}
-        />
-
+        {/* SEARCH */}
         <input
           type="text"
           placeholder="SEARCH..."
           value={qFilter}
           onChange={e => setFilter('q', e.target.value)}
-          style={{
-            ...FILTER_CONTROL_STYLE,
-            color: 'var(--text)',
-            padding: '2px 8px',
-            width: 200,
-          }}
+          style={{ ...FILTER_CONTROL_STYLE, color: 'var(--text)', padding: '2px 8px', width: 160 }}
         />
 
         {(nodeFilter || sourceFilter || serviceFilter || qFilter) && (
-          <span
+          <button
+            type="button"
             onClick={() => {
               setSearchParams(prev => {
                 const next = new URLSearchParams(prev)
@@ -694,49 +709,65 @@ export default function TimelinePage() {
                 return next
               })
             }}
-            style={{ color: 'var(--muted)', fontSize: '12px', cursor: 'pointer', letterSpacing: '0.05em' }}
+            style={{
+              background: 'none',
+              border: 'none',
+              padding: 0,
+              color: '#555',
+              fontSize: '11px',
+              cursor: 'pointer',
+              letterSpacing: '0.08em',
+              fontFamily: 'inherit',
+            }}
           >
             CLEAR
-          </span>
+          </button>
         )}
 
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
-          <button
-            onClick={toggleHideHeartbeat}
-            style={{
-              background: 'none',
-              border: '1px solid var(--border)',
-              color: hideHeartbeat ? 'var(--muted)' : 'var(--accent)',
-              fontSize: '12px',
-              padding: '2px 8px',
-              fontFamily: 'inherit',
-              cursor: 'pointer',
-              letterSpacing: '0.08em',
-            }}
-          >
-            {hideHeartbeat ? 'HEARTBEATS HIDDEN' : 'SHOW HEARTBEATS'}
-          </button>
+        {/* Right side */}
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 16 }}>
+          {/* Heartbeat checkbox */}
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', userSelect: 'none' }}>
+            <input
+              type="checkbox"
+              checked={hideHeartbeat}
+              onChange={toggleHideHeartbeat}
+              style={{ accentColor: 'var(--accent)', width: 12, height: 12, cursor: 'pointer' }}
+            />
+            <span style={{ fontSize: 11, letterSpacing: '0.08em', color: 'var(--muted)' }}>HIDE HEARTBEATS</span>
+          </label>
 
-          <button
-            onClick={toggleViewMode}
-            style={{
-              background: 'none',
-              border: '1px solid var(--border)',
-              color: 'var(--muted)',
-              fontSize: '12px',
-              padding: '2px 8px',
-              fontFamily: 'inherit',
-              cursor: 'pointer',
-              letterSpacing: '0.08em',
-            }}
-          >
-            {viewMode === 'cards' ? 'ROWS' : 'CARDS'}
-          </button>
+          {/* Entry count */}
+          <span style={{ fontSize: 11, color: '#555', letterSpacing: '0.08em' }}>
+            {visibleCount} {visibleCount === 1 ? 'ENTRY' : 'ENTRIES'}
+          </span>
+
+          {/* CARDS / ROWS */}
+          <div style={{ display: 'flex' }}>
+            {(['cards', 'rows'] as ViewMode[]).map((mode, i) => (
+              <button
+                key={mode}
+                onClick={() => selectViewMode(mode)}
+                style={{
+                  background: viewMode === mode ? 'rgba(255,51,51,0.08)' : 'none',
+                  border: '1px solid var(--border)',
+                  borderLeft: i === 1 ? 'none' : '1px solid var(--border)',
+                  color: viewMode === mode ? 'var(--accent)' : 'var(--muted)',
+                  fontSize: '12px',
+                  padding: '2px 10px',
+                  fontFamily: 'inherit',
+                  cursor: 'pointer',
+                  letterSpacing: '0.08em',
+                }}
+              >
+                {mode.toUpperCase()}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
       <TimelineFeed
-        key={`${nodeFilter}:${sourceFilter}:${serviceFilter}:${qFilter}:${hideHeartbeat}:${timeRange.start?.toISOString() ?? ''}:${timeRange.end?.toISOString() ?? ''}`}
         nodeFilter={nodeFilter}
         sourceFilter={sourceFilter}
         serviceFilter={serviceFilter}
@@ -744,6 +775,7 @@ export default function TimelinePage() {
         hideHeartbeat={hideHeartbeat}
         viewMode={viewMode}
         onEntriesChanged={refreshServices}
+        onCountChanged={setVisibleCount}
         timeStart={timeRange.start}
         timeEnd={timeRange.end}
       />
@@ -759,6 +791,7 @@ interface TimelineFeedProps {
   hideHeartbeat: boolean
   viewMode: ViewMode
   onEntriesChanged: () => void
+  onCountChanged: (count: number) => void
   timeStart?: Date | null
   timeEnd?: Date | null
 }
@@ -771,6 +804,7 @@ function TimelineFeed({
   hideHeartbeat,
   viewMode,
   onEntriesChanged,
+  onCountChanged,
   timeStart,
   timeEnd,
 }: TimelineFeedProps) {
@@ -791,7 +825,10 @@ function TimelineFeed({
   const ghostEntryRef = useRef<Entry | null>(null)
   const visibleEntryIDsRef = useRef<string[]>([])
   const mountedRef = useRef(true)
+  const pageRequestIdRef = useRef(0)
   const entryIncidentMapReqIdRef = useRef(0)
+  const timeStartMs = timeStart?.getTime() ?? null
+  const timeEndMs = timeEnd?.getTime() ?? null
 
   const consumeMaterializedGhost = useEffectEvent((incoming: Entry[]) => {
     const ghost = ghostEntryRef.current
@@ -827,6 +864,8 @@ function TimelineFeed({
   })
 
   const loadPage = useEffectEvent(async (cursor?: string) => {
+    const requestId = cursor ? pageRequestIdRef.current : pageRequestIdRef.current + 1
+    if (!cursor) pageRequestIdRef.current = requestId
     setLoading(true)
     try {
       const page = await fetchEntries({
@@ -840,7 +879,7 @@ function TimelineFeed({
         timeStart,
         timeEnd,
       })
-      if (!mountedRef.current) return
+      if (!mountedRef.current || requestId !== pageRequestIdRef.current) return
 
       consumeMaterializedGhost(page.entries)
 
@@ -860,19 +899,33 @@ function TimelineFeed({
       setDone(!page.next_cursor)
       onEntriesChanged()
     } catch (err) {
-      if (mountedRef.current) {
+      if (mountedRef.current && requestId === pageRequestIdRef.current) {
         console.error(cursor ? 'loadMore:' : 'loadEntries:', err)
       }
     } finally {
-      if (mountedRef.current) setLoading(false)
+      if (mountedRef.current && requestId === pageRequestIdRef.current) setLoading(false)
     }
   })
 
   useEffect(() => {
     mountedRef.current = true
-    void loadPage()
     return () => { mountedRef.current = false }
   }, [])
+
+  useEffect(() => {
+    if (ghostEntryRef.current) {
+      renderedIdsRef.current.delete(ghostEntryRef.current.id)
+      ghostEntryRef.current = null
+    }
+    expandedIdRef.current = null
+    setExpandedId(null)
+    setGhostEntry(null)
+    setTooltip(null)
+    setNextCursor(undefined)
+    setDone(false)
+    setEntryIncidentMap({})
+    void loadPage()
+  }, [hideHeartbeat, nodeFilter, qFilter, serviceFilter, sourceFilter, timeEndMs, timeStartMs])
 
   useEffect(() => {
     const sentinel = sentinelRef.current
@@ -974,7 +1027,10 @@ function TimelineFeed({
     result.splice(expandedIndex, 0, ghostEntry)
     return result
   })()
-  const timeFilteredEntries = displayEntries.filter(entry => {
+  const filteredEntries = displayEntries.filter(entry =>
+    matchesEntryFilters(entry, nodeFilter, sourceFilter, serviceFilter, qFilter, hideHeartbeat),
+  )
+  const timeFilteredEntries = filteredEntries.filter(entry => {
     if (!timeStart && !timeEnd) return true
     const ts = new Date(entry.timestamp)
     if (timeStart && ts < timeStart) return false
@@ -998,10 +1054,14 @@ function TimelineFeed({
     setGhostEntry(null)
   }, [expandedVisibleInFilteredEntries])
 
+  useLayoutEffect(() => {
+    onCountChanged(timeFilteredEntries.length)
+  }, [onCountChanged, timeFilteredEntries.length])
+
   useEffect(() => {
     if (loading || done || !nextCursor || !sentinelVisible) return
     void loadPage(nextCursor)
-  }, [done, loading, nextCursor, nodeFilter, qFilter, sentinelVisible, serviceFilter, sourceFilter, timeEnd, timeStart])
+  }, [done, loading, nextCursor, sentinelVisible])
 
   useEffect(() => {
     void loadIncidentMembership(visibleEntryIDsRef.current)
@@ -1170,6 +1230,7 @@ function ExpandedDetails({ entry }: { entry: Entry }) {
   }
 
   const fileDiff = extractFileDiffMetadata(entry)
+  const fileDiffStatus = !fileDiff ? extractFileDiffStatus(entry) : null
   const formattedMeta = entry.metadata && entry.metadata !== '{}'
     ? formatMetadataWithoutDiff(entry.metadata)
     : null
@@ -1204,6 +1265,16 @@ function ExpandedDetails({ entry }: { entry: Entry }) {
             {fileDiff.diffRedacted ? 'diff is redacted per current agent setting' : 'diff captured without redaction'}
           </div>
           <DiffModal entry={entry} diff={fileDiff} open={diffOpen} onClose={() => setDiffOpen(false)} />
+        </div>
+      )}
+
+      {fileDiffStatus && (
+        <div style={{ marginBottom: 12, padding: '8px 10px', border: '1px solid var(--border)', background: 'rgba(255,255,255,0.02)' }}>
+          <div style={{ color: 'var(--muted)', fontSize: '10px', letterSpacing: '0.12em', marginBottom: 4 }}>FILE DIFF</div>
+          <div style={{ color: 'var(--muted)', fontSize: '12px', wordBreak: 'break-all', marginBottom: 4 }}>{fileDiffStatus.path}</div>
+          <div style={{ fontSize: '11px', color: 'var(--muted)', fontStyle: 'italic' }}>
+            {DIFF_STATUS_LABELS[fileDiffStatus.status] ?? fileDiffStatus.status}
+          </div>
         </div>
       )}
 

@@ -1,14 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-
-type Preset = '15m' | '1h' | '6h' | '24h' | '7d'
-
-const PRESETS: { label: string; value: Preset; ms: number }[] = [
-  { label: '15m', value: '15m', ms: 15 * 60 * 1000 },
-  { label: '1h',  value: '1h',  ms: 60 * 60 * 1000 },
-  { label: '6h',  value: '6h',  ms: 6 * 60 * 60 * 1000 },
-  { label: '24h', value: '24h', ms: 24 * 60 * 60 * 1000 },
-  { label: '7d',  value: '7d',  ms: 7 * 24 * 60 * 60 * 1000 },
-]
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { DEFAULT_TIME_PRESET, getPresetRange, PRESETS, truncateToMinute } from './timeFilterPresets'
+import type { Preset } from './timeFilterPresets'
 
 function formatForInput(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0')
@@ -27,6 +19,7 @@ export interface TimeRange {
 
 interface TimeFilterProps {
   onChange: (range: TimeRange) => void
+  initialRange?: TimeRange
 }
 
 function sameTimeValue(a: Date | null, b: Date | null): boolean {
@@ -35,19 +28,16 @@ function sameTimeValue(a: Date | null, b: Date | null): boolean {
   return a.getTime() === b.getTime()
 }
 
-function truncateToMinute(date: Date | null): Date | null {
-  if (!date) return null
-  const truncated = new Date(date)
-  truncated.setSeconds(0, 0)
-  return truncated
-}
-
-export default function TimeFilter({ onChange }: TimeFilterProps) {
-  const [activePreset, setActivePreset] = useState<Preset | null>('6h')
-  const [startInput, setStartInput] = useState('')
-  const [endInput, setEndInput] = useState('')
-  const emittedStartRef = useRef<Date | null>(null)
-  const emittedEndRef = useRef<Date | null>(null)
+export default function TimeFilter({ onChange, initialRange: providedInitialRange }: TimeFilterProps) {
+  const fallbackInitialRange = useMemo(() => getPresetRange(DEFAULT_TIME_PRESET), [])
+  const initialStart = providedInitialRange?.start ?? fallbackInitialRange.start
+  const initialEnd = providedInitialRange?.end ?? fallbackInitialRange.end
+  const initialRange = useMemo<TimeRange>(() => ({ start: initialStart, end: initialEnd }), [initialEnd, initialStart])
+  const [activePreset, setActivePreset] = useState<Preset | null>(DEFAULT_TIME_PRESET)
+  const [startInput, setStartInput] = useState(() => formatForInput(initialStart))
+  const [endInput, setEndInput] = useState(() => formatForInput(initialEnd))
+  const emittedStartRef = useRef<Date | null>(initialRange.start)
+  const emittedEndRef = useRef<Date | null>(initialRange.end)
   const onChangeRef = useRef<(range: TimeRange) => void>(() => {})
 
   useEffect(() => {
@@ -55,9 +45,7 @@ export default function TimeFilter({ onChange }: TimeFilterProps) {
   }, [onChange])
 
   const applyPreset = useCallback((preset: Preset) => {
-    const ms = PRESETS.find(p => p.value === preset)!.ms
-    const end = truncateToMinute(new Date())!
-    const start = truncateToMinute(new Date(end.getTime() - ms))!
+    const { start, end } = getPresetRange(preset)
     setActivePreset(preset)
     setStartInput(formatForInput(start))
     setEndInput(formatForInput(end))
@@ -67,8 +55,15 @@ export default function TimeFilter({ onChange }: TimeFilterProps) {
   }, [])
 
   useEffect(() => {
-    applyPreset('6h')
-  }, [applyPreset])
+    if (
+      providedInitialRange &&
+      sameTimeValue(providedInitialRange.start, initialRange.start) &&
+      sameTimeValue(providedInitialRange.end, initialRange.end)
+    ) {
+      return
+    }
+    onChangeRef.current(initialRange)
+  }, [initialRange, providedInitialRange])
 
   function handleStartChange(value: string) {
     setStartInput(value)
@@ -110,64 +105,24 @@ export default function TimeFilter({ onChange }: TimeFilterProps) {
     commitRange()
   }
 
-  const btnBase: React.CSSProperties = {
-    background: 'transparent',
-    border: '1px solid #222',
-    color: '#555',
-    fontFamily: 'inherit',
-    fontSize: 10,
-    letterSpacing: '0.1em',
-    padding: '4px 10px',
-    cursor: 'pointer',
-    transition: 'all 0.15s',
-  }
-
-  const btnActive: React.CSSProperties = {
-    ...btnBase,
-    borderColor: 'var(--accent)',
-    color: 'var(--accent)',
-    background: 'rgba(255,51,51,0.06)',
-  }
-
-  const inputStyle: React.CSSProperties = {
-    background: '#0F0F0F',
-    border: '1px solid #222',
-    color: '#888',
-    fontFamily: 'inherit',
-    fontSize: 11,
-    padding: '4px 8px',
-    width: 152,
-    letterSpacing: '0.04em',
-  }
-
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        paddingBottom: 14,
-        marginBottom: 4,
-        borderBottom: '1px solid #141414',
-        flexWrap: 'wrap',
-      }}
-    >
-      <span style={{ fontSize: 10, color: '#555', letterSpacing: '0.12em' }}>TIME</span>
+    <div className="time-filter">
+      <span className="time-filter-label">TIME</span>
       {PRESETS.map(p => (
         <button
           key={p.value}
           type="button"
           aria-pressed={activePreset === p.value}
-          style={activePreset === p.value ? btnActive : btnBase}
+          className={activePreset === p.value ? 'time-filter-button time-filter-button-active' : 'time-filter-button'}
           onClick={() => applyPreset(p.value)}
         >
           {p.label}
         </button>
       ))}
-      <span style={{ color: '#2a2a2a', fontSize: 12, margin: '0 2px' }}>|</span>
+      <span className="time-filter-divider">|</span>
       <input
         type="text"
-        style={inputStyle}
+        className="time-filter-input"
         value={startInput}
         onChange={e => handleStartChange(e.target.value)}
         onBlur={commitRange}
@@ -175,10 +130,10 @@ export default function TimeFilter({ onChange }: TimeFilterProps) {
         placeholder="YYYY-MM-DD HH:MM"
         aria-label="Time range start"
       />
-      <span style={{ color: '#444', fontSize: 12 }}>{'->'}</span>
+      <span className="time-filter-arrow">{'->'}</span>
       <input
         type="text"
-        style={inputStyle}
+        className="time-filter-input"
         value={endInput}
         onChange={e => handleEndChange(e.target.value)}
         onBlur={commitRange}

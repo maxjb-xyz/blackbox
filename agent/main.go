@@ -235,20 +235,30 @@ func collectNodeInfo(serverURL string) nodeInfo {
 }
 
 func getOSInfo() string {
+	_, inDocker := os.Stat("/.dockerenv")
+	isDocker := inDocker == nil
+
+	osName := readOSReleaseName()
+	if isDocker {
+		return "docker / " + osName
+	}
+	return osName
+}
+
+func readOSReleaseName() string {
 	data, err := os.ReadFile("/etc/os-release")
 	if err != nil {
-		// Detect distroless Docker containers that have no /etc/os-release
-		if _, statErr := os.Stat("/.dockerenv"); statErr == nil {
-			return "docker"
-		}
 		return runtime.GOOS
 	}
 	lines := strings.Split(string(data), "\n")
 	for _, prefix := range []string{"PRETTY_NAME=", "NAME="} {
 		for _, line := range lines {
 			if strings.HasPrefix(line, prefix) {
-				val := strings.TrimPrefix(line, prefix)
-				return strings.Trim(val, `"`)
+				value := strings.TrimSpace(strings.Trim(strings.TrimPrefix(line, prefix), `"`))
+				if value == "" {
+					continue
+				}
+				return value
 			}
 		}
 	}
