@@ -9,7 +9,7 @@ set -e
 # Defaults to 65532 (distroless nonroot).
 #
 # validate_id VALUE DEFAULT LABEL
-#   Returns VALUE if it is a non-zero integer in the range 1-65535.
+#   Returns VALUE if it is a non-zero integer in the range 1-4294967294.
 #   Returns DEFAULT silently when VALUE is empty (PUID/PGID simply not set).
 #   Returns DEFAULT with a warning when VALUE is non-numeric, zero (root), or
 #   out of range — preventing accidentally running as root or passing garbage
@@ -29,8 +29,8 @@ validate_id() {
             "$label" "$default" >&2
         printf '%s' "$default"; return
     fi
-    if [ "$val" -gt 65535 ]; then
-        printf 'entrypoint: %s=%s is out of range (1-65535); using default %s\n' \
+    if [ "$val" -gt 4294967294 ]; then
+        printf 'entrypoint: %s=%s is out of range (1-4294967294); using default %s\n' \
             "$label" "$val" "$default" >&2
         printf '%s' "$default"; return
     fi
