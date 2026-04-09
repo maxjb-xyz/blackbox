@@ -103,7 +103,7 @@ export default function NodesPage() {
               {nodes.map(node => {
                 const isOnline = node.status === 'online'
                 return (
-                  <tr key={node.id} style={{ opacity: isOnline ? 1 : 0.5 }}>
+                  <tr key={node.id} style={isOnline ? undefined : { background: 'var(--danger-bg)' }}>
                     <td>
                       <span
                         className="nodes-status-dot"

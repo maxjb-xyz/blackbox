@@ -59,8 +59,7 @@ export default function Topbar() {
 
   return (
     <header
-      className="sticky top-0 z-50 flex h-[52px] items-center border-b border-[#242424] bg-[#0D0D0D] px-6"
-      style={{ flexShrink: 0 }}
+      className="sticky top-0 z-50 flex h-[52px] flex-shrink-0 items-center border-b border-[#242424] bg-[#0D0D0D] px-6"
     >
       {/* Logo */}
       <span
@@ -73,7 +72,7 @@ export default function Topbar() {
       {/* Primary nav */}
       <nav className="flex h-full flex-1 items-stretch gap-0.5">
         <NavLink to="/incidents" className={({ isActive }) => navClass(isActive)}>
-          <AlertTriangle size={13} />
+          <AlertTriangle size={14} />
           INCIDENTS
           {openCount > 0 && (
             <span
@@ -89,12 +88,12 @@ export default function Topbar() {
         </NavLink>
 
         <NavLink to="/timeline" className={({ isActive }) => navClass(isActive)}>
-          <Activity size={13} />
+          <Activity size={14} />
           TIMELINE
         </NavLink>
 
         <NavLink to="/nodes" className={({ isActive }) => navClass(isActive)}>
-          <Server size={13} />
+          <Server size={14} />
           NODES
           {totalCount > 0 && (
             <span className="text-[11px] tracking-[0.08em]" style={{ color: nodeColor }}>
@@ -123,11 +122,9 @@ export default function Topbar() {
           ].join(' ')}
         >
           <span
-            className="inline-block h-[7px] w-[7px]"
+            className={`ws-status-dot inline-block h-[7px] w-[7px]${wsConnected ? ' pulse-dot' : ''}`}
             style={{
               background: 'currentColor',
-              borderRadius: '50%',
-              animation: wsConnected ? 'pulse-dot 2s ease-in-out infinite' : 'none',
             }}
           />
           {wsConnected ? 'LIVE' : wsConnecting ? 'CONNECTING' : 'OFFLINE'}

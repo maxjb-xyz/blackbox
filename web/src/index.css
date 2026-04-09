@@ -63,8 +63,11 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .cursor-blink,
-  .terminal-startup {
-    animation: none;
+  .terminal-startup,
+  .pulse-dot,
+  .ws-status-dot {
+    animation: none !important;
+    transition: none !important;
   }
 }
 
@@ -112,7 +115,7 @@ body {
 }
 
 .nodes-table thead {
-  background: #0D0D0D;
+  background: var(--surface);
 }
 
 .nodes-table th {
@@ -127,7 +130,7 @@ body {
 
 .nodes-table td {
   padding: 12px 14px;
-  border-bottom: 1px solid #171717;
+  border-bottom: 1px solid var(--border);
   font-size: 13px;
 }
 
@@ -141,7 +144,10 @@ body {
   display: inline-block;
   width: 8px;
   height: 8px;
-  border-radius: 50% !important;
+}
+
+.pulse-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
 }
 
 .nodes-cell-truncate {

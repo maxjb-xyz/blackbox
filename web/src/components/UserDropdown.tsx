@@ -99,7 +99,7 @@ export default function UserDropdown({ onClose }: UserDropdownProps) {
               .finally(() => navigate('/login'))
           }}
         >
-          <LogOut size={13} />
+          <LogOut size={14} />
           LOGOUT
         </button>
       </div>
