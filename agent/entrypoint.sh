@@ -8,9 +8,12 @@ set -e
 # watched paths — no host permission changes are needed in that case.
 # Defaults to 65532 (distroless nonroot).
 #
-# validate_id VALUE DEFAULT LABEL — returns DEFAULT (with a warning) if VALUE
-# is empty, non-numeric, or zero (root). Prevents accidentally running as root
-# or passing garbage to setpriv.
+# validate_id VALUE DEFAULT LABEL
+#   Returns VALUE if it is a non-zero integer in the range 1-65535.
+#   Returns DEFAULT silently when VALUE is empty (PUID/PGID simply not set).
+#   Returns DEFAULT with a warning when VALUE is non-numeric, zero (root), or
+#   out of range — preventing accidentally running as root or passing garbage
+#   to setpriv.
 validate_id() {
     val="$1" default="$2" label="$3"
     case "$val" in
@@ -24,6 +27,11 @@ validate_id() {
     if [ "$val" -eq 0 ]; then
         printf 'entrypoint: %s=0 would run as root; using default %s\n' \
             "$label" "$default" >&2
+        printf '%s' "$default"; return
+    fi
+    if [ "$val" -gt 65535 ]; then
+        printf 'entrypoint: %s=%s is out of range (1-65535); using default %s\n' \
+            "$label" "$val" "$default" >&2
         printf '%s' "$default"; return
     fi
     printf '%s' "$val"
