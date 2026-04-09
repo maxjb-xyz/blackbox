@@ -61,185 +61,115 @@ export default function RegisterPage() {
     }
   }
 
-  const inputStyle: React.CSSProperties = {
-    width: '100%',
-    background: 'var(--surface)',
-    border: '1px solid var(--border)',
-    color: 'var(--text)',
-    padding: '8px 10px',
-    fontFamily: 'inherit',
-    fontSize: '13px',
-  }
-
-  const labelStyle: React.CSSProperties = {
-    display: 'block',
-    color: 'var(--muted)',
-    fontSize: '11px',
-    marginBottom: 4,
-    letterSpacing: '0.05em',
-  }
-
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'var(--bg)',
-      }}
-    >
-      <div style={{ width: '100%', maxWidth: 320, border: '1px solid var(--border)', padding: '2rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24 }}>
-          <Terminal size={16} style={{ color: 'var(--muted)' }} />
-          <span style={{ color: 'var(--muted)', fontSize: '12px', letterSpacing: '0.1em' }}>
-            BLACKBOX / REGISTER
-          </span>
+    <div className="auth-page">
+      <div className="auth-card">
+        <div className="auth-card-header">
+          <Terminal size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+          <span className="auth-title">BLACKBOX</span>
+          <span className="auth-sep">/</span>
+          <span className="auth-title-page">REGISTER</span>
+          <span className="cursor-blink" style={{ fontSize: '12px', marginLeft: 'auto' }}>_</span>
         </div>
 
-        <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: 12 }}>
-            <label htmlFor="register-username" style={labelStyle}>USERNAME</label>
-            <input
-              id="register-username"
-              className="login-input"
-              type="text"
-              value={username}
-              onChange={e => setUsername(e.target.value)}
-              required
-              autoFocus
-              style={inputStyle}
-            />
-          </div>
+        <div className="auth-card-body">
+          <form onSubmit={handleSubmit}>
+            <div className="auth-field">
+              <label htmlFor="register-username" className="auth-label">USERNAME</label>
+              <input
+                id="register-username"
+                className="auth-input"
+                type="text"
+                value={username}
+                onChange={e => setUsername(e.target.value)}
+                required
+                autoFocus
+              />
+            </div>
 
-          <div style={{ marginBottom: 12 }}>
-            <label htmlFor="register-email" style={labelStyle}>EMAIL</label>
-            <input
-              id="register-email"
-              className="login-input"
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              required
-              style={inputStyle}
-            />
-          </div>
+            <div className="auth-field">
+              <label htmlFor="register-email" className="auth-label">EMAIL</label>
+              <input
+                id="register-email"
+                className="auth-input"
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                required
+              />
+            </div>
 
-          <div style={{ marginBottom: 12 }}>
-            <label htmlFor="register-password" style={labelStyle}>PASSWORD</label>
-            <input
-              id="register-password"
-              className="login-input"
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              required
-              style={inputStyle}
-            />
-          </div>
+            <div className="auth-field">
+              <label htmlFor="register-password" className="auth-label">PASSWORD</label>
+              <input
+                id="register-password"
+                className="auth-input"
+                type="password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                required
+              />
+            </div>
 
-          <div style={{ marginBottom: 20 }}>
-            <label htmlFor="register-invite-code" style={labelStyle}>INVITE CODE</label>
-            <input
-              id="register-invite-code"
-              className="login-input"
-              type="text"
-              value={inviteCode}
-              onChange={e => setInviteCode(e.target.value)}
-              required
-              readOnly={inviteCodeReadonly}
-              style={{
-                ...inputStyle,
-                color: inviteCodeReadonly ? 'var(--muted)' : 'var(--text)',
-              }}
-            />
-          </div>
+            <div className="auth-field" style={{ marginBottom: 18 }}>
+              <label htmlFor="register-invite-code" className="auth-label">INVITE CODE</label>
+              <input
+                id="register-invite-code"
+                className="auth-input"
+                type="text"
+                value={inviteCode}
+                onChange={e => setInviteCode(e.target.value)}
+                required
+                readOnly={inviteCodeReadonly}
+              />
+            </div>
 
-          {error && (
-            <div
-              role="alert"
-              aria-live="assertive"
-              aria-atomic="true"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                color: 'var(--danger)',
-                fontSize: '12px',
-                marginBottom: 12,
-              }}
+            {error && (
+              <div
+                role="alert"
+                aria-live="assertive"
+                aria-atomic="true"
+                className="auth-error"
+              >
+                <AlertCircle size={13} className="auth-error-icon" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="auth-btn-primary"
+              style={{ marginBottom: oidcProviders.length > 0 ? 8 : 0 }}
             >
-              <AlertCircle size={14} />
-              <span>{error}</span>
-            </div>
-          )}
+              {loading ? 'CREATING ACCOUNT...' : 'CREATE ACCOUNT'}
+            </button>
 
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              width: '100%',
-              background: loading ? 'var(--border)' : 'var(--accent)',
-              color: '#000',
-              border: 'none',
-              padding: '10px',
-              fontFamily: 'inherit',
-              fontSize: '12px',
-              fontWeight: 'bold',
-              letterSpacing: '0.1em',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              marginBottom: oidcProviders.length > 0 ? 8 : 12,
-            }}
-          >
-            {loading ? 'CREATING ACCOUNT...' : 'CREATE ACCOUNT'}
-          </button>
+            {oidcProviders.length > 0 && (
+              <div style={{ display: 'grid', gap: 6, marginTop: 8, marginBottom: 8 }}>
+                {oidcProviders.map(provider => {
+                  const href = inviteCode
+                    ? `/api/auth/oidc/${encodeURIComponent(provider.id)}/login?invite_code=${encodeURIComponent(inviteCode)}`
+                    : `/api/auth/oidc/${encodeURIComponent(provider.id)}/login`
+                  return (
+                    <a key={provider.id} href={href} className="auth-btn-oidc">
+                      {`SIGN IN WITH ${provider.name.toUpperCase()}`}
+                    </a>
+                  )
+                })}
+              </div>
+            )}
 
-          {oidcProviders.length > 0 && (
-            <div style={{ display: 'grid', gap: 8, marginBottom: 12 }}>
-              {oidcProviders.map(provider => {
-                const href = inviteCode
-                  ? `/api/auth/oidc/${encodeURIComponent(provider.id)}/login?invite_code=${encodeURIComponent(inviteCode)}`
-                  : `/api/auth/oidc/${encodeURIComponent(provider.id)}/login`
-                return (
-                  <a
-                    key={provider.id}
-                    href={href}
-                    style={{
-                      display: 'block',
-                      width: '100%',
-                      textAlign: 'center',
-                      background: 'transparent',
-                      border: '1px solid var(--border)',
-                      color: 'var(--muted)',
-                      padding: '10px',
-                      fontFamily: 'inherit',
-                      fontSize: '12px',
-                      letterSpacing: '0.1em',
-                      textDecoration: 'none',
-                      boxSizing: 'border-box',
-                    }}
-                  >
-                    {`SIGN IN WITH ${provider.name.toUpperCase()}`}
-                  </a>
-                )
-              })}
-            </div>
-          )}
+            <hr className="auth-divider" />
 
-          <Link
-            to="/login"
-            style={{
-              display: 'block',
-              color: 'var(--muted)',
-              fontSize: '12px',
-              textAlign: 'center',
-              textDecoration: 'none',
-            }}
-          >
-            Already have an account? Sign in
-          </Link>
-        </form>
+            <Link to="/login" className="auth-footer-link">
+              Already have an account? Sign in →
+            </Link>
+          </form>
+        </div>
       </div>
+
+      <div className="auth-tagline">FLIGHT RECORDER · OPERATIONAL</div>
     </div>
   )
 }

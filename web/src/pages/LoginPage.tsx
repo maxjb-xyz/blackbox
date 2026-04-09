@@ -67,166 +67,85 @@ export default function LoginPage() {
     }
   }
 
-  const inputStyle: React.CSSProperties = {
-    width: '100%',
-    background: 'var(--surface)',
-    border: '1px solid var(--border)',
-    color: 'var(--text)',
-    padding: '8px 10px',
-    fontFamily: 'inherit',
-    fontSize: '13px',
-  }
-
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'var(--bg)',
-      }}
-    >
-      <div style={{ width: '100%', maxWidth: 320, border: '1px solid var(--border)', padding: '2rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24 }}>
-          <Terminal size={16} style={{ color: 'var(--muted)' }} />
-          <span style={{ color: 'var(--muted)', fontSize: '12px', letterSpacing: '0.1em' }}>
-            BLACKBOX / LOGIN
-          </span>
+    <div className="auth-page">
+      <div className="auth-card">
+        <div className="auth-card-header">
+          <Terminal size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+          <span className="auth-title">BLACKBOX</span>
+          <span className="auth-sep">/</span>
+          <span className="auth-title-page">LOGIN</span>
+          <span className="cursor-blink" style={{ fontSize: '12px', marginLeft: 'auto' }}>_</span>
         </div>
 
-        <form onSubmit={handleSubmit}>
-          {oidcError && (
-            <div
-              role="alert"
-              aria-live="assertive"
-              style={{
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: 6,
-                color: 'var(--danger)',
-                fontSize: '12px',
-                marginBottom: 12,
-              }}
-            >
-              <AlertCircle size={14} style={{ marginTop: 1, flexShrink: 0 }} />
-              <span>{oidcError} Use password login or contact your administrator.</span>
+        <div className="auth-card-body">
+          <form onSubmit={handleSubmit}>
+            {oidcError && (
+              <div role="alert" aria-live="assertive" className="auth-error">
+                <AlertCircle size={13} className="auth-error-icon" />
+                <span>{oidcError} Use password login or contact your administrator.</span>
+              </div>
+            )}
+
+            <div className="auth-field">
+              <label htmlFor="username" className="auth-label">USERNAME</label>
+              <input
+                id="username"
+                className="auth-input"
+                type="text"
+                value={username}
+                onChange={e => setUsername(e.target.value)}
+                required
+                autoFocus
+              />
             </div>
-          )}
 
-          <div style={{ marginBottom: 12 }}>
-            <label
-              htmlFor="username"
-              style={{
-                display: 'block',
-                color: 'var(--muted)',
-                fontSize: '11px',
-                marginBottom: 4,
-                letterSpacing: '0.05em',
-              }}
-            >
-              USERNAME
-            </label>
-            <input
-              id="username"
-              className="login-input"
-              type="text"
-              value={username}
-              onChange={e => setUsername(e.target.value)}
-              required
-              autoFocus
-              style={inputStyle}
-            />
-          </div>
-
-          <div style={{ marginBottom: 20 }}>
-            <label
-              htmlFor="password"
-              style={{
-                display: 'block',
-                color: 'var(--muted)',
-                fontSize: '11px',
-                marginBottom: 4,
-                letterSpacing: '0.05em',
-              }}
-            >
-              PASSWORD
-            </label>
-            <input
-              id="password"
-              className="login-input"
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              required
-              style={inputStyle}
-            />
-          </div>
-
-          {error && (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                color: 'var(--danger)',
-                fontSize: '12px',
-                marginBottom: 12,
-              }}
-            >
-              <AlertCircle size={14} />
-              <span>{error}</span>
+            <div className="auth-field" style={{ marginBottom: 18 }}>
+              <label htmlFor="password" className="auth-label">PASSWORD</label>
+              <input
+                id="password"
+                className="auth-input"
+                type="password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                required
+              />
             </div>
-          )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              width: '100%',
-              background: loading ? 'var(--border)' : 'var(--accent)',
-              color: '#000',
-              border: 'none',
-              padding: '10px',
-              fontFamily: 'inherit',
-              fontSize: '12px',
-              fontWeight: 'bold',
-              letterSpacing: '0.1em',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              marginBottom: oidcProviders.length > 0 ? 8 : 0,
-            }}
-          >
-            {loading ? 'LOGGING IN...' : 'LOGIN'}
-          </button>
+            {error && (
+              <div role="alert" aria-live="assertive" className="auth-error">
+                <AlertCircle size={13} className="auth-error-icon" />
+                <span>{error}</span>
+              </div>
+            )}
 
-          {oidcProviders.length > 0 && (
-            <div style={{ display: 'grid', gap: 8 }}>
-              {oidcProviders.map(provider => (
-                <a
-                  key={provider.id}
-                  href={`/api/auth/oidc/${encodeURIComponent(provider.id)}/login`}
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    textAlign: 'center',
-                    background: 'transparent',
-                    border: '1px solid var(--border)',
-                    color: 'var(--muted)',
-                    padding: '10px',
-                    fontFamily: 'inherit',
-                    fontSize: '12px',
-                    letterSpacing: '0.1em',
-                    textDecoration: 'none',
-                    boxSizing: 'border-box',
-                  }}
-                >
-                  {`SIGN IN WITH ${provider.name.toUpperCase()}`}
-                </a>
-              ))}
-            </div>
-          )}
-        </form>
+            <button
+              type="submit"
+              disabled={loading}
+              className="auth-btn-primary"
+              style={{ marginBottom: oidcProviders.length > 0 ? 8 : 0 }}
+            >
+              {loading ? 'LOGGING IN...' : 'LOGIN'}
+            </button>
+
+            {oidcProviders.length > 0 && (
+              <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
+                {oidcProviders.map(provider => (
+                  <a
+                    key={provider.id}
+                    href={`/api/auth/oidc/${encodeURIComponent(provider.id)}/login`}
+                    className="auth-btn-oidc"
+                  >
+                    {`SIGN IN WITH ${provider.name.toUpperCase()}`}
+                  </a>
+                ))}
+              </div>
+            )}
+          </form>
+        </div>
       </div>
+
+      <div className="auth-tagline">FLIGHT RECORDER · OPERATIONAL</div>
     </div>
   )
 }
