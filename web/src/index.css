@@ -185,3 +185,59 @@ body {
   color: var(--danger);
   background: rgba(255, 68, 68, 0.08);
 }
+
+.time-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  border-bottom: 1px solid #141414;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.time-filter-label {
+  font-size: 10px;
+  color: #555;
+  letter-spacing: 0.12em;
+}
+
+.time-filter-button {
+  background: transparent;
+  border: 1px solid #222;
+  color: #555;
+  font-family: inherit;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.time-filter-button-active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(255, 51, 51, 0.06);
+}
+
+.time-filter-input {
+  background: #0f0f0f;
+  border: 1px solid #222;
+  color: #888;
+  font-family: inherit;
+  font-size: 11px;
+  padding: 4px 8px;
+  width: 152px;
+  letter-spacing: 0.04em;
+}
+
+.time-filter-divider {
+  color: #2a2a2a;
+  font-size: 12px;
+  margin: 0 2px;
+}
+
+.time-filter-arrow {
+  color: #444;
+  font-size: 12px;
+}

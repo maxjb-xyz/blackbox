@@ -1,4 +1,4 @@
-import type React from 'react'
+import type { CSSProperties } from 'react'
 import { useNodePulse } from '../components/NodePulse'
 import PageHeader from '../components/PageHeader'
 import { formatLocalTimestamp } from '../utils/time'
@@ -25,7 +25,7 @@ function OsCell({ osInfo }: { osInfo: string | null | undefined }) {
     osName = ''
   }
 
-  const pillStyle: React.CSSProperties = {
+  const pillStyle: CSSProperties = {
     display: 'inline-block',
     fontSize: 10,
     padding: '1px 6px',

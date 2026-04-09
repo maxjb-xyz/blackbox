@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
+import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
@@ -297,6 +297,14 @@ function SearchableSelect({ value, options, placeholder, onChange }: SearchableS
   const listboxId = 'timeline-service-filter-options'
 
   const filteredOptions = options.filter(option => option.toLowerCase().includes(query.trim().toLowerCase()))
+  const highlightedOptionIndex = (() => {
+    if (filteredOptions.length === 0) return 0
+    if (!query) {
+      const selectedIndex = value ? filteredOptions.findIndex(option => option === value) : 0
+      if (selectedIndex >= 0) return selectedIndex
+    }
+    return Math.min(highlightedIndex, filteredOptions.length - 1)
+  })()
 
   useEffect(() => {
     if (!isOpen) return
@@ -319,20 +327,8 @@ function SearchableSelect({ value, options, placeholder, onChange }: SearchableS
 
   useEffect(() => {
     if (!isOpen) return
-    setHighlightedIndex(current => {
-      if (filteredOptions.length === 0) return 0
-      if (!query) {
-        const selectedIndex = value ? filteredOptions.findIndex(option => option === value) : 0
-        if (selectedIndex >= 0) return selectedIndex
-      }
-      return Math.min(current, filteredOptions.length - 1)
-    })
-  }, [filteredOptions, isOpen, query, value])
-
-  useEffect(() => {
-    if (!isOpen) return
-    optionRefs.current[highlightedIndex]?.scrollIntoView({ block: 'nearest' })
-  }, [highlightedIndex, isOpen])
+    optionRefs.current[highlightedOptionIndex]?.scrollIntoView({ block: 'nearest' })
+  }, [highlightedOptionIndex, isOpen])
 
   function openMenu(nextQuery = '') {
     setQuery(nextQuery)
@@ -352,17 +348,17 @@ function SearchableSelect({ value, options, placeholder, onChange }: SearchableS
   function handleInputKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key === 'ArrowDown') {
       event.preventDefault()
-      setHighlightedIndex(current => Math.min(current + 1, Math.max(filteredOptions.length - 1, 0)))
+      setHighlightedIndex(Math.min(highlightedOptionIndex + 1, Math.max(filteredOptions.length - 1, 0)))
       return
     }
     if (event.key === 'ArrowUp') {
       event.preventDefault()
-      setHighlightedIndex(current => Math.max(current - 1, 0))
+      setHighlightedIndex(Math.max(highlightedOptionIndex - 1, 0))
       return
     }
     if (event.key === 'Enter') {
       event.preventDefault()
-      const nextOption = filteredOptions[highlightedIndex]
+      const nextOption = filteredOptions[highlightedOptionIndex]
       if (nextOption) handleSelect(nextOption)
       return
     }
@@ -488,7 +484,7 @@ function SearchableSelect({ value, options, placeholder, onChange }: SearchableS
               role="combobox"
               aria-expanded={isOpen}
               aria-controls={listboxId}
-              aria-activedescendant={filteredOptions[highlightedIndex] ? `${listboxId}-option-${highlightedIndex}` : undefined}
+              aria-activedescendant={filteredOptions[highlightedOptionIndex] ? `${listboxId}-option-${highlightedOptionIndex}` : undefined}
               value={query}
               onChange={event => setQuery(event.target.value)}
               onKeyDown={handleInputKeyDown}
@@ -527,7 +523,7 @@ function SearchableSelect({ value, options, placeholder, onChange }: SearchableS
                   onMouseEnter={() => setHighlightedIndex(index)}
                   style={{
                     width: '100%',
-                    background: index === highlightedIndex ? 'var(--bg)' : 'transparent',
+                    background: index === highlightedOptionIndex ? 'var(--bg)' : 'transparent',
                     color: option === value ? 'var(--accent)' : 'var(--text)',
                     border: 'none',
                     borderBottom: index === filteredOptions.length - 1 ? 'none' : '1px solid var(--border)',
@@ -701,9 +697,8 @@ export default function TimelinePage() {
         />
 
         {(nodeFilter || sourceFilter || serviceFilter || qFilter) && (
-          <span
-            role="button"
-            tabIndex={0}
+          <button
+            type="button"
             onClick={() => {
               setSearchParams(prev => {
                 const next = new URLSearchParams(prev)
@@ -714,11 +709,19 @@ export default function TimelinePage() {
                 return next
               })
             }}
-            onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.click() }}
-            style={{ color: '#555', fontSize: '11px', cursor: 'pointer', letterSpacing: '0.08em' }}
+            style={{
+              background: 'none',
+              border: 'none',
+              padding: 0,
+              color: '#555',
+              fontSize: '11px',
+              cursor: 'pointer',
+              letterSpacing: '0.08em',
+              fontFamily: 'inherit',
+            }}
           >
             CLEAR
-          </span>
+          </button>
         )}
 
         {/* Right side */}
@@ -765,7 +768,6 @@ export default function TimelinePage() {
       </div>
 
       <TimelineFeed
-        key={`${nodeFilter}:${sourceFilter}:${serviceFilter}:${qFilter}:${hideHeartbeat}:${timeRange.start?.toISOString() ?? ''}:${timeRange.end?.toISOString() ?? ''}`}
         nodeFilter={nodeFilter}
         sourceFilter={sourceFilter}
         serviceFilter={serviceFilter}
@@ -823,7 +825,10 @@ function TimelineFeed({
   const ghostEntryRef = useRef<Entry | null>(null)
   const visibleEntryIDsRef = useRef<string[]>([])
   const mountedRef = useRef(true)
+  const pageRequestIdRef = useRef(0)
   const entryIncidentMapReqIdRef = useRef(0)
+  const timeStartMs = timeStart?.getTime() ?? null
+  const timeEndMs = timeEnd?.getTime() ?? null
 
   const consumeMaterializedGhost = useEffectEvent((incoming: Entry[]) => {
     const ghost = ghostEntryRef.current
@@ -859,6 +864,8 @@ function TimelineFeed({
   })
 
   const loadPage = useEffectEvent(async (cursor?: string) => {
+    const requestId = cursor ? pageRequestIdRef.current : pageRequestIdRef.current + 1
+    if (!cursor) pageRequestIdRef.current = requestId
     setLoading(true)
     try {
       const page = await fetchEntries({
@@ -872,7 +879,7 @@ function TimelineFeed({
         timeStart,
         timeEnd,
       })
-      if (!mountedRef.current) return
+      if (!mountedRef.current || requestId !== pageRequestIdRef.current) return
 
       consumeMaterializedGhost(page.entries)
 
@@ -892,19 +899,33 @@ function TimelineFeed({
       setDone(!page.next_cursor)
       onEntriesChanged()
     } catch (err) {
-      if (mountedRef.current) {
+      if (mountedRef.current && requestId === pageRequestIdRef.current) {
         console.error(cursor ? 'loadMore:' : 'loadEntries:', err)
       }
     } finally {
-      if (mountedRef.current) setLoading(false)
+      if (mountedRef.current && requestId === pageRequestIdRef.current) setLoading(false)
     }
   })
 
   useEffect(() => {
     mountedRef.current = true
-    void loadPage()
     return () => { mountedRef.current = false }
   }, [])
+
+  useEffect(() => {
+    if (ghostEntryRef.current) {
+      renderedIdsRef.current.delete(ghostEntryRef.current.id)
+      ghostEntryRef.current = null
+    }
+    expandedIdRef.current = null
+    setExpandedId(null)
+    setGhostEntry(null)
+    setTooltip(null)
+    setNextCursor(undefined)
+    setDone(false)
+    setEntryIncidentMap({})
+    void loadPage()
+  }, [hideHeartbeat, nodeFilter, qFilter, serviceFilter, sourceFilter, timeEndMs, timeStartMs])
 
   useEffect(() => {
     const sentinel = sentinelRef.current
@@ -1006,7 +1027,10 @@ function TimelineFeed({
     result.splice(expandedIndex, 0, ghostEntry)
     return result
   })()
-  const timeFilteredEntries = displayEntries.filter(entry => {
+  const filteredEntries = displayEntries.filter(entry =>
+    matchesEntryFilters(entry, nodeFilter, sourceFilter, serviceFilter, qFilter, hideHeartbeat),
+  )
+  const timeFilteredEntries = filteredEntries.filter(entry => {
     if (!timeStart && !timeEnd) return true
     const ts = new Date(entry.timestamp)
     if (timeStart && ts < timeStart) return false
@@ -1030,14 +1054,14 @@ function TimelineFeed({
     setGhostEntry(null)
   }, [expandedVisibleInFilteredEntries])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     onCountChanged(timeFilteredEntries.length)
   }, [onCountChanged, timeFilteredEntries.length])
 
   useEffect(() => {
     if (loading || done || !nextCursor || !sentinelVisible) return
     void loadPage(nextCursor)
-  }, [done, loading, nextCursor, nodeFilter, qFilter, sentinelVisible, serviceFilter, sourceFilter, timeEnd, timeStart])
+  }, [done, loading, nextCursor, sentinelVisible])
 
   useEffect(() => {
     void loadIncidentMembership(visibleEntryIDsRef.current)

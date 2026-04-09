@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 type Preset = '15m' | '1h' | '6h' | '24h' | '7d'
 
@@ -9,6 +9,13 @@ const PRESETS: { label: string; value: Preset; ms: number }[] = [
   { label: '24h', value: '24h', ms: 24 * 60 * 60 * 1000 },
   { label: '7d',  value: '7d',  ms: 7 * 24 * 60 * 60 * 1000 },
 ]
+
+function getPresetRange(preset: Preset): { start: Date; end: Date } {
+  const ms = PRESETS.find(p => p.value === preset)!.ms
+  const end = truncateToMinute(new Date())!
+  const start = truncateToMinute(new Date(end.getTime() - ms))!
+  return { start, end }
+}
 
 function formatForInput(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0')
@@ -43,11 +50,12 @@ function truncateToMinute(date: Date | null): Date | null {
 }
 
 export default function TimeFilter({ onChange }: TimeFilterProps) {
+  const initialRange = useMemo(() => getPresetRange('6h'), [])
   const [activePreset, setActivePreset] = useState<Preset | null>('6h')
-  const [startInput, setStartInput] = useState('')
-  const [endInput, setEndInput] = useState('')
-  const emittedStartRef = useRef<Date | null>(null)
-  const emittedEndRef = useRef<Date | null>(null)
+  const [startInput, setStartInput] = useState(() => formatForInput(initialRange.start))
+  const [endInput, setEndInput] = useState(() => formatForInput(initialRange.end))
+  const emittedStartRef = useRef<Date | null>(initialRange.start)
+  const emittedEndRef = useRef<Date | null>(initialRange.end)
   const onChangeRef = useRef<(range: TimeRange) => void>(() => {})
 
   useEffect(() => {
@@ -55,9 +63,7 @@ export default function TimeFilter({ onChange }: TimeFilterProps) {
   }, [onChange])
 
   const applyPreset = useCallback((preset: Preset) => {
-    const ms = PRESETS.find(p => p.value === preset)!.ms
-    const end = truncateToMinute(new Date())!
-    const start = truncateToMinute(new Date(end.getTime() - ms))!
+    const { start, end } = getPresetRange(preset)
     setActivePreset(preset)
     setStartInput(formatForInput(start))
     setEndInput(formatForInput(end))
@@ -67,8 +73,8 @@ export default function TimeFilter({ onChange }: TimeFilterProps) {
   }, [])
 
   useEffect(() => {
-    applyPreset('6h')
-  }, [applyPreset])
+    onChangeRef.current(initialRange)
+  }, [initialRange])
 
   function handleStartChange(value: string) {
     setStartInput(value)
@@ -110,64 +116,24 @@ export default function TimeFilter({ onChange }: TimeFilterProps) {
     commitRange()
   }
 
-  const btnBase: React.CSSProperties = {
-    background: 'transparent',
-    border: '1px solid #222',
-    color: '#555',
-    fontFamily: 'inherit',
-    fontSize: 10,
-    letterSpacing: '0.1em',
-    padding: '4px 10px',
-    cursor: 'pointer',
-    transition: 'all 0.15s',
-  }
-
-  const btnActive: React.CSSProperties = {
-    ...btnBase,
-    borderColor: 'var(--accent)',
-    color: 'var(--accent)',
-    background: 'rgba(255,51,51,0.06)',
-  }
-
-  const inputStyle: React.CSSProperties = {
-    background: '#0F0F0F',
-    border: '1px solid #222',
-    color: '#888',
-    fontFamily: 'inherit',
-    fontSize: 11,
-    padding: '4px 8px',
-    width: 152,
-    letterSpacing: '0.04em',
-  }
-
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        padding: '12px 24px',
-        borderBottom: '1px solid #141414',
-        flexWrap: 'wrap',
-        flexShrink: 0,
-      }}
-    >
-      <span style={{ fontSize: 10, color: '#555', letterSpacing: '0.12em' }}>TIME</span>
+    <div className="time-filter">
+      <span className="time-filter-label">TIME</span>
       {PRESETS.map(p => (
         <button
           key={p.value}
           type="button"
           aria-pressed={activePreset === p.value}
-          style={activePreset === p.value ? btnActive : btnBase}
+          className={activePreset === p.value ? 'time-filter-button time-filter-button-active' : 'time-filter-button'}
           onClick={() => applyPreset(p.value)}
         >
           {p.label}
         </button>
       ))}
-      <span style={{ color: '#2a2a2a', fontSize: 12, margin: '0 2px' }}>|</span>
+      <span className="time-filter-divider">|</span>
       <input
         type="text"
-        style={inputStyle}
+        className="time-filter-input"
         value={startInput}
         onChange={e => handleStartChange(e.target.value)}
         onBlur={commitRange}
@@ -175,10 +141,10 @@ export default function TimeFilter({ onChange }: TimeFilterProps) {
         placeholder="YYYY-MM-DD HH:MM"
         aria-label="Time range start"
       />
-      <span style={{ color: '#444', fontSize: 12 }}>{'->'}</span>
+      <span className="time-filter-arrow">{'->'}</span>
       <input
         type="text"
-        style={inputStyle}
+        className="time-filter-input"
         value={endInput}
         onChange={e => handleEndChange(e.target.value)}
         onBlur={commitRange}
