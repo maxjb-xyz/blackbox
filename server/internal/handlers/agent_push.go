@@ -82,10 +82,7 @@ func upsertNode(database *gorm.DB, entry types.Entry) bool {
 	}
 
 	now := time.Now().UTC()
-	isHeartbeat := entry.Source == "agent" && entry.Event == "heartbeat"
-	isStart := entry.Source == "agent" && entry.Event == "start"
-	isShutdown := entry.Source == "agent" && entry.Event == "shutdown"
-	isMetaEvent := isHeartbeat || isStart || isShutdown
+	isMetaEvent := isAgentMetaEvent(entry)
 
 	var node models.Node
 	result := database.Where("name = ?", entry.NodeName).First(&node)
