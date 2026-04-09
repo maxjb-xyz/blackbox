@@ -1,21 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-
-type Preset = '15m' | '1h' | '6h' | '24h' | '7d'
-
-const PRESETS: { label: string; value: Preset; ms: number }[] = [
-  { label: '15m', value: '15m', ms: 15 * 60 * 1000 },
-  { label: '1h',  value: '1h',  ms: 60 * 60 * 1000 },
-  { label: '6h',  value: '6h',  ms: 6 * 60 * 60 * 1000 },
-  { label: '24h', value: '24h', ms: 24 * 60 * 60 * 1000 },
-  { label: '7d',  value: '7d',  ms: 7 * 24 * 60 * 60 * 1000 },
-]
-
-function getPresetRange(preset: Preset): { start: Date; end: Date } {
-  const ms = PRESETS.find(p => p.value === preset)!.ms
-  const end = truncateToMinute(new Date())!
-  const start = truncateToMinute(new Date(end.getTime() - ms))!
-  return { start, end }
-}
+import { DEFAULT_TIME_PRESET, getPresetRange, PRESETS } from './timeFilterPresets'
+import type { Preset } from './timeFilterPresets'
 
 function formatForInput(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0')
@@ -50,8 +35,8 @@ function truncateToMinute(date: Date | null): Date | null {
 }
 
 export default function TimeFilter({ onChange }: TimeFilterProps) {
-  const initialRange = useMemo(() => getPresetRange('6h'), [])
-  const [activePreset, setActivePreset] = useState<Preset | null>('6h')
+  const initialRange = useMemo(() => getPresetRange(DEFAULT_TIME_PRESET), [])
+  const [activePreset, setActivePreset] = useState<Preset | null>(DEFAULT_TIME_PRESET)
   const [startInput, setStartInput] = useState(() => formatForInput(initialRange.start))
   const [endInput, setEndInput] = useState(() => formatForInput(initialRange.end))
   const emittedStartRef = useRef<Date | null>(initialRange.start)

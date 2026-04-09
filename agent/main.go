@@ -254,7 +254,7 @@ func readOSReleaseName() string {
 	for _, prefix := range []string{"PRETTY_NAME=", "NAME="} {
 		for _, line := range lines {
 			if strings.HasPrefix(line, prefix) {
-				value := strings.Trim(strings.TrimPrefix(line, prefix), `"`)
+				value := strings.TrimSpace(strings.Trim(strings.TrimPrefix(line, prefix), `"`))
 				if value == "" {
 					continue
 				}

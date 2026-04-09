@@ -14,6 +14,7 @@ import PageHeader from '../components/PageHeader'
 import { useNodePulse } from '../components/NodePulse'
 import TimeFilter from '../components/TimeFilter'
 import type { TimeRange } from '../components/TimeFilter'
+import { DEFAULT_TIME_PRESET, getPresetRange } from '../components/timeFilterPresets'
 import { useWebSocketContext } from '../components/WebSocketProvider'
 import { formatLocalTimestamp } from '../utils/time'
 
@@ -299,10 +300,6 @@ function SearchableSelect({ value, options, placeholder, onChange }: SearchableS
   const filteredOptions = options.filter(option => option.toLowerCase().includes(query.trim().toLowerCase()))
   const highlightedOptionIndex = (() => {
     if (filteredOptions.length === 0) return 0
-    if (!query) {
-      const selectedIndex = value ? filteredOptions.findIndex(option => option === value) : 0
-      if (selectedIndex >= 0) return selectedIndex
-    }
     return Math.min(highlightedIndex, filteredOptions.length - 1)
   })()
 
@@ -331,6 +328,9 @@ function SearchableSelect({ value, options, placeholder, onChange }: SearchableS
   }, [highlightedOptionIndex, isOpen])
 
   function openMenu(nextQuery = '') {
+    const nextOptions = options.filter(option => option.toLowerCase().includes(nextQuery.trim().toLowerCase()))
+    const selectedIndex = value ? nextOptions.findIndex(option => option === value) : -1
+    setHighlightedIndex(selectedIndex >= 0 ? selectedIndex : 0)
     setQuery(nextQuery)
     setIsOpen(true)
   }
@@ -551,7 +551,7 @@ export default function TimelinePage() {
   const [viewMode, setViewMode] = useState<ViewMode>(getStoredViewMode)
   const [hideHeartbeat, setHideHeartbeat] = useState<boolean>(getStoredHideHeartbeat)
   const [serviceOptions, setServiceOptions] = useState<string[]>([])
-  const [timeRange, setTimeRange] = useState<TimeRange>({ start: null, end: null })
+  const [timeRange, setTimeRange] = useState<TimeRange>(() => getPresetRange(DEFAULT_TIME_PRESET))
   const [visibleCount, setVisibleCount] = useState(0)
 
   const serviceMountedRef = useRef(true)
