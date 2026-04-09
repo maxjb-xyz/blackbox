@@ -146,10 +146,10 @@ export default function TimeFilter({ onChange }: TimeFilterProps) {
         display: 'flex',
         alignItems: 'center',
         gap: 8,
-        paddingBottom: 14,
-        marginBottom: 4,
+        padding: '12px 24px',
         borderBottom: '1px solid #141414',
         flexWrap: 'wrap',
+        flexShrink: 0,
       }}
     >
       <span style={{ fontSize: 10, color: '#555', letterSpacing: '0.12em' }}>TIME</span>

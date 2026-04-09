@@ -10,6 +10,7 @@ import {
   fetchNotes,
 } from '../api/client'
 import type { Entry, EntryNote } from '../api/client'
+import PageHeader from '../components/PageHeader'
 import { useNodePulse } from '../components/NodePulse'
 import TimeFilter from '../components/TimeFilter'
 import type { TimeRange } from '../components/TimeFilter'
@@ -146,6 +147,24 @@ function extractFileDiffMetadata(entry: Entry): FileDiffMetadata | null {
     diff: parsed.diff,
     diffRedacted: parsed.diff_redacted !== false,
   }
+}
+
+const DIFF_STATUS_LABELS: Record<string, string> = {
+  no_baseline: 'no baseline snapshot — diff available on next change',
+  unchanged: 'file content unchanged',
+  skipped_too_large: 'file too large to diff',
+  skipped_binary: 'binary file — diff skipped',
+  skipped_read_error: 'file read error — diff skipped',
+  skipped_too_many_lines: 'too many changed lines to diff',
+}
+
+function extractFileDiffStatus(entry: Entry): { path: string; status: string } | null {
+  if (entry.source !== 'files') return null
+  const parsed = parseMetadataObject(entry.metadata)
+  if (!parsed) return null
+  if (typeof parsed.path !== 'string' || typeof parsed.diff_status !== 'string') return null
+  if (parsed.diff_status === 'included') return null // handled by extractFileDiffMetadata
+  return { path: parsed.path, status: parsed.diff_status }
 }
 
 function buildDiffRows(diff: string): DiffRow[] {
@@ -600,12 +619,9 @@ export default function TimelinePage() {
     })
   }
 
-  function toggleViewMode() {
-    setViewMode(prev => {
-      const next: ViewMode = prev === 'cards' ? 'rows' : 'cards'
-      localStorage.setItem('timeline_view', next)
-      return next
-    })
+  function selectViewMode(mode: ViewMode) {
+    localStorage.setItem('timeline_view', mode)
+    setViewMode(mode)
   }
 
   function toggleHideHeartbeat() {
@@ -617,7 +633,8 @@ export default function TimelinePage() {
   }
 
   return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div style={{ height: 'calc(100vh - 52px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <PageHeader title="TIMELINE" subtitle="chronological event feed" />
       <TimeFilter onChange={setTimeRange} />
       <div
         style={{
@@ -717,21 +734,27 @@ export default function TimelinePage() {
             {hideHeartbeat ? 'HEARTBEATS HIDDEN' : 'SHOW HEARTBEATS'}
           </button>
 
-          <button
-            onClick={toggleViewMode}
-            style={{
-              background: 'none',
-              border: '1px solid var(--border)',
-              color: 'var(--muted)',
-              fontSize: '12px',
-              padding: '2px 8px',
-              fontFamily: 'inherit',
-              cursor: 'pointer',
-              letterSpacing: '0.08em',
-            }}
-          >
-            {viewMode === 'cards' ? 'ROWS' : 'CARDS'}
-          </button>
+          <div style={{ display: 'flex' }}>
+            {(['cards', 'rows'] as ViewMode[]).map((mode, i) => (
+              <button
+                key={mode}
+                onClick={() => selectViewMode(mode)}
+                style={{
+                  background: viewMode === mode ? 'rgba(255,51,51,0.08)' : 'none',
+                  border: '1px solid var(--border)',
+                  borderLeft: i === 1 ? 'none' : '1px solid var(--border)',
+                  color: viewMode === mode ? 'var(--accent)' : 'var(--muted)',
+                  fontSize: '12px',
+                  padding: '2px 10px',
+                  fontFamily: 'inherit',
+                  cursor: 'pointer',
+                  letterSpacing: '0.08em',
+                }}
+              >
+                {mode.toUpperCase()}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -1170,6 +1193,7 @@ function ExpandedDetails({ entry }: { entry: Entry }) {
   }
 
   const fileDiff = extractFileDiffMetadata(entry)
+  const fileDiffStatus = !fileDiff ? extractFileDiffStatus(entry) : null
   const formattedMeta = entry.metadata && entry.metadata !== '{}'
     ? formatMetadataWithoutDiff(entry.metadata)
     : null
@@ -1204,6 +1228,16 @@ function ExpandedDetails({ entry }: { entry: Entry }) {
             {fileDiff.diffRedacted ? 'diff is redacted per current agent setting' : 'diff captured without redaction'}
           </div>
           <DiffModal entry={entry} diff={fileDiff} open={diffOpen} onClose={() => setDiffOpen(false)} />
+        </div>
+      )}
+
+      {fileDiffStatus && (
+        <div style={{ marginBottom: 12, padding: '8px 10px', border: '1px solid #1e1e1e', background: 'rgba(255,255,255,0.02)' }}>
+          <div style={{ color: 'var(--muted)', fontSize: '10px', letterSpacing: '0.12em', marginBottom: 4 }}>FILE DIFF</div>
+          <div style={{ color: 'var(--muted)', fontSize: '12px', wordBreak: 'break-all', marginBottom: 4 }}>{fileDiffStatus.path}</div>
+          <div style={{ fontSize: '11px', color: '#555', fontStyle: 'italic' }}>
+            {DIFF_STATUS_LABELS[fileDiffStatus.status] ?? fileDiffStatus.status}
+          </div>
         </div>
       )}
 

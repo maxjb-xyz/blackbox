@@ -121,20 +121,28 @@ export default function Topbar() {
           title={wsTitle}
           aria-label={wsTitle}
           onClick={status === 'disconnected' ? reconnect : undefined}
-          className={[
-            'flex items-center gap-[7px] border-none bg-transparent text-[11px] tracking-[0.1em]',
-            status === 'disconnected' ? 'cursor-pointer' : 'cursor-default',
-            wsConnected
-              ? 'text-[var(--success)]'
-              : wsConnecting
-                ? 'text-[var(--warning)]'
-                : 'text-[var(--danger)]',
-          ].join(' ')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 7,
+            border: 'none',
+            background: 'transparent',
+            fontSize: 11,
+            letterSpacing: '0.1em',
+            cursor: status === 'disconnected' ? 'pointer' : 'default',
+            color: wsConnected ? 'var(--success)' : wsConnecting ? 'var(--warning)' : 'var(--danger)',
+            padding: 0,
+            fontFamily: 'inherit',
+          }}
         >
           <span
-            className={`ws-status-dot inline-block h-[7px] w-[7px]${wsConnected ? ' pulse-dot' : ''}`}
+            className={wsConnected ? 'pulse-dot' : undefined}
             style={{
-              background: 'currentColor',
+              display: 'inline-block',
+              width: 8,
+              height: 8,
+              background: wsConnected ? 'var(--success)' : wsConnecting ? 'var(--warning)' : 'var(--danger)',
+              flexShrink: 0,
             }}
           />
           {wsConnected ? 'LIVE' : wsConnecting ? 'CONNECTING' : 'OFFLINE'}
@@ -149,8 +157,22 @@ export default function Topbar() {
             aria-expanded={dropdownOpen}
             aria-controls={dropdownId}
             onClick={() => setDropdownOpen(v => !v)}
-            className="flex items-center gap-2 border border-transparent px-[10px] py-[6px] text-[12px] tracking-[0.1em] transition-all hover:border-[#2a2a2a] hover:text-[#bbb]"
-            style={{ color: '#888', background: 'transparent' }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              border: '1px solid transparent',
+              background: 'transparent',
+              color: '#888',
+              fontSize: 12,
+              letterSpacing: '0.1em',
+              cursor: 'pointer',
+              padding: '4px 8px',
+              fontFamily: 'inherit',
+              transition: 'color 0.15s, border-color 0.15s',
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#ccc'; (e.currentTarget as HTMLButtonElement).style.borderColor = '#2a2a2a' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = '#888'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'transparent' }}
           >
             {user?.username ?? 'USER'}
             <ChevronDown size={14} className="text-[#555]" />

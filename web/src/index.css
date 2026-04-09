@@ -149,3 +149,29 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.dropdown-item {
+  display: block;
+  padding: 8px 16px;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  text-decoration: none;
+  transition: color 0.12s, background 0.12s;
+  background: transparent;
+  cursor: pointer;
+}
+
+.dropdown-item:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.dropdown-item-danger {
+  color: var(--danger);
+}
+
+.dropdown-item-danger:hover {
+  color: var(--danger);
+  background: rgba(255, 68, 68, 0.08);
+}

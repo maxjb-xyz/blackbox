@@ -25,16 +25,6 @@ export default function UserDropdown({ id, onClose, triggerRef }: UserDropdownPr
     return () => document.removeEventListener('mousedown', handleMouseDown)
   }, [onClose, triggerRef])
 
-  const linkStyle: React.CSSProperties = {
-    display: 'block',
-    padding: '8px 16px',
-    fontSize: 12,
-    letterSpacing: '0.1em',
-    color: 'var(--muted)',
-    textDecoration: 'none',
-    transition: 'color 0.15s',
-  }
-
   return (
     <div
       id={id}
@@ -57,7 +47,7 @@ export default function UserDropdown({ id, onClose, triggerRef }: UserDropdownPr
         </span>
       </div>
 
-      <NavLink to="/account" onClick={onClose} style={linkStyle}>
+      <NavLink to="/account" onClick={onClose} className="dropdown-item">
         ACCOUNT
       </NavLink>
 
@@ -66,33 +56,30 @@ export default function UserDropdown({ id, onClose, triggerRef }: UserDropdownPr
           <div style={{ padding: '8px 16px 2px', fontSize: 10, color: '#333', letterSpacing: '0.12em' }}>
             ADMIN
           </div>
-          <NavLink to="/admin" onClick={onClose} style={linkStyle}>
+          <NavLink to="/admin" onClick={onClose} className="dropdown-item">
             ADMIN PANEL
           </NavLink>
-          <NavLink to="/webhooks" onClick={onClose} style={linkStyle}>
+          <NavLink to="/webhooks" onClick={onClose} className="dropdown-item">
             WEBHOOKS
           </NavLink>
         </>
       )}
 
-      <NavLink to="/diagnostics" onClick={onClose} style={linkStyle}>
+      <NavLink to="/diagnostics" onClick={onClose} className="dropdown-item">
         DIAGNOSTICS
       </NavLink>
 
       <div style={{ borderTop: '1px solid #1a1a1a', padding: '4px 0' }}>
         <button
           type="button"
+          className="dropdown-item dropdown-item-danger"
           style={{
-            ...linkStyle,
             display: 'flex',
             alignItems: 'center',
             gap: 8,
-            background: 'transparent',
             border: 'none',
             width: '100%',
             fontFamily: 'inherit',
-            cursor: 'pointer',
-            color: 'var(--danger)',
             textAlign: 'left',
           }}
           onClick={() => {

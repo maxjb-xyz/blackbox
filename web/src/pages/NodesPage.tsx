@@ -1,3 +1,4 @@
+import type React from 'react'
 import { useNodePulse } from '../components/NodePulse'
 import PageHeader from '../components/PageHeader'
 import { formatLocalTimestamp } from '../utils/time'
@@ -12,28 +13,35 @@ function formatTimestamp(ts?: string | null | Date) {
 function OsCell({ osInfo }: { osInfo: string | null | undefined }) {
   if (!osInfo || !osInfo.trim()) return <span style={{ color: 'var(--muted)' }}>-</span>
 
-  // Try to split "linux/amd64 Ubuntu 24.04" into arch and tag
-  const parts = osInfo.trim().split(/\s+/)
-  const arch = parts[0] || ''
-  const tag = parts.slice(1).join(' ')
+  const info = osInfo.trim()
+  let isDocker = false
+  let osName = info
+
+  if (info.startsWith('docker / ')) {
+    isDocker = true
+    osName = info.slice('docker / '.length)
+  } else if (info === 'docker') {
+    isDocker = true
+    osName = ''
+  }
+
+  const pillStyle: React.CSSProperties = {
+    display: 'inline-block',
+    fontSize: 10,
+    padding: '1px 6px',
+    letterSpacing: '0.08em',
+    verticalAlign: 'middle',
+  }
 
   return (
-    <span>
-      <span style={{ color: 'var(--text)' }}>{arch}</span>
-      {tag && (
-        <span
-          style={{
-            display: 'inline-block',
-            fontSize: 10,
-            color: 'var(--muted)',
-            border: '1px solid var(--border)',
-            padding: '1px 6px',
-            letterSpacing: '0.08em',
-            marginLeft: 8,
-          }}
-        >
-          {tag}
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+      {isDocker && (
+        <span style={{ ...pillStyle, color: 'var(--info)', border: '1px solid var(--info)' }}>
+          DOCKER
         </span>
+      )}
+      {osName && (
+        <span style={{ color: 'var(--text)', fontSize: 12 }}>{osName}</span>
       )}
     </span>
   )
