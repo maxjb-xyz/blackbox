@@ -78,9 +78,10 @@ func GetIncidentSummary(database *gorm.DB) http.HandlerFunc {
 			ConfirmedOpenCount int64 `gorm:"column:confirmed_open_count"`
 		}
 		if err := database.Model(&models.Incident{}).
+			Where("status = ?", "open").
 			Select(`
-				COALESCE(SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END), 0) AS open_count,
-				COALESCE(SUM(CASE WHEN status = 'open' AND confidence = 'confirmed' THEN 1 ELSE 0 END), 0) AS confirmed_open_count
+				COALESCE(COUNT(*), 0) AS open_count,
+				COALESCE(SUM(CASE WHEN confidence = 'confirmed' THEN 1 ELSE 0 END), 0) AS confirmed_open_count
 			`).
 			Scan(&summary).Error; err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to fetch incident summary")

@@ -44,7 +44,7 @@ export default function Topbar() {
 
   useEffect(() => {
     const previousStatus = previousStatusRef.current
-    if (status === 'connected' && previousStatus === 'disconnected') {
+    if (status === 'connected' && previousStatus !== 'connected') {
       refreshCount()
     }
     previousStatusRef.current = status

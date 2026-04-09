@@ -736,7 +736,7 @@ export default function TimelinePage() {
       </div>
 
       <TimelineFeed
-        key={`${nodeFilter}:${sourceFilter}:${serviceFilter}:${qFilter}:${hideHeartbeat}`}
+        key={`${nodeFilter}:${sourceFilter}:${serviceFilter}:${qFilter}:${hideHeartbeat}:${timeRange.start?.toISOString() ?? ''}:${timeRange.end?.toISOString() ?? ''}`}
         nodeFilter={nodeFilter}
         sourceFilter={sourceFilter}
         serviceFilter={serviceFilter}
@@ -837,6 +837,8 @@ function TimelineFeed({
         service: serviceFilter || undefined,
         q: qFilter || undefined,
         hideHeartbeat,
+        timeStart,
+        timeEnd,
       })
       if (!mountedRef.current) return
 
@@ -980,13 +982,7 @@ function TimelineFeed({
     return true
   })
   const expandedVisibleInFilteredEntries = expandedId == null || timeFilteredEntries.some(entry => entry.id === expandedId)
-  const oldestLoadedEntry = entries[entries.length - 1]
-  const reachedTimeStartBoundary = Boolean(
-    timeStart &&
-    oldestLoadedEntry &&
-    entryTimestampMs(oldestLoadedEntry) < timeStart.getTime(),
-  )
-  const reachedFilteredEnd = done || reachedTimeStartBoundary
+  const reachedFilteredEnd = done
   const visibleEntryIDs = timeFilteredEntries.map(entry => entry.id)
   const visibleEntryIDsKey = visibleEntryIDs.join('|')
   visibleEntryIDsRef.current = visibleEntryIDs
@@ -1003,9 +999,9 @@ function TimelineFeed({
   }, [expandedVisibleInFilteredEntries])
 
   useEffect(() => {
-    if (loading || done || !nextCursor || !sentinelVisible || reachedTimeStartBoundary) return
+    if (loading || done || !nextCursor || !sentinelVisible) return
     void loadPage(nextCursor)
-  }, [done, loading, nextCursor, nodeFilter, qFilter, reachedTimeStartBoundary, sentinelVisible, serviceFilter, sourceFilter, timeEnd, timeStart])
+  }, [done, loading, nextCursor, nodeFilter, qFilter, sentinelVisible, serviceFilter, sourceFilter, timeEnd, timeStart])
 
   useEffect(() => {
     void loadIncidentMembership(visibleEntryIDsRef.current)
@@ -1499,7 +1495,7 @@ function TimelineCard({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip
           style={{
             marginLeft: 'auto',
             fontSize: 12,
-            color: '#666',
+            color: '#AAB4BD',
             letterSpacing: '0.04em',
             whiteSpace: 'nowrap',
           }}
@@ -1520,13 +1516,13 @@ function TimelineCard({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip
       >
         {entry.node_name && (
           <span style={{ fontSize: 11 }}>
-            <span style={{ color: '#444', letterSpacing: '0.1em', fontSize: 10 }}>NODE </span>
-            <span style={{ color: '#777' }}>{entry.node_name}</span>
+            <span style={{ color: '#8B949E', letterSpacing: '0.1em', fontSize: 10 }}>NODE </span>
+            <span style={{ color: '#C3CDD6' }}>{entry.node_name}</span>
           </span>
         )}
         <span style={{ fontSize: 11 }}>
-          <span style={{ color: '#444', letterSpacing: '0.1em', fontSize: 10 }}>SOURCE </span>
-          <span style={{ color: '#777' }}>{sourceLabel}</span>
+          <span style={{ color: '#8B949E', letterSpacing: '0.1em', fontSize: 10 }}>SOURCE </span>
+          <span style={{ color: '#C3CDD6' }}>{sourceLabel}</span>
         </span>
         {entry.content && (
           <span

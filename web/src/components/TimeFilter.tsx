@@ -91,6 +91,11 @@ export default function TimeFilter({ onChange }: TimeFilterProps) {
   function commitRange() {
     const start = truncateToMinute(parseInput(startInput))
     const end = truncateToMinute(parseInput(endInput))
+    if (!start || !end) {
+      setStartInput(emittedStartRef.current ? formatForInput(emittedStartRef.current) : '')
+      setEndInput(emittedEndRef.current ? formatForInput(emittedEndRef.current) : '')
+      return
+    }
     if (sameTimeValue(start, emittedStartRef.current) && sameTimeValue(end, emittedEndRef.current)) {
       return
     }
