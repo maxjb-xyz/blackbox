@@ -25,6 +25,26 @@ func TestConfigureLocalUsesTZEnv(t *testing.T) {
 	}
 }
 
+func TestConfigureLocalEmptyTZ(t *testing.T) {
+	t.Setenv("TZ", "")
+
+	original := time.Local
+	t.Cleanup(func() {
+		time.Local = original
+	})
+
+	tz, err := ConfigureLocal()
+	if err != nil {
+		t.Fatalf("ConfigureLocal() error = %v, want nil", err)
+	}
+	if tz != "" {
+		t.Fatalf("ConfigureLocal() tz = %q, want empty string", tz)
+	}
+	if time.Local != original {
+		t.Fatal("time.Local changed on empty TZ")
+	}
+}
+
 func TestConfigureLocalRejectsInvalidTZ(t *testing.T) {
 	t.Setenv("TZ", "Mars/Olympus")
 
