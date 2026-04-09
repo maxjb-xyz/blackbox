@@ -35,7 +35,7 @@ When your homelab breaks, Blackbox tells you what happened. You don't need to li
 ## Quick Start
 
 > This gets a single-node setup running in minutes. For multi-node, see [Multi-Node Deployment](#multi-node-deployment).
-> Both images run as non-root (UID 65532). The agent entrypoint auto-detects the GIDs of any mounted resources (Docker socket, systemd journal) at startup — no manual group configuration needed.
+> Both images run as non-root. The server uses UID 65532 (fixed). The agent defaults to UID/GID 65532 but can be overridden with `PUID`/`PGID` to match the owner of your watched host paths. The agent entrypoint auto-detects the GIDs of any mounted resources (Docker socket, systemd journal) at startup — no manual group configuration needed.
 
 **1. Create a `docker-compose.yml`:**
 
@@ -143,7 +143,7 @@ docker compose up -d
 - Invite-code-based user registration
 
 ### Security
-- Non-root container images — server runs distroless (no shell, UID 65532), agent runs as UID 65532 with all capabilities dropped and a read-only filesystem
+- Non-root container images — server runs distroless (no shell, UID 65532), agent runs as configurable `PUID`/`PGID` (default 65532), drops all capabilities then adds only `SETUID`/`SETGID` for identity switching, with a read-only filesystem
 - Constant-time token comparison for all shared secrets
 - Rate limiting on auth endpoints
 - Security headers middleware
@@ -173,52 +173,69 @@ docker compose up -d
 | `WATCH_PATHS` | No | — | Colon-separated list of directories to watch for file changes as seen inside the agent container (e.g., `/watch/etc:/watch/appdata`). |
 | `WATCH_IGNORE` | No | — | Colon-separated glob patterns to exclude from file watching. |
 | `WATCH_SYSTEMD` | No | `false` | Set to `true` on Linux agents to enable journal-based systemd monitoring for the units configured in the Admin UI. |
-
-### File Watcher Troubleshooting
-
-- `WATCH_PATHS` must match the container-side mount target, not the host source path. Example: `- /srv/stacks:/watch/stacks:ro` pairs with `WATCH_PATHS=/watch/stacks`.
-- On startup, the agent now logs a per-root registration line. If you see `failed to register root /watch/stacks`, the bind mount and `WATCH_PATHS` do not line up inside the container.
-- The agent runs as non-root UID/GID `65532`. For watched bind mounts, that user must be able to traverse every directory under each watched root and read the files you want diffed. A single unreadable subdirectory can cause the whole watched root to fail registration.
-- `WATCH_IGNORE` helps skip noisy paths after they are reachable, but it cannot bypass a directory the container user cannot traverse at all. If a tree contains unreadable secrets, narrow `WATCH_PATHS` to a readable subdirectory instead of mounting the whole parent.
-- Some editors save by replacing files instead of writing them in place. Blackbox now emits alerts for those `rename` and `chmod-style` config-file changes as well.
-- File-change metadata now includes a small line diff when the file is UTF-8 text and under the tracking limit. Obvious secret values such as `TOKEN`, `PASSWORD`, and `CLIENT_SECRET` are redacted before upload.
+| `PUID` | No | `65532` | UID the agent process runs as. Set to your host user's UID (`id -u`) when you own the watched paths. |
+| `PGID` | No | `65532` | GID the agent process runs as. Set to your host user's GID (`id -g`) when you own the watched paths. |
 
 #### Granting File Watcher Access
 
-If you bind-mount host directories into the agent for file watching, give UID `65532` permission to traverse the directories and read the files inside them.
+The agent needs read access to every directory and file under your `WATCH_PATHS`. The right approach depends on who owns those files on the host.
 
-**Recommended on Linux: grant ACLs to UID `65532` on the watched tree.**
+##### You own the files (easiest)
 
-```bash
-# Example host path mounted as /watch/stacks in the agent
-WATCH_ROOT=/srv/stacks
+Set `PUID` and `PGID` to your host user's IDs. The agent runs as you, so your files are already readable — no host permission changes needed.
 
-# Allow the agent user to traverse directories
-sudo find "$WATCH_ROOT" -type d -exec setfacl -m u:65532:rx {} +
-
-# Allow the agent user to read files
-sudo find "$WATCH_ROOT" -type f -exec setfacl -m u:65532:r {} +
-
-# Make new files/directories inherit the same access
-sudo setfacl -d -m u:65532:rx "$WATCH_ROOT"
-sudo find "$WATCH_ROOT" -type d -exec setfacl -d -m u:65532:rx {} +
+```yaml
+environment:
+  PUID: "1000"   # your host UID — run: id -u
+  PGID: "1000"   # your host GID — run: id -g
 ```
 
-**Alternative: use traditional Unix ownership/mode bits if ACLs are unavailable.**
+##### Root or another user owns the files
+
+Leave `PUID`/`PGID` at their defaults (or set them to match the owning user if you have that flexibility), then grant the agent's UID explicit read access on the host.
+
+**Recommended: ACLs** (non-destructive, works alongside existing permissions)
 
 ```bash
-# If you are comfortable assigning the tree to group 65532
-sudo chgrp -R 65532 /srv/stacks
+WATCH_ROOT=/srv/stacks
+AGENT_UID="${PUID:-65532}"   # match whatever PUID you set
+
+# Allow traversal of directories
+sudo find "$WATCH_ROOT" -type d -exec setfacl -m u:${AGENT_UID}:rx {} +
+
+# Allow reading files
+sudo find "$WATCH_ROOT" -type f -exec setfacl -m u:${AGENT_UID}:r {} +
+
+# Inherit for new files/directories
+sudo setfacl -d -m u:${AGENT_UID}:rx "$WATCH_ROOT"
+sudo find "$WATCH_ROOT" -type d -exec setfacl -d -m u:${AGENT_UID}:rx {} +
+```
+
+**Alternative: traditional Unix mode bits** (if ACLs are unavailable)
+
+```bash
+AGENT_GID="${PGID:-65532}"   # match whatever PGID you set
+
+sudo chgrp -R "$AGENT_GID" /srv/stacks
 sudo find /srv/stacks -type d -exec chmod 750 {} +
 sudo find /srv/stacks -type f -exec chmod 640 {} +
 ```
 
 Notes:
 
-- The agent's primary UID/GID inside the container is `65532`, so numeric ownership is what matters on the host.
+- `PUID`/`PGID` default to `65532` if not set. Numeric ownership is authoritative on the host — the agent image creates a `nonroot` user at UID 65532, but custom `PUID`/`PGID` values may not have a corresponding name entry in `/etc/passwd`, so always use numeric IDs when setting file ownership.
 - Parent directories must also be traversable (`x` bit), not just the final config file.
-- If part of a tree should stay unreadable, do not mount the whole parent. Mount only the readable subtree and point `WATCH_PATHS` at that container-side path instead.
-- After changing permissions, restart the agent container and look for `files watcher: registered ... directories` instead of `permission denied`.
+- If part of a tree should stay unreadable, mount only the readable subtree and point `WATCH_PATHS` at that path instead.
+- After changing permissions or `PUID`/`PGID`, restart the agent and look for `files watcher: registered ... directories` in the logs.
+
+### File Watcher Troubleshooting
+
+- `WATCH_PATHS` must match the container-side mount target, not the host source path. Example: `- /srv/stacks:/watch/stacks:ro` pairs with `WATCH_PATHS=/watch/stacks`.
+- On startup, the agent now logs a per-root registration line. If you see `failed to register root /watch/stacks`, the bind mount and `WATCH_PATHS` do not line up inside the container.
+- The agent runs as `PUID`/`PGID` (default `65532`). For watched bind mounts, that user must be able to traverse every directory under each watched root and read the files you want diffed. A single unreadable subdirectory can cause the whole watched root to fail registration.
+- `WATCH_IGNORE` helps skip noisy paths after they are reachable, but it cannot bypass a directory the container user cannot traverse at all. If a tree contains unreadable secrets, narrow `WATCH_PATHS` to a readable subdirectory instead of mounting the whole parent.
+- Some editors save by replacing files instead of writing them in place. Blackbox now emits alerts for those `rename` and `chmod-style` config-file changes as well.
+- File-change metadata now includes a small line diff when the file is UTF-8 text and under the tracking limit. Obvious secret values such as `TOKEN`, `PASSWORD`, and `CLIENT_SECRET` are redacted before upload.
 
 ### Systemd Monitoring
 
@@ -271,7 +288,7 @@ openssl rand -hex 32
 ## Multi-Node Deployment
 
 Deploy an agent on each machine you want to monitor. All agents point at the same central server.
-> Both images run as non-root (UID 65532). The agent entrypoint auto-detects the GIDs of any mounted resources (Docker socket, systemd journal) at startup — no manual group configuration needed.
+> Both images run as non-root. The server uses UID 65532 (fixed). The agent defaults to UID/GID 65532 but can be overridden with `PUID`/`PGID` to match the owner of your watched host paths. The agent entrypoint auto-detects the GIDs of any mounted resources (Docker socket, systemd journal) at startup — no manual group configuration needed.
 
 **Node 01 — Primary server (also runs an agent):**
 
