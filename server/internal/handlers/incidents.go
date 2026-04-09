@@ -71,6 +71,39 @@ func ListIncidents(database *gorm.DB) http.HandlerFunc {
 	}
 }
 
+func GetIncidentSummary(database *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var openCount int64
+		if err := database.Model(&models.Incident{}).
+			Where("status = ?", "open").
+			Count(&openCount).Error; err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to fetch incident summary")
+			return
+		}
+
+		var confirmedOpenCount int64
+		if err := database.Model(&models.Incident{}).
+			Where("status = ? AND confidence = ?", "open", "confirmed").
+			Count(&confirmedOpenCount).Error; err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to fetch incident summary")
+			return
+		}
+
+		resp := struct {
+			OpenCount        int64 `json:"open_count"`
+			HasConfirmedOpen bool  `json:"has_confirmed_open"`
+		}{
+			OpenCount:        openCount,
+			HasConfirmedOpen: confirmedOpenCount > 0,
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			log.Printf("GetIncidentSummary encode: %v", err)
+		}
+	}
+}
+
 type incidentEntryDetail struct {
 	Link models.IncidentEntry `json:"link"`
 	Data *types.Entry         `json:"entry"`

@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Activity, AlertTriangle, Server } from 'lucide-react'
-import { fetchIncidents } from '../api/client'
-import type { Incident } from '../api/client'
+import { Activity, AlertTriangle, ChevronDown, Server } from 'lucide-react'
+import { fetchIncidentSummary } from '../api/client'
 import { useNodePulse } from './NodePulse'
 import { useWebSocketContext } from './WebSocketProvider'
 import { useSession } from '../session'
@@ -16,14 +15,15 @@ export default function Topbar() {
   const [openCount, setOpenCount] = useState(0)
   const [hasConfirmed, setHasConfirmed] = useState(false)
   const reqIdRef = useRef(0)
+  const triggerRef = useRef<HTMLButtonElement>(null)
 
   const refreshCount = useCallback(() => {
     const id = ++reqIdRef.current
-    fetchIncidents({ status: 'open', limit: 200 })
-      .then(page => {
+    fetchIncidentSummary()
+      .then(summary => {
         if (reqIdRef.current !== id) return
-        setOpenCount(page.incidents.length)
-        setHasConfirmed(page.incidents.some((i: Incident) => i.confidence === 'confirmed'))
+        setOpenCount(summary.openCount)
+        setHasConfirmed(summary.hasConfirmedOpen)
       })
       .catch(() => {})
   }, [])
@@ -133,25 +133,16 @@ export default function Topbar() {
         {/* User dropdown */}
         <div style={{ position: 'relative' }}>
           <button
+            ref={triggerRef}
             type="button"
             onClick={() => setDropdownOpen(v => !v)}
             className="flex items-center gap-2 border border-transparent px-[10px] py-[6px] text-[12px] tracking-[0.1em] transition-all hover:border-[#2a2a2a] hover:text-[#bbb]"
             style={{ color: '#888', background: 'transparent' }}
           >
             {user?.username ?? 'USER'}
-            <svg
-              width="11"
-              height="11"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              style={{ color: '#555' }}
-            >
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
+            <ChevronDown size={14} className="text-[#555]" />
           </button>
-          {dropdownOpen && <UserDropdown onClose={() => setDropdownOpen(false)} />}
+          {dropdownOpen && <UserDropdown onClose={() => setDropdownOpen(false)} triggerRef={triggerRef} />}
         </div>
       </div>
     </header>

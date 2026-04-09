@@ -90,7 +90,6 @@ export default function NodesPage() {
           <table className="nodes-table">
             <thead>
               <tr>
-                <th scope="col" aria-hidden="true" />
                 <th scope="col">NAME</th>
                 <th scope="col">STATUS</th>
                 <th scope="col">LAST SEEN</th>
@@ -104,20 +103,20 @@ export default function NodesPage() {
                 const isOnline = node.status === 'online'
                 return (
                   <tr key={node.id} style={isOnline ? undefined : { background: 'var(--danger-bg)' }}>
-                    <td>
-                      <span
-                        className="nodes-status-dot"
-                        aria-hidden="true"
-                        style={{
-                          background: isOnline ? 'var(--success)' : 'var(--danger)',
-                        }}
-                      />
-                    </td>
                     <td className="nodes-cell-truncate" style={{ color: 'var(--text)' }}>
                       {node.name}
                     </td>
                     <td style={{ fontSize: 11, letterSpacing: '0.1em', color: isOnline ? 'var(--success)' : 'var(--danger)' }}>
-                      {node.status.toUpperCase()}
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                        <span
+                          className="nodes-status-dot"
+                          aria-hidden="true"
+                          style={{
+                            background: isOnline ? 'var(--success)' : 'var(--danger)',
+                          }}
+                        />
+                        <span>{node.status.toUpperCase()}</span>
+                      </span>
                     </td>
                     <td style={{ color: 'var(--muted)', fontSize: 12 }}>
                       {formatTimestamp(node.last_seen)}

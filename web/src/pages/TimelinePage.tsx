@@ -979,6 +979,7 @@ function TimelineFeed({
     if (timeEnd && ts > timeEnd) return false
     return true
   })
+  const expandedVisibleInFilteredEntries = expandedId == null || timeFilteredEntries.some(entry => entry.id === expandedId)
   const oldestLoadedEntry = entries[entries.length - 1]
   const reachedTimeStartBoundary = Boolean(
     timeStart &&
@@ -989,6 +990,17 @@ function TimelineFeed({
   const visibleEntryIDs = displayEntries.map(entry => entry.id)
   const visibleEntryIDsKey = visibleEntryIDs.join('|')
   visibleEntryIDsRef.current = visibleEntryIDs
+
+  useEffect(() => {
+    if (expandedVisibleInFilteredEntries) return
+    if (ghostEntryRef.current) {
+      renderedIdsRef.current.delete(ghostEntryRef.current.id)
+      ghostEntryRef.current = null
+    }
+    expandedIdRef.current = null
+    setExpandedId(null)
+    setGhostEntry(null)
+  }, [expandedVisibleInFilteredEntries])
 
   useEffect(() => {
     if (loading || done || !nextCursor || !sentinelVisible || reachedTimeStartBoundary) return

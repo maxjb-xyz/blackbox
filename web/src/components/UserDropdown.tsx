@@ -1,27 +1,28 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type RefObject } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { LogOut } from 'lucide-react'
 import { useSession } from '../session'
 
 interface UserDropdownProps {
   onClose: () => void
+  triggerRef: RefObject<HTMLButtonElement | null>
 }
 
-export default function UserDropdown({ onClose }: UserDropdownProps) {
+export default function UserDropdown({ onClose, triggerRef }: UserDropdownProps) {
   const { user, logout } = useSession()
   const navigate = useNavigate()
-  const ref = useRef<HTMLDivElement>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
   const isAdmin = user?.is_admin === true
 
   useEffect(() => {
     function handleMouseDown(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        onClose()
-      }
+      const target = e.target as Node
+      if (dropdownRef.current?.contains(target) || triggerRef.current?.contains(target)) return
+      onClose()
     }
     document.addEventListener('mousedown', handleMouseDown)
     return () => document.removeEventListener('mousedown', handleMouseDown)
-  }, [onClose])
+  }, [onClose, triggerRef])
 
   const linkStyle: React.CSSProperties = {
     display: 'block',
@@ -35,7 +36,7 @@ export default function UserDropdown({ onClose }: UserDropdownProps) {
 
   return (
     <div
-      ref={ref}
+      ref={dropdownRef}
       style={{
         position: 'absolute',
         top: 'calc(100% + 4px)',

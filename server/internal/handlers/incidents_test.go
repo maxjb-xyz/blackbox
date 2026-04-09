@@ -88,6 +88,54 @@ func TestListIncidents_PaginatesWithHasMore(t *testing.T) {
 	assert.True(t, resp.HasMore)
 }
 
+func TestGetIncidentSummary(t *testing.T) {
+	database := newTestDB(t)
+
+	require.NoError(t, database.Create(&models.Incident{
+		ID:         ulid.Make().String(),
+		OpenedAt:   time.Now().UTC().Add(time.Minute),
+		Status:     "open",
+		Confidence: "confirmed",
+		Title:      "confirmed open incident",
+		Services:   `["nginx"]`,
+		NodeNames:  `["node-01"]`,
+		Metadata:   `{}`,
+	}).Error)
+	require.NoError(t, database.Create(&models.Incident{
+		ID:         ulid.Make().String(),
+		OpenedAt:   time.Now().UTC(),
+		Status:     "open",
+		Confidence: "suspected",
+		Title:      "suspected open incident",
+		Services:   `["traefik"]`,
+		NodeNames:  `["node-02"]`,
+		Metadata:   `{}`,
+	}).Error)
+	require.NoError(t, database.Create(&models.Incident{
+		ID:         ulid.Make().String(),
+		OpenedAt:   time.Now().UTC().Add(-time.Minute),
+		Status:     "resolved",
+		Confidence: "confirmed",
+		Title:      "resolved incident",
+		Services:   `["redis"]`,
+		NodeNames:  `["node-03"]`,
+		Metadata:   `{}`,
+	}).Error)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/incidents/summary", nil)
+	rr := httptest.NewRecorder()
+	handlers.GetIncidentSummary(database)(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	var resp struct {
+		OpenCount        int64 `json:"open_count"`
+		HasConfirmedOpen bool  `json:"has_confirmed_open"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	assert.EqualValues(t, 2, resp.OpenCount)
+	assert.True(t, resp.HasConfirmedOpen)
+}
+
 func TestGetIncident_NotFound(t *testing.T) {
 	database := newTestDB(t)
 
