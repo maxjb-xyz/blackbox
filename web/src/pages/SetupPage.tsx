@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Terminal, AlertCircle, CheckCircle, XCircle, Loader } from 'lucide-react'
+import { Terminal, AlertCircle, AlertTriangle, CheckCircle, XCircle, Loader } from 'lucide-react'
 import { bootstrap, checkHealth, type HealthStatus } from '../api/client'
 import { useSession } from '../session'
 
@@ -61,18 +61,18 @@ export default function SetupPage({ onBootstrapped }: SetupPageProps) {
     <div className="auth-page">
       <div className="auth-card">
         <div className="auth-card-header">
-          <Terminal size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+          <Terminal size={14} className="auth-header-icon" />
           <span className="auth-title">BLACKBOX</span>
           <span className="auth-sep">/</span>
           <span className="auth-title-page">INITIAL SETUP</span>
-          <span className="cursor-blink" style={{ fontSize: '12px', marginLeft: 'auto' }}>_</span>
+          <span className="cursor-blink auth-header-cursor">_</span>
         </div>
 
         <div className="auth-card-body">
           <div className="auth-health-box">
             <div className="auth-health-title">SYSTEM DIAGNOSTICS</div>
             {healthLoading ? (
-              <div className="auth-health-row" style={{ color: 'var(--muted)' }}>
+              <div className="auth-health-row auth-health-loading">
                 <Loader size={11} />
                 <span>Checking…</span>
               </div>
@@ -164,7 +164,7 @@ export default function SetupPage({ onBootstrapped }: SetupPageProps) {
 
 function HealthRow({ label, status, message }: { label: string; status: 'ok' | 'error' | 'warn'; message?: string }) {
   const color = status === 'ok' ? 'var(--success)' : status === 'warn' ? 'var(--warning)' : 'var(--danger)'
-  const Icon = status === 'ok' ? CheckCircle : XCircle
+  const Icon = status === 'ok' ? CheckCircle : status === 'warn' ? AlertTriangle : XCircle
 
   return (
     <div className="auth-health-row">

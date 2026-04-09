@@ -65,6 +65,7 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .cursor-blink,
   .terminal-startup,
+  .auth-card,
   .pulse-dot,
   .ws-status-dot {
     animation: none !important;
@@ -274,7 +275,7 @@ body {
 }
 
 .auth-tagline {
-  color: var(--muted);
+  color: #888;
   font-size: 10px;
   letter-spacing: 0.14em;
   text-align: center;
@@ -305,6 +306,20 @@ body {
   border: none;
   border-top: 1px solid var(--border);
   margin: 14px 0;
+}
+
+.auth-header-icon {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.auth-header-cursor {
+  font-size: 12px;
+  margin-left: auto;
+}
+
+.auth-health-loading {
+  color: var(--muted);
 }
 
 .nodes-table {
