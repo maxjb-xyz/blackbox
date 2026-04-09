@@ -10,7 +10,6 @@ import {
   fetchNotes,
 } from '../api/client'
 import type { Entry, EntryNote } from '../api/client'
-import PageHeader from '../components/PageHeader'
 import { useNodePulse } from '../components/NodePulse'
 import TimeFilter from '../components/TimeFilter'
 import type { TimeRange } from '../components/TimeFilter'
@@ -631,7 +630,6 @@ export default function TimelinePage() {
 
   return (
     <div style={{ height: 'calc(100vh - var(--topbar-height))', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <PageHeader title="TIMELINE" subtitle="chronological event feed" />
       <TimeFilter initialRange={timeRange} onChange={setTimeRange} />
       <div
         style={{
