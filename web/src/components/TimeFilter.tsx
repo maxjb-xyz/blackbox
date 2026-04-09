@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { DEFAULT_TIME_PRESET, getPresetRange, PRESETS } from './timeFilterPresets'
+import { DEFAULT_TIME_PRESET, getPresetRange, PRESETS, truncateToMinute } from './timeFilterPresets'
 import type { Preset } from './timeFilterPresets'
 
 function formatForInput(date: Date): string {
@@ -25,13 +25,6 @@ function sameTimeValue(a: Date | null, b: Date | null): boolean {
   if (!a && !b) return true
   if (!a || !b) return false
   return a.getTime() === b.getTime()
-}
-
-function truncateToMinute(date: Date | null): Date | null {
-  if (!date) return null
-  const truncated = new Date(date)
-  truncated.setSeconds(0, 0)
-  return truncated
 }
 
 export default function TimeFilter({ onChange }: TimeFilterProps) {

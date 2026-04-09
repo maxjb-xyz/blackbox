@@ -15,15 +15,25 @@ export const PRESETS: { label: string; value: Preset; ms: number }[] = [
   { label: '7d', value: '7d', ms: 7 * 24 * 60 * 60 * 1000 },
 ]
 
-function truncateToMinute(date: Date): Date {
+export function truncateToMinute(date: Date | null): Date | null {
+  if (!date) return null
   const truncated = new Date(date)
   truncated.setSeconds(0, 0)
   return truncated
 }
 
 export function getPresetRange(preset: Preset): PresetTimeRange {
-  const ms = PRESETS.find(p => p.value === preset)!.ms
+  const presetEntry = PRESETS.find(p => p.value === preset)
+  if (!presetEntry) {
+    throw new Error(`Unknown time preset: ${preset}`)
+  }
   const end = truncateToMinute(new Date())
-  const start = truncateToMinute(new Date(end.getTime() - ms))
+  if (!end) {
+    throw new Error('Failed to truncate end time for preset range')
+  }
+  const start = truncateToMinute(new Date(end.getTime() - presetEntry.ms))
+  if (!start) {
+    throw new Error(`Failed to truncate start time for preset range: ${preset}`)
+  }
   return { start, end }
 }
