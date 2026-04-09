@@ -1,8 +1,14 @@
 #!/bin/sh
 # Auto-detect the GIDs of mounted resources (Docker socket, systemd journal)
 # so the agent can access them without requiring the operator to pre-configure
-# host group IDs. Drops from root to UID/GID 65532 (nonroot) before exec.
+# host group IDs. Drops from root to PUID/PGID (default 65532) before exec.
 set -e
+
+# Runtime identity. Set PUID/PGID to your host user's IDs when you own the
+# watched paths — no host permission changes are needed in that case.
+# Defaults to 65532 (distroless nonroot).
+TARGET_UID="${PUID:-65532}"
+TARGET_GID="${PGID:-65532}"
 
 # Helper function to add unique GID to GROUPS_ARG
 add_unique_gid() {
@@ -33,7 +39,7 @@ elif [ -d /var/log/journal ]; then
 fi
 
 if [ -n "$GROUPS_ARG" ]; then
-    exec setpriv --reuid=65532 --regid=65532 --groups="$GROUPS_ARG" /blackbox-agent "$@"
+    exec setpriv --reuid="$TARGET_UID" --regid="$TARGET_GID" --groups="$GROUPS_ARG" /blackbox-agent "$@"
 else
-    exec setpriv --reuid=65532 --regid=65532 --clear-groups /blackbox-agent "$@"
+    exec setpriv --reuid="$TARGET_UID" --regid="$TARGET_GID" --clear-groups /blackbox-agent "$@"
 fi
