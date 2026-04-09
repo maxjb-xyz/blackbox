@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 :root {
+  --topbar-height: 52px;
   --bg: #0B0B0B;
   --surface: #111111;
   --border: #222222;
@@ -148,6 +149,15 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.topbar-user-btn {
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.topbar-user-btn:hover {
+  color: #ccc !important;
+  border-color: #2a2a2a !important;
 }
 
 .dropdown-item {

@@ -69,7 +69,8 @@ export default function Topbar() {
 
   return (
     <header
-      className="sticky top-0 z-50 flex h-[52px] flex-shrink-0 items-center border-b border-[#242424] bg-[#0D0D0D] px-6"
+      className="sticky top-0 z-50 flex flex-shrink-0 items-center border-b border-[#242424] bg-[#0D0D0D] px-6"
+      style={{ height: 'var(--topbar-height)' }}
     >
       {/* Logo */}
       <span
@@ -157,6 +158,7 @@ export default function Topbar() {
             aria-expanded={dropdownOpen}
             aria-controls={dropdownId}
             onClick={() => setDropdownOpen(v => !v)}
+            className="topbar-user-btn"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -169,10 +171,7 @@ export default function Topbar() {
               cursor: 'pointer',
               padding: '4px 8px',
               fontFamily: 'inherit',
-              transition: 'color 0.15s, border-color 0.15s',
             }}
-            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#ccc'; (e.currentTarget as HTMLButtonElement).style.borderColor = '#2a2a2a' }}
-            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = '#888'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'transparent' }}
           >
             {user?.username ?? 'USER'}
             <ChevronDown size={14} className="text-[#555]" />

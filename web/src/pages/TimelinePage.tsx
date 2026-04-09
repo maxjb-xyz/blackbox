@@ -634,7 +634,7 @@ export default function TimelinePage() {
   }
 
   return (
-    <div style={{ height: 'calc(100vh - 52px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div style={{ height: 'calc(100vh - var(--topbar-height))', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <PageHeader title="TIMELINE" subtitle="chronological event feed" />
       <TimeFilter onChange={setTimeRange} />
       <div
@@ -1245,10 +1245,10 @@ function ExpandedDetails({ entry }: { entry: Entry }) {
       )}
 
       {fileDiffStatus && (
-        <div style={{ marginBottom: 12, padding: '8px 10px', border: '1px solid #1e1e1e', background: 'rgba(255,255,255,0.02)' }}>
+        <div style={{ marginBottom: 12, padding: '8px 10px', border: '1px solid var(--border)', background: 'rgba(255,255,255,0.02)' }}>
           <div style={{ color: 'var(--muted)', fontSize: '10px', letterSpacing: '0.12em', marginBottom: 4 }}>FILE DIFF</div>
           <div style={{ color: 'var(--muted)', fontSize: '12px', wordBreak: 'break-all', marginBottom: 4 }}>{fileDiffStatus.path}</div>
-          <div style={{ fontSize: '11px', color: '#555', fontStyle: 'italic' }}>
+          <div style={{ fontSize: '11px', color: 'var(--muted)', fontStyle: 'italic' }}>
             {DIFF_STATUS_LABELS[fileDiffStatus.status] ?? fileDiffStatus.status}
           </div>
         </div>

@@ -238,28 +238,27 @@ func getOSInfo() string {
 	_, inDocker := os.Stat("/.dockerenv")
 	isDocker := inDocker == nil
 
-	osName := runtime.GOOS
-	data, err := os.ReadFile("/etc/os-release")
-	if err == nil {
-		lines := strings.Split(string(data), "\n")
-		for _, prefix := range []string{"PRETTY_NAME=", "NAME="} {
-			for _, line := range lines {
-				if strings.HasPrefix(line, prefix) {
-					val := strings.TrimPrefix(line, prefix)
-					osName = strings.Trim(val, `"`)
-					break
-				}
-			}
-			if osName != runtime.GOOS {
-				break
-			}
-		}
-	}
-
+	osName := readOSReleaseName()
 	if isDocker {
 		return "docker / " + osName
 	}
 	return osName
+}
+
+func readOSReleaseName() string {
+	data, err := os.ReadFile("/etc/os-release")
+	if err != nil {
+		return runtime.GOOS
+	}
+	lines := strings.Split(string(data), "\n")
+	for _, prefix := range []string{"PRETTY_NAME=", "NAME="} {
+		for _, line := range lines {
+			if strings.HasPrefix(line, prefix) {
+				return strings.Trim(strings.TrimPrefix(line, prefix), `"`)
+			}
+		}
+	}
+	return runtime.GOOS
 }
 
 func getServerReachableIP(serverURL string) (string, error) {
