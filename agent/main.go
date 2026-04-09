@@ -131,6 +131,15 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	log.Println("shutting down...")
+	out <- types.Entry{
+		ID:        ulid.Make().String(),
+		Timestamp: time.Now().UTC(),
+		NodeName:  nodeName,
+		Source:    "agent",
+		Event:     "shutdown",
+		Content:   "Blackbox Agent shutting down",
+		Metadata:  string(infoJSON),
+	}
 	cancel()
 	<-s.Done()
 	log.Println("shutdown complete")

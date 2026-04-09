@@ -18,6 +18,12 @@ import (
 
 const maxAgentEntryBodyBytes = 64 << 10
 
+const (
+	nodeStatusOnline  = "online"
+	nodeStatusOffline = "offline"
+	nodeOfflineAfter  = 7 * time.Minute
+)
+
 func AgentPush(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry, shutdown <-chan struct{}) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		nodeName, ok := middleware.AgentNodeFromContext(r.Context())
@@ -67,7 +73,7 @@ func AgentPush(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry, shu
 }
 
 func isAgentMetaEvent(entry types.Entry) bool {
-	return entry.Source == "agent" && (entry.Event == "heartbeat" || entry.Event == "start")
+	return entry.Source == "agent" && (entry.Event == "heartbeat" || entry.Event == "start" || entry.Event == "shutdown")
 }
 
 func upsertNode(database *gorm.DB, entry types.Entry) bool {
@@ -78,7 +84,8 @@ func upsertNode(database *gorm.DB, entry types.Entry) bool {
 	now := time.Now().UTC()
 	isHeartbeat := entry.Source == "agent" && entry.Event == "heartbeat"
 	isStart := entry.Source == "agent" && entry.Event == "start"
-	isMetaEvent := isHeartbeat || isStart
+	isShutdown := entry.Source == "agent" && entry.Event == "shutdown"
+	isMetaEvent := isHeartbeat || isStart || isShutdown
 
 	var node models.Node
 	result := database.Where("name = ?", entry.NodeName).First(&node)
@@ -88,6 +95,7 @@ func upsertNode(database *gorm.DB, entry types.Entry) bool {
 			ID:       ulid.Make().String(),
 			Name:     entry.NodeName,
 			LastSeen: now,
+			Status:   statusForEntry(entry),
 		}
 		if isMetaEvent {
 			applyHeartbeatMeta(&newNode, entry.Metadata)
@@ -111,6 +119,7 @@ func upsertNode(database *gorm.DB, entry types.Entry) bool {
 	updates := map[string]interface{}{"last_seen": now}
 
 	if isMetaEvent {
+		updates["status"] = statusForEntry(entry)
 		updatedNode := node
 		applyHeartbeatMeta(&updatedNode, entry.Metadata)
 		if updatedNode.AgentVersion != "" {
@@ -160,9 +169,9 @@ func broadcastNodeStatus(database *gorm.DB, h *hub.Hub) {
 		return
 	}
 	online := 0
-	threshold := time.Now().Add(-7 * time.Minute)
+	now := time.Now()
 	for _, n := range nodes {
-		if n.LastSeen.After(threshold) {
+		if effectiveNodeStatus(n, now) == nodeStatusOnline {
 			online++
 		}
 	}
@@ -173,4 +182,21 @@ func broadcastNodeStatus(database *gorm.DB, h *hub.Hub) {
 	if msg := MarshalWSMessage("node_status", nodeStatus{Online: online, Total: len(nodes)}); msg != nil {
 		h.Broadcast(msg)
 	}
+}
+
+func statusForEntry(entry types.Entry) string {
+	if entry.Source == "agent" && entry.Event == "shutdown" {
+		return nodeStatusOffline
+	}
+	return nodeStatusOnline
+}
+
+func effectiveNodeStatus(node models.Node, now time.Time) string {
+	if node.Status == nodeStatusOffline {
+		return nodeStatusOffline
+	}
+	if now.Sub(node.LastSeen) > nodeOfflineAfter {
+		return nodeStatusOffline
+	}
+	return nodeStatusOnline
 }

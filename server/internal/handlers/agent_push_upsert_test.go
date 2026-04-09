@@ -125,6 +125,37 @@ func TestAgentPush_StartUpdatesMetadataForExistingNode(t *testing.T) {
 	assert.WithinDuration(t, time.Now().UTC(), node.LastSeen, 2*time.Second)
 }
 
+func TestAgentPush_ShutdownMarksNodeOfflineImmediately(t *testing.T) {
+	database := newTestDB(t)
+
+	require.NoError(t, database.Create(&models.Node{
+		ID:       ulid.Make().String(),
+		Name:     "homelab-01",
+		LastSeen: time.Now().UTC(),
+		Status:   "online",
+	}).Error)
+
+	entry := types.Entry{
+		ID:        ulid.Make().String(),
+		Timestamp: time.Now().UTC(),
+		NodeName:  "homelab-01",
+		Source:    "agent",
+		Event:     "shutdown",
+		Content:   "Blackbox Agent shutting down",
+		Metadata:  `{"agent_version":"v0.3.0","ip_address":"10.0.0.8","os_info":"Debian 13"}`,
+	}
+	req, rr, authMiddleware := authenticatedAgentRequest(t, entry, "homelab-01")
+	authMiddleware(handlers.AgentPush(database, nil, testIncidentChannel(t), nil)).ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
+
+	var node models.Node
+	require.NoError(t, database.Where("name = ?", "homelab-01").First(&node).Error)
+	assert.Equal(t, "offline", node.Status)
+	assert.WithinDuration(t, time.Now().UTC(), node.LastSeen, 2*time.Second)
+	assert.Equal(t, "v0.3.0", node.AgentVersion)
+}
+
 func TestAgentPush_DockerStartRemainsThrottled(t *testing.T) {
 	database := newTestDB(t)
 
