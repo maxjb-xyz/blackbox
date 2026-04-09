@@ -21,6 +21,7 @@ import (
 	"blackbox/agent/internal/files"
 	"blackbox/agent/internal/sender"
 	"blackbox/agent/internal/systemd"
+	"blackbox/shared/timezone"
 	"blackbox/shared/types"
 	"github.com/oklog/ulid/v2"
 )
@@ -31,6 +32,9 @@ var (
 )
 
 func main() {
+	if tz, err := timezone.ConfigureLocal(); err != nil {
+		log.Printf("timezone: invalid TZ %q: %v; using container default timezone", tz, err)
+	}
 	log.Printf("Blackbox Agent %s (%s) starting", Version, Commit)
 
 	serverURL := mustEnv("SERVER_URL")

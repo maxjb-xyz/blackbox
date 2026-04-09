@@ -53,6 +53,7 @@ services:
       JWT_SECRET: "change-me-to-a-long-random-string"
       AGENT_TOKENS: "my-homelab=change-me-to-a-secret-agent-token"
       WEBHOOK_SECRET: "change-me-to-a-webhook-secret"
+      TZ: "America/New_York" # optional: set to your local timezone so container logs match your clock
     networks:
       - blackbox
 
@@ -80,6 +81,7 @@ services:
       NODE_NAME: "my-homelab"
       WATCH_PATHS: "/watch/etc"
       WATCH_SYSTEMD: "true"
+      TZ: "America/New_York" # optional: set to your local timezone so container logs match your clock
     networks:
       - blackbox
 
@@ -162,6 +164,7 @@ docker compose up -d
 | `DB_PATH` | No | `/data/blackbox.db` | Path to the SQLite database file. |
 | `LISTEN_ADDR` | No | `:8080` | TCP address the server binds to. |
 | `JWT_TTL` | No | `24h` | JWT cookie lifetime. Accepts Go duration strings (e.g., `12h`, `7d`). |
+| `TZ` | No | Container default | IANA timezone for process logs (for example `America/New_York`). Set this if you want container log timestamps to match your local clock. |
 
 ### Agent Environment Variables
 
@@ -175,6 +178,7 @@ docker compose up -d
 | `WATCH_SYSTEMD` | No | `false` | Set to `true` on Linux agents to enable journal-based systemd monitoring for the units configured in the Admin UI. |
 | `PUID` | No | `65532` | UID the agent process runs as. Set to your host user's UID (`id -u`) when you own the watched paths. |
 | `PGID` | No | `65532` | GID the agent process runs as. Set to your host user's GID (`id -g`) when you own the watched paths. |
+| `TZ` | No | Container default | IANA timezone for process logs (for example `America/New_York`). Set this if you want container log timestamps to match your local clock. |
 
 #### Granting File Watcher Access
 
@@ -305,6 +309,7 @@ services:
       JWT_SECRET: "your-jwt-secret"
       AGENT_TOKENS: "node-01=token-for-node-01,node-02=token-for-node-02,nas=token-for-nas"
       WEBHOOK_SECRET: "your-webhook-secret"
+      TZ: "America/New_York"
 
   blackbox-agent:
     image: ghcr.io/maxjb-xyz/blackbox-agent:latest
@@ -327,6 +332,7 @@ services:
       AGENT_TOKEN: "token-for-node-01"
       NODE_NAME: "node-01"
       WATCH_SYSTEMD: "true"
+      TZ: "America/New_York"
 
 volumes:
   blackbox-data:
@@ -359,6 +365,7 @@ services:
       NODE_NAME: "node-02"
       WATCH_PATHS: "/watch/appdata"
       WATCH_SYSTEMD: "true"
+      TZ: "America/New_York"
 ```
 
 ---
@@ -519,10 +526,10 @@ cd agent && go build -o blackbox-agent ./... && cd ..
 
 ```bash
 # Server
-JWT_SECRET=dev AGENT_TOKENS="local=devtoken" WEBHOOK_SECRET=dev ./server/blackbox-server
+TZ=America/New_York JWT_SECRET=dev AGENT_TOKENS="local=devtoken" WEBHOOK_SECRET=dev ./server/blackbox-server
 
 # Agent (separate terminal)
-SERVER_URL=http://localhost:8080 AGENT_TOKEN=devtoken NODE_NAME=local ./agent/blackbox-agent
+TZ=America/New_York SERVER_URL=http://localhost:8080 AGENT_TOKEN=devtoken NODE_NAME=local ./agent/blackbox-agent
 ```
 
 To test systemd monitoring locally on Linux, add `WATCH_SYSTEMD=true` and make sure the agent can read the host journal. Then configure units from **Admin > Systemd** after the node registers.

@@ -20,6 +20,7 @@ import (
 	"blackbox/server/internal/middleware"
 	"blackbox/server/internal/models"
 	"blackbox/server/internal/static"
+	"blackbox/shared/timezone"
 	"github.com/go-chi/chi/v5"
 	"github.com/oklog/ulid/v2"
 )
@@ -35,6 +36,9 @@ var (
 const defaultDBPath = "/data/blackbox.db"
 
 func main() {
+	if tz, err := timezone.ConfigureLocal(); err != nil {
+		log.Printf("timezone: invalid TZ %q: %v; using container default timezone", tz, err)
+	}
 	log.Printf("Blackbox Server %s (%s) starting", Version, Commit)
 	rootCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
