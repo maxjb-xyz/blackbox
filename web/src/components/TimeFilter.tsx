@@ -35,6 +35,13 @@ function sameTimeValue(a: Date | null, b: Date | null): boolean {
   return a.getTime() === b.getTime()
 }
 
+function truncateToMinute(date: Date | null): Date | null {
+  if (!date) return null
+  const truncated = new Date(date)
+  truncated.setSeconds(0, 0)
+  return truncated
+}
+
 export default function TimeFilter({ onChange }: TimeFilterProps) {
   const [activePreset, setActivePreset] = useState<Preset | null>('6h')
   const [startInput, setStartInput] = useState('')
@@ -49,8 +56,8 @@ export default function TimeFilter({ onChange }: TimeFilterProps) {
 
   const applyPreset = useCallback((preset: Preset) => {
     const ms = PRESETS.find(p => p.value === preset)!.ms
-    const end = new Date()
-    const start = new Date(end.getTime() - ms)
+    const end = truncateToMinute(new Date())!
+    const start = truncateToMinute(new Date(end.getTime() - ms))!
     setActivePreset(preset)
     setStartInput(formatForInput(start))
     setEndInput(formatForInput(end))
@@ -82,8 +89,8 @@ export default function TimeFilter({ onChange }: TimeFilterProps) {
   }
 
   function commitRange() {
-    const start = parseInput(startInput)
-    const end = parseInput(endInput)
+    const start = truncateToMinute(parseInput(startInput))
+    const end = truncateToMinute(parseInput(endInput))
     if (sameTimeValue(start, emittedStartRef.current) && sameTimeValue(end, emittedEndRef.current)) {
       return
     }

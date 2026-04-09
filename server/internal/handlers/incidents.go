@@ -73,18 +73,16 @@ func ListIncidents(database *gorm.DB) http.HandlerFunc {
 
 func GetIncidentSummary(database *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var openCount int64
-		if err := database.Model(&models.Incident{}).
-			Where("status = ?", "open").
-			Count(&openCount).Error; err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to fetch incident summary")
-			return
+		var summary struct {
+			OpenCount          int64 `gorm:"column:open_count"`
+			ConfirmedOpenCount int64 `gorm:"column:confirmed_open_count"`
 		}
-
-		var confirmedOpenCount int64
 		if err := database.Model(&models.Incident{}).
-			Where("status = ? AND confidence = ?", "open", "confirmed").
-			Count(&confirmedOpenCount).Error; err != nil {
+			Select(`
+				COALESCE(SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END), 0) AS open_count,
+				COALESCE(SUM(CASE WHEN status = 'open' AND confidence = 'confirmed' THEN 1 ELSE 0 END), 0) AS confirmed_open_count
+			`).
+			Scan(&summary).Error; err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to fetch incident summary")
 			return
 		}
@@ -93,11 +91,12 @@ func GetIncidentSummary(database *gorm.DB) http.HandlerFunc {
 			OpenCount        int64 `json:"open_count"`
 			HasConfirmedOpen bool  `json:"has_confirmed_open"`
 		}{
-			OpenCount:        openCount,
-			HasConfirmedOpen: confirmedOpenCount > 0,
+			OpenCount:        summary.OpenCount,
+			HasConfirmedOpen: summary.ConfirmedOpenCount > 0,
 		}
 
 		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
 		if err := json.NewEncoder(w).Encode(resp); err != nil {
 			log.Printf("GetIncidentSummary encode: %v", err)
 		}

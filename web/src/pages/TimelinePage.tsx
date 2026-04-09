@@ -987,7 +987,7 @@ function TimelineFeed({
     entryTimestampMs(oldestLoadedEntry) < timeStart.getTime(),
   )
   const reachedFilteredEnd = done || reachedTimeStartBoundary
-  const visibleEntryIDs = displayEntries.map(entry => entry.id)
+  const visibleEntryIDs = timeFilteredEntries.map(entry => entry.id)
   const visibleEntryIDsKey = visibleEntryIDs.join('|')
   visibleEntryIDsRef.current = visibleEntryIDs
 

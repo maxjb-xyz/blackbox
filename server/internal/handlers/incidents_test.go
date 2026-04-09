@@ -134,6 +134,7 @@ func TestGetIncidentSummary(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
 	assert.EqualValues(t, 2, resp.OpenCount)
 	assert.True(t, resp.HasConfirmedOpen)
+	assert.Equal(t, "no-store", rr.Header().Get("Cache-Control"))
 }
 
 func TestGetIncident_NotFound(t *testing.T) {

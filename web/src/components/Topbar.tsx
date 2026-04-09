@@ -16,6 +16,8 @@ export default function Topbar() {
   const [hasConfirmed, setHasConfirmed] = useState(false)
   const reqIdRef = useRef(0)
   const triggerRef = useRef<HTMLButtonElement>(null)
+  const previousStatusRef = useRef(status)
+  const dropdownId = 'topbar-user-menu'
 
   const refreshCount = useCallback(() => {
     const id = ++reqIdRef.current
@@ -39,6 +41,14 @@ export default function Topbar() {
       refreshCount()
     }
   }, [lastMessage, refreshCount])
+
+  useEffect(() => {
+    const previousStatus = previousStatusRef.current
+    if (status === 'connected' && previousStatus === 'disconnected') {
+      refreshCount()
+    }
+    previousStatusRef.current = status
+  }, [refreshCount, status])
 
   const wsConnected = status === 'connected'
   const wsConnecting = status === 'connecting'
@@ -135,6 +145,9 @@ export default function Topbar() {
           <button
             ref={triggerRef}
             type="button"
+            aria-haspopup="menu"
+            aria-expanded={dropdownOpen}
+            aria-controls={dropdownId}
             onClick={() => setDropdownOpen(v => !v)}
             className="flex items-center gap-2 border border-transparent px-[10px] py-[6px] text-[12px] tracking-[0.1em] transition-all hover:border-[#2a2a2a] hover:text-[#bbb]"
             style={{ color: '#888', background: 'transparent' }}
@@ -142,7 +155,7 @@ export default function Topbar() {
             {user?.username ?? 'USER'}
             <ChevronDown size={14} className="text-[#555]" />
           </button>
-          {dropdownOpen && <UserDropdown onClose={() => setDropdownOpen(false)} triggerRef={triggerRef} />}
+          {dropdownOpen && <UserDropdown id={dropdownId} onClose={() => setDropdownOpen(false)} triggerRef={triggerRef} />}
         </div>
       </div>
     </header>

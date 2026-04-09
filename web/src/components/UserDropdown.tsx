@@ -4,11 +4,12 @@ import { LogOut } from 'lucide-react'
 import { useSession } from '../session'
 
 interface UserDropdownProps {
+  id: string
   onClose: () => void
   triggerRef: RefObject<HTMLButtonElement | null>
 }
 
-export default function UserDropdown({ onClose, triggerRef }: UserDropdownProps) {
+export default function UserDropdown({ id, onClose, triggerRef }: UserDropdownProps) {
   const { user, logout } = useSession()
   const navigate = useNavigate()
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -36,6 +37,8 @@ export default function UserDropdown({ onClose, triggerRef }: UserDropdownProps)
 
   return (
     <div
+      id={id}
+      role="menu"
       ref={dropdownRef}
       style={{
         position: 'absolute',
@@ -94,10 +97,10 @@ export default function UserDropdown({ onClose, triggerRef }: UserDropdownProps)
           }}
           onClick={() => {
             void logout()
+              .then(() => navigate('/login'))
               .catch(err => {
                 console.error('logout:', err)
               })
-              .finally(() => navigate('/login'))
           }}
         >
           <LogOut size={14} />
