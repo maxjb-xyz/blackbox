@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log"
@@ -19,9 +20,10 @@ import (
 const maxAgentEntryBodyBytes = 64 << 10
 
 const (
-	nodeStatusOnline  = "online"
-	nodeStatusOffline = "offline"
-	nodeOfflineAfter  = 7 * time.Minute
+	nodeStatusOnline    = "online"
+	nodeStatusOffline   = "offline"
+	nodeOfflineAfter    = 7 * time.Minute
+	nodeStatusPollEvery = 30 * time.Second
 )
 
 func AgentPush(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry, shutdown <-chan struct{}) http.HandlerFunc {
@@ -179,6 +181,66 @@ func broadcastNodeStatus(database *gorm.DB, h *hub.Hub) {
 	if msg := MarshalWSMessage("node_status", nodeStatus{Online: online, Total: len(nodes)}); msg != nil {
 		h.Broadcast(msg)
 	}
+}
+
+func StartNodeStatusMonitor(ctx context.Context, database *gorm.DB, h *hub.Hub, interval time.Duration) {
+	if ctx == nil || database == nil {
+		return
+	}
+	if interval <= 0 {
+		interval = nodeStatusPollEvery
+	}
+
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		run := func() {
+			changed, err := reconcileNodeStatuses(database, time.Now().UTC())
+			if err != nil {
+				log.Printf("node-status-monitor: reconcile failed: %v", err)
+				return
+			}
+			if changed {
+				broadcastNodeStatus(database, h)
+			}
+		}
+
+		run()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				run()
+			}
+		}
+	}()
+}
+
+func reconcileNodeStatuses(database *gorm.DB, now time.Time) (bool, error) {
+	var nodes []models.Node
+	if err := database.Find(&nodes).Error; err != nil {
+		return false, err
+	}
+
+	changed := false
+	for _, node := range nodes {
+		if !needsOfflineTransition(node, now) {
+			continue
+		}
+		if err := database.Model(&models.Node{}).Where("id = ?", node.ID).Update("status", nodeStatusOffline).Error; err != nil {
+			return changed, err
+		}
+		changed = true
+	}
+
+	return changed, nil
+}
+
+func needsOfflineTransition(node models.Node, now time.Time) bool {
+	return node.Status != nodeStatusOffline && effectiveNodeStatus(node, now) == nodeStatusOffline
 }
 
 func statusForEntry(entry types.Entry) string {
