@@ -14,7 +14,9 @@ set -e
 validate_id() {
     val="$1" default="$2" label="$3"
     case "$val" in
-        ''|*[!0-9]*)
+        '')
+            printf '%s' "$default"; return ;;
+        *[!0-9]*)
             printf 'entrypoint: %s="%s" is not a valid integer; using default %s\n' \
                 "$label" "$val" "$default" >&2
             printf '%s' "$default"; return ;;

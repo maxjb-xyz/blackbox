@@ -143,7 +143,7 @@ docker compose up -d
 - Invite-code-based user registration
 
 ### Security
-- Non-root container images — server runs distroless (no shell, UID 65532), agent runs as configurable `PUID`/`PGID` (default 65532) with all capabilities dropped and a read-only filesystem
+- Non-root container images — server runs distroless (no shell, UID 65532), agent runs as configurable `PUID`/`PGID` (default 65532), drops all capabilities then adds only `SETUID`/`SETGID` for identity switching, with a read-only filesystem
 - Constant-time token comparison for all shared secrets
 - Rate limiting on auth endpoints
 - Security headers middleware
@@ -223,7 +223,7 @@ sudo find /srv/stacks -type f -exec chmod 640 {} +
 
 Notes:
 
-- `PUID`/`PGID` default to `65532` if not set. Numeric ownership is what matters on the host — the container has no `/etc/passwd` mapping.
+- `PUID`/`PGID` default to `65532` if not set. Numeric ownership is authoritative on the host — the agent image creates a `nonroot` user at UID 65532, but custom `PUID`/`PGID` values may not have a corresponding name entry in `/etc/passwd`, so always use numeric IDs when setting file ownership.
 - Parent directories must also be traversable (`x` bit), not just the final config file.
 - If part of a tree should stay unreadable, mount only the readable subtree and point `WATCH_PATHS` at that path instead.
 - After changing permissions or `PUID`/`PGID`, restart the agent and look for `files watcher: registered ... directories` in the logs.
