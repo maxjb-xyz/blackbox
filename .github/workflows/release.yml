@@ -45,8 +45,8 @@ jobs:
             VERSION=${{ github.ref_name }}
             COMMIT=${{ github.sha }}
           platforms: linux/amd64,linux/arm64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=server
+          cache-to: type=gha,scope=server,mode=max
 
   build-agent:
     name: Build & Push Agent
@@ -83,5 +83,5 @@ jobs:
             VERSION=${{ github.ref_name }}
             COMMIT=${{ github.sha }}
           platforms: linux/amd64,linux/arm64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=agent
+          cache-to: type=gha,scope=agent,mode=max
