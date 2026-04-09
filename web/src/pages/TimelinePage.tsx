@@ -632,7 +632,7 @@ export default function TimelinePage() {
   return (
     <div style={{ height: 'calc(100vh - var(--topbar-height))', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <PageHeader title="TIMELINE" subtitle="chronological event feed" />
-      <TimeFilter onChange={setTimeRange} />
+      <TimeFilter initialRange={timeRange} onChange={setTimeRange} />
       <div
         style={{
           display: 'flex',

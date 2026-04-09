@@ -19,6 +19,7 @@ export interface TimeRange {
 
 interface TimeFilterProps {
   onChange: (range: TimeRange) => void
+  initialRange?: TimeRange
 }
 
 function sameTimeValue(a: Date | null, b: Date | null): boolean {
@@ -27,11 +28,14 @@ function sameTimeValue(a: Date | null, b: Date | null): boolean {
   return a.getTime() === b.getTime()
 }
 
-export default function TimeFilter({ onChange }: TimeFilterProps) {
-  const initialRange = useMemo(() => getPresetRange(DEFAULT_TIME_PRESET), [])
+export default function TimeFilter({ onChange, initialRange: providedInitialRange }: TimeFilterProps) {
+  const fallbackInitialRange = useMemo(() => getPresetRange(DEFAULT_TIME_PRESET), [])
+  const initialStart = providedInitialRange?.start ?? fallbackInitialRange.start
+  const initialEnd = providedInitialRange?.end ?? fallbackInitialRange.end
+  const initialRange = useMemo<TimeRange>(() => ({ start: initialStart, end: initialEnd }), [initialEnd, initialStart])
   const [activePreset, setActivePreset] = useState<Preset | null>(DEFAULT_TIME_PRESET)
-  const [startInput, setStartInput] = useState(() => formatForInput(initialRange.start))
-  const [endInput, setEndInput] = useState(() => formatForInput(initialRange.end))
+  const [startInput, setStartInput] = useState(() => formatForInput(initialStart))
+  const [endInput, setEndInput] = useState(() => formatForInput(initialEnd))
   const emittedStartRef = useRef<Date | null>(initialRange.start)
   const emittedEndRef = useRef<Date | null>(initialRange.end)
   const onChangeRef = useRef<(range: TimeRange) => void>(() => {})
@@ -51,8 +55,15 @@ export default function TimeFilter({ onChange }: TimeFilterProps) {
   }, [])
 
   useEffect(() => {
+    if (
+      providedInitialRange &&
+      sameTimeValue(providedInitialRange.start, initialRange.start) &&
+      sameTimeValue(providedInitialRange.end, initialRange.end)
+    ) {
+      return
+    }
     onChangeRef.current(initialRange)
-  }, [initialRange])
+  }, [initialRange, providedInitialRange])
 
   function handleStartChange(value: string) {
     setStartInput(value)
