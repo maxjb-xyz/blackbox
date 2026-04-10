@@ -208,6 +208,9 @@ func TestEventCollapser_StopWithoutDieCollapsingIntoRestartWhenStartArrivesInWin
 	if entries[1].ID != entries[0].ID {
 		t.Fatalf("expected restart to reuse stop ID %q, got %q", entries[0].ID, entries[1].ID)
 	}
+	if entries[1].ReplaceID != entries[0].ID {
+		t.Fatalf("expected restart ReplaceID %q, got %q", entries[0].ID, entries[1].ReplaceID)
+	}
 
 	// flush should emit nothing — both entries already emitted and pending cleared
 	if flushed := collapser.FlushExpired(base.Add(20 * time.Second)); len(flushed) != 0 {
