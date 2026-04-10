@@ -397,6 +397,13 @@ func (r *serviceResolver) resolveContainerIdentity(containerID string, attrs map
 	if identity := cleanContainerIdentity(attrs, ""); identity.service != "" {
 		return identity
 	}
+	// Skip inspect when we already received real event attributes and have a name.
+	// Docker events include all container labels, so if compose/swarm labels were
+	// absent from the event attrs they won't appear on inspect either. Only fall
+	// through to inspect when attrs is nil (no event labels at all).
+	if rawName != "" && len(attrs) > 0 {
+		return cleanContainerIdentity(nil, rawName)
+	}
 	if r != nil && r.cli != nil && containerID != "" {
 		ctx, cancel := context.WithTimeout(r.parentContext(), dockerLookupTimeout)
 		defer cancel()
@@ -408,7 +415,7 @@ func (r *serviceResolver) resolveContainerIdentity(containerID string, attrs map
 			if inspected.Config != nil && inspected.Config.Labels != nil {
 				labels = inspected.Config.Labels
 			}
-			if identity := cleanContainerIdentity(labels, firstNonEmpty(inspectedName, rawName)); identity.service != "" || identity.displayName != "" {
+			if identity := cleanContainerIdentity(labels, inspectedName); identity.service != "" || identity.displayName != "" {
 				return identity
 			}
 		}

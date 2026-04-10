@@ -243,7 +243,10 @@ func serviceFromPath(filePath string, roots []watchRoot) string {
 				return ""
 			}
 			parts := strings.SplitN(rest, "/", 3)
-			if len(parts) >= 2 && collectionDirs[parts[0]] && parts[1] != "" {
+			// Require 3 parts so parts[1] is a real directory, not a bare filename
+			// (e.g. /opt/stacks/.env splits to ["stacks", ".env"] — len 2 — and
+			// we should NOT return ".env" as the service name).
+			if len(parts) >= 3 && collectionDirs[parts[0]] && parts[1] != "" {
 				return parts[1]
 			}
 			if parts[0] != "" {
