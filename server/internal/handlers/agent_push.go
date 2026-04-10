@@ -53,7 +53,7 @@ func AgentPush(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry, shu
 			return
 		}
 		entry.Service = serviceName
-		if entry.Source == "docker" && entry.Event == "restart" && entry.ID != "" {
+		if entry.Source == "docker" && entry.Event == "restart" {
 			var existing types.Entry
 			if err := database.First(&existing, "id = ?", entry.ID).Error; err == nil {
 				updates := map[string]interface{}{
@@ -81,6 +81,7 @@ func AgentPush(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry, shu
 						h.Broadcast(msg)
 					}
 				}
+				dispatchToIncidentChannelWithShutdown(incidentCh, shutdown, updated)
 				if upsertNode(database, updated) {
 					broadcastNodeStatus(database, h)
 				}
