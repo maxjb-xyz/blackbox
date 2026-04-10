@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1.7
 
 # Stage 1: Build Go binary with native systemd journal support
 FROM golang:1.26-bookworm AS go-builder
@@ -10,20 +10,22 @@ ARG COMMIT=unknown
 # hadolint ignore=DL3008
 # NOTE: Packages are intentionally unpinned for flexibility with Debian updates.
 # For reproducible builds, switch to pinning versions or a package lockfile and update this comment.
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends build-essential pkg-config libsystemd-dev && \
-    rm -rf /var/lib/apt/lists/*
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    apt-get install -y --no-install-recommends build-essential pkg-config libsystemd-dev
 
 COPY go.work go.work.sum ./
 COPY server/go.mod server/go.sum ./server/
 COPY shared/go.mod* ./shared/
 COPY agent/go.mod agent/go.sum ./agent/
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
 COPY shared/ ./shared/
 COPY agent/ ./agent/
 
-RUN cd agent && \
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    cd agent && \
     CGO_ENABLED=1 go build -tags systemd \
     -ldflags="-s -w -X main.Version=${VERSION} -X main.Commit=${COMMIT}" \
     -o /blackbox-agent .
