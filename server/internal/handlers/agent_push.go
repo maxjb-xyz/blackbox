@@ -55,7 +55,12 @@ func AgentPush(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry, shu
 		entry.Service = serviceName
 		if entry.Source == "docker" && entry.Event == "restart" {
 			var existing types.Entry
-			if err := database.First(&existing, "id = ?", entry.ID).Error; err == nil {
+			lookupErr := database.First(&existing, "id = ?", entry.ID).Error
+			if lookupErr != nil && !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
+				writeError(w, http.StatusInternalServerError, "failed to look up entry")
+				return
+			}
+			if lookupErr == nil {
 				updates := map[string]interface{}{
 					"event":           entry.Event,
 					"content":         entry.Content,
