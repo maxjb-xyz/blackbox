@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   createNote,
@@ -550,6 +550,7 @@ function SearchableSelect({ value, options, placeholder, onChange }: SearchableS
 }
 
 export default function TimelinePage() {
+  const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const { nodes } = useNodePulse()
   const [viewMode, setViewMode] = useState<ViewMode>(getStoredViewMode)
@@ -578,6 +579,10 @@ export default function TimelinePage() {
   const sourceFilter = searchParams.get('source') ?? ''
   const serviceFilter = searchParams.get('service') ?? ''
   const qFilter = searchParams.get('q') ?? ''
+  const focusEntry = (() => {
+    const state = location.state as { focusEntry?: Entry } | null
+    return state?.focusEntry ?? null
+  })()
 
   const refreshServices = useCallback(function scheduleServiceRefresh() {
     if (serviceRefreshTimeoutRef.current) return
@@ -788,6 +793,7 @@ export default function TimelinePage() {
         qFilter={qFilter}
         hideHeartbeat={hideHeartbeat}
         viewMode={viewMode}
+        focusEntry={focusEntry}
         onEntriesChanged={refreshServices}
         onCountChanged={setVisibleCount}
         timeStart={timeRange.start}
@@ -804,6 +810,7 @@ interface TimelineFeedProps {
   qFilter: string
   hideHeartbeat: boolean
   viewMode: ViewMode
+  focusEntry: Entry | null
   onEntriesChanged: () => void
   onCountChanged: (count: number) => void
   timeStart?: Date | null
@@ -817,6 +824,7 @@ function TimelineFeed({
   qFilter,
   hideHeartbeat,
   viewMode,
+  focusEntry,
   onEntriesChanged,
   onCountChanged,
   timeStart,
@@ -829,6 +837,7 @@ function TimelineFeed({
   const [done, setDone] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [ghostEntry, setGhostEntry] = useState<Entry | null>(null)
+  const [pinnedEntry, setPinnedEntry] = useState<Entry | null>(null)
   const [tooltip, setTooltip] = useState<TooltipState | null>(null)
   const [sentinelVisible, setSentinelVisible] = useState(false)
   const [entryIncidentMap, setEntryIncidentMap] = useState<Record<string, { id: string; confidence: string }>>({})
@@ -934,12 +943,21 @@ function TimelineFeed({
     expandedIdRef.current = null
     setExpandedId(null)
     setGhostEntry(null)
+    setPinnedEntry(null)
     setTooltip(null)
     setNextCursor(undefined)
     setDone(false)
     setEntryIncidentMap({})
     void loadPage()
   }, [hideHeartbeat, nodeFilter, qFilter, serviceFilter, sourceFilter, timeEndMs, timeStartMs])
+
+  useEffect(() => {
+    if (!focusEntry) return
+    expandedIdRef.current = focusEntry.id
+    setExpandedId(focusEntry.id)
+    setGhostEntry(null)
+    setPinnedEntry(current => (current?.id === focusEntry.id ? current : focusEntry))
+  }, [focusEntry])
 
   useEffect(() => {
     const sentinel = sentinelRef.current
@@ -992,12 +1010,18 @@ function TimelineFeed({
       expandedIdRef.current = null
       setExpandedId(null)
       setGhostEntry(null)
+      if (pinnedEntry?.id === entry.id) {
+        setPinnedEntry(null)
+      }
       return
     }
     const requestedEntryId = entry.id
     if (ghostEntryRef.current) {
       renderedIdsRef.current.delete(ghostEntryRef.current.id)
       ghostEntryRef.current = null
+    }
+    if (pinnedEntry?.id && pinnedEntry.id !== requestedEntryId) {
+      setPinnedEntry(null)
     }
     expandedIdRef.current = requestedEntryId
     setExpandedId(requestedEntryId)
@@ -1024,6 +1048,7 @@ function TimelineFeed({
       renderedIdsRef.current.delete(ghostEntryRef.current.id)
       ghostEntryRef.current = null
     }
+    setPinnedEntry(current => (current?.id === expandedIdRef.current ? null : current))
     expandedIdRef.current = null
     setExpandedId(null)
     setGhostEntry(null)
@@ -1037,6 +1062,7 @@ function TimelineFeed({
         renderedIdsRef.current.delete(ghostEntryRef.current.id)
         ghostEntryRef.current = null
       }
+      setPinnedEntry(current => (current?.id === expandedIdRef.current ? null : current))
       expandedIdRef.current = null
       setExpandedId(null)
       setGhostEntry(null)
@@ -1046,17 +1072,23 @@ function TimelineFeed({
   }, [])
 
   const displayEntries = (() => {
-    if (!expandedId || !ghostEntry) return entries
-    const expandedIndex = entries.findIndex(entry => entry.id === expandedId)
-    if (expandedIndex === -1) return entries
-    const result = [...entries]
-    result.splice(expandedIndex, 0, ghostEntry)
+    const result = pinnedEntry
+      ? [pinnedEntry, ...entries.filter(entry => entry.id !== pinnedEntry.id)]
+      : [...entries]
+    if (expandedId && ghostEntry) {
+      const expandedIndex = result.findIndex(entry => entry.id === expandedId)
+      if (expandedIndex !== -1) {
+        result.splice(expandedIndex, 0, ghostEntry)
+      }
+    }
     return result
   })()
-  const filteredEntries = displayEntries.filter(entry =>
-    matchesEntryFilters(entry, nodeFilter, sourceFilter, serviceFilter, qFilter, hideHeartbeat),
-  )
+  const filteredEntries = displayEntries.filter(entry => {
+    if (pinnedEntry?.id === entry.id) return true
+    return matchesEntryFilters(entry, nodeFilter, sourceFilter, serviceFilter, qFilter, hideHeartbeat)
+  })
   const timeFilteredEntries = filteredEntries.filter(entry => {
+    if (pinnedEntry?.id === entry.id) return true
     if (!timeStart && !timeEnd) return true
     const ts = new Date(entry.timestamp)
     if (timeStart && ts < timeStart) return false

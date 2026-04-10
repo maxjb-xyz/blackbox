@@ -23,11 +23,7 @@ function EventCardOverlay({ entry, onClose }: { entry: Entry; onClose: () => voi
   const navigate = useNavigate()
 
   function viewOnTimeline() {
-    const ts = new Date(entry.timestamp).getTime()
-    if (!Number.isFinite(ts)) return
-    const from = new Date(ts - 30 * 60 * 1000).toISOString()
-    const to = new Date(ts + 30 * 60 * 1000).toISOString()
-    navigate(`/timeline?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)
+    navigate('/timeline', { state: { focusEntry: entry } })
   }
 
   return (
@@ -219,6 +215,7 @@ function mergeAndDedupeIncidents(preferred: Incident[], fallback: Incident[]): I
 interface IncidentCardProps {
   incident: Incident
   defaultOpen?: boolean
+  onSelectEntry: (entry: Entry) => void
 }
 
 function ConfidenceBar({ score }: { score: number }) {
@@ -249,11 +246,10 @@ function ConfidenceBar({ score }: { score: number }) {
   )
 }
 
-function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
+function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: IncidentCardProps) {
   const [expanded, setExpanded] = useState(defaultOpen)
   const [detail, setDetail] = useState<IncidentDetail | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
-  const [selectedEntry, setSelectedEntry] = useState<Entry | null>(null)
 
   useEffect(() => {
     if (!detail) return
@@ -368,12 +364,6 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
         {incident.title}
       </div>
 
-      <AnimatePresence>
-        {selectedEntry && (
-          <EventCardOverlay entry={selectedEntry} onClose={() => setSelectedEntry(null)} />
-        )}
-      </AnimatePresence>
-
       {expanded && (
         <div style={{ padding: '0 12px 12px 36px', fontSize: 11 }}>
           {loadingDetail && (
@@ -407,8 +397,8 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
                       className="event-chain-row"
                       role="button"
                       tabIndex={0}
-                      onClick={() => setSelectedEntry(entry)}
-                      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedEntry(entry) } }}
+                      onClick={() => onSelectEntry(entry)}
+                      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectEntry(entry) } }}
                       style={{
                         display: 'grid',
                         gridTemplateColumns: '70px 130px 80px 80px 140px 1fr',
@@ -471,8 +461,8 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
                         className="event-chain-row"
                         role="button"
                         tabIndex={0}
-                        onClick={() => setSelectedEntry(entry)}
-                        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedEntry(entry) } }}
+                        onClick={() => onSelectEntry(entry)}
+                        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectEntry(entry) } }}
                         style={{
                           borderLeft: '2px solid #a855f7',
                           padding: '2px 4px 2px 10px',
@@ -614,6 +604,7 @@ function isToday(dateString: string | null | undefined): boolean {
 export default function IncidentsPage() {
   const [openIncidents, setOpenIncidents] = useState<Incident[]>([])
   const [resolvedIncidents, setResolvedIncidents] = useState<Incident[]>([])
+  const [selectedEntry, setSelectedEntry] = useState<Entry | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const { onlineCount, totalCount } = useNodePulse()
@@ -720,7 +711,7 @@ export default function IncidentsPage() {
             </div>
           ) : (
             openIncidents.map(inc => (
-              <IncidentCard key={inc.id} incident={inc} />
+              <IncidentCard key={inc.id} incident={inc} onSelectEntry={setSelectedEntry} />
             ))
           )}
         </div>
@@ -732,11 +723,16 @@ export default function IncidentsPage() {
               <div style={{ flex: 1, height: 1, background: '#1E1E1E' }} />
             </div>
             {resolvedIncidents.map(inc => (
-              <IncidentCard key={inc.id} incident={inc} />
+              <IncidentCard key={inc.id} incident={inc} onSelectEntry={setSelectedEntry} />
             ))}
           </div>
         )}
       </div>
+      <AnimatePresence>
+        {selectedEntry && (
+          <EventCardOverlay entry={selectedEntry} onClose={() => setSelectedEntry(null)} />
+        )}
+      </AnimatePresence>
     </div>
   )
 }
