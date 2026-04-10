@@ -220,8 +220,14 @@ func StartNodeStatusMonitor(ctx context.Context, database *gorm.DB, h *hub.Hub, 
 }
 
 func reconcileNodeStatuses(database *gorm.DB, now time.Time) (bool, error) {
+	tx := database.Begin()
+	if tx.Error != nil {
+		return false, tx.Error
+	}
+
 	var nodes []models.Node
-	if err := database.Find(&nodes).Error; err != nil {
+	if err := tx.Find(&nodes).Error; err != nil {
+		tx.Rollback()
 		return false, err
 	}
 
@@ -230,10 +236,16 @@ func reconcileNodeStatuses(database *gorm.DB, now time.Time) (bool, error) {
 		if !needsOfflineTransition(node, now) {
 			continue
 		}
-		if err := database.Model(&models.Node{}).Where("id = ?", node.ID).Update("status", nodeStatusOffline).Error; err != nil {
-			return changed, err
+		if err := tx.Model(&models.Node{}).Where("id = ?", node.ID).Update("status", nodeStatusOffline).Error; err != nil {
+			tx.Rollback()
+			return false, err
 		}
 		changed = true
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		tx.Rollback()
+		return false, err
 	}
 
 	return changed, nil
