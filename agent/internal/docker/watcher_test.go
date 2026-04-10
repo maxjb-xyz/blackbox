@@ -215,7 +215,7 @@ func TestEventCollapser_StopWithoutDieCollapsingIntoRestartWhenStartArrivesInWin
 	}
 }
 
-func TestEventCollapser_EmitsStopAfterDebounce(t *testing.T) {
+func TestEventCollapser_FlushDoesNotReEmitAfterDieEmittedStop(t *testing.T) {
 	collapser := newEventCollapser("node-1", nil)
 	base := time.Date(2026, 4, 2, 12, 0, 0, 0, time.UTC)
 
