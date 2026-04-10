@@ -190,11 +190,9 @@ func TestRebuildJournalMatches(t *testing.T) {
 	want := []string{
 		"flush",
 		"match:UNIT=nginx.service",
-		"and",
 		"match:_PID=1",
 		"or",
 		"match:OBJECT_SYSTEMD_UNIT=nginx.service",
-		"and",
 		"match:_UID=0",
 		"or",
 		"match:SYSLOG_FACILITY=0",
@@ -205,7 +203,7 @@ func TestRebuildJournalMatches(t *testing.T) {
 }
 
 func TestApplyMatchGroups_PropagatesErrors(t *testing.T) {
-	m := &fakeJournalMatcher{addConjunctionErr: errors.New("boom")}
+	m := &fakeJournalMatcher{addMatchErr: errors.New("boom")}
 	err := applyMatchGroups(m, [][]string{{"UNIT=nginx.service", "_PID=1"}})
 	if err == nil || err.Error() != "boom" {
 		t.Fatalf("applyMatchGroups() error = %v, want boom", err)
@@ -216,7 +214,6 @@ type fakeJournalMatcher struct {
 	ops               []string
 	addMatchErr       error
 	addDisjunctionErr error
-	addConjunctionErr error
 }
 
 func (f *fakeJournalMatcher) FlushMatches() {
@@ -231,9 +228,4 @@ func (f *fakeJournalMatcher) AddMatch(match string) error {
 func (f *fakeJournalMatcher) AddDisjunction() error {
 	f.ops = append(f.ops, "or")
 	return f.addDisjunctionErr
-}
-
-func (f *fakeJournalMatcher) AddConjunction() error {
-	f.ops = append(f.ops, "and")
-	return f.addConjunctionErr
 }
