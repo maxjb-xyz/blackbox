@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Terminal, AlertCircle, CheckCircle, XCircle, Loader } from 'lucide-react'
+import { Terminal, AlertCircle, AlertTriangle, CheckCircle, XCircle, Loader } from 'lucide-react'
 import { bootstrap, checkHealth, type HealthStatus } from '../api/client'
 import { useSession } from '../session'
 
@@ -20,10 +20,12 @@ export default function SetupPage({ onBootstrapped }: SetupPageProps) {
   const [healthLoading, setHealthLoading] = useState(true)
 
   useEffect(() => {
+    let cancelled = false
     checkHealth()
-      .then(setHealth)
-      .catch(() => setHealth({ database: 'error', oidc: 'disabled', oidc_enabled: false }))
-      .finally(() => setHealthLoading(false))
+      .then(h => { if (!cancelled) setHealth(h) })
+      .catch(() => { if (!cancelled) setHealth({ database: 'error', oidc: 'disabled', oidc_enabled: false }) })
+      .finally(() => { if (!cancelled) setHealthLoading(false) })
+    return () => { cancelled = true }
   }, [])
 
   async function handleSubmit(e: React.FormEvent) {
@@ -58,159 +60,121 @@ export default function SetupPage({ onBootstrapped }: SetupPageProps) {
   const canSubmit = !loading && dbOK
 
   return (
-    <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg)' }}>
-      <div className="w-full max-w-sm" style={{ border: '1px solid var(--border)', padding: '2rem' }}>
-        <div className="flex items-center gap-2 mb-6">
-          <Terminal size={16} style={{ color: 'var(--muted)' }} />
-          <span style={{ color: 'var(--muted)', fontSize: '12px', letterSpacing: '0.1em' }}>
-            BLACKBOX / INITIAL SETUP
-          </span>
+    <div className="auth-page">
+      <div className="auth-card">
+        <div className="auth-card-header">
+          <Terminal size={14} className="auth-header-icon" />
+          <span className="auth-title">BLACKBOX</span>
+          <span className="auth-sep">/</span>
+          <span className="auth-title-page">INITIAL SETUP</span>
+          <span className="cursor-blink auth-header-cursor">_</span>
         </div>
 
-        <div style={{ marginBottom: '1.5rem', border: '1px solid var(--border)', padding: '0.75rem' }}>
-          <div style={{ color: 'var(--muted)', fontSize: '10px', letterSpacing: '0.1em', marginBottom: '0.5rem' }}>
-            SYSTEM HEALTH
+        <div className="auth-card-body">
+          <div className="auth-health-box">
+            <div className="auth-health-title">SYSTEM DIAGNOSTICS</div>
+            {healthLoading ? (
+              <div className="auth-health-row auth-health-loading">
+                <Loader size={14} />
+                <span>Checking…</span>
+              </div>
+            ) : (
+              <div className="auth-health-stack">
+                <HealthRow label="DATABASE" status={health?.database === 'ok' ? 'ok' : 'error'} />
+                {health?.oidc_enabled && (
+                  <HealthRow
+                    label="OIDC"
+                    status={health.oidc === 'ok' ? 'ok' : 'warn'}
+                    message={health.oidc === 'unavailable' ? 'provider unreachable' : undefined}
+                  />
+                )}
+              </div>
+            )}
           </div>
-          {healthLoading ? (
-            <div className="flex items-center gap-2" style={{ color: 'var(--muted)', fontSize: '12px' }}>
-              <Loader size={12} />
-              <span>Checking…</span>
+
+          <p className="auth-setup-copy">
+            No admin account found. Create the first admin user to continue.
+          </p>
+
+          <form onSubmit={handleSubmit}>
+            <div className="auth-field">
+              <label htmlFor="setup-username" className="auth-label">USERNAME</label>
+              <input
+                id="setup-username"
+                type="text"
+                className="auth-input"
+                value={username}
+                onChange={e => setUsername(e.target.value)}
+                required
+                autoFocus
+              />
             </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <HealthRow label="DATABASE" status={health?.database === 'ok' ? 'ok' : 'error'} />
-              {health?.oidc_enabled && (
-                <HealthRow
-                  label="OIDC"
-                  status={health.oidc === 'ok' ? 'ok' : 'warn'}
-                  message={health.oidc === 'unavailable' ? 'provider unreachable' : undefined}
-                />
-              )}
+
+            <div className="auth-field">
+              <label htmlFor="setup-email" className="auth-label">EMAIL</label>
+              <input
+                id="setup-email"
+                type="email"
+                className="auth-input"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                required
+              />
             </div>
-          )}
+
+            <div className="auth-field auth-field-last">
+              <label htmlFor="setup-password" className="auth-label">PASSWORD</label>
+              <input
+                id="setup-password"
+                type="password"
+                className="auth-input"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                required
+              />
+            </div>
+
+            {!dbOK && !healthLoading && (
+              <div role="alert" aria-live="assertive" className="auth-error">
+                <AlertCircle size={14} className="auth-error-icon" />
+                <span>Database unavailable — cannot create account</span>
+              </div>
+            )}
+
+            {error && (
+              <div role="alert" aria-live="assertive" className="auth-error">
+                <AlertCircle size={14} className="auth-error-icon" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={!canSubmit}
+              className="auth-btn-primary"
+            >
+              {loading ? 'CREATING...' : 'CREATE ADMIN'}
+            </button>
+          </form>
         </div>
-
-        <p style={{ color: 'var(--muted)', fontSize: '12px', marginBottom: '1.5rem', lineHeight: '1.6' }}>
-          No admin account found. Create the first admin user to continue.
-        </p>
-
-        <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', color: 'var(--muted)', fontSize: '11px', marginBottom: '4px', letterSpacing: '0.05em' }}>
-              USERNAME
-            </label>
-            <input
-              type="text"
-              value={username}
-              onChange={e => setUsername(e.target.value)}
-              required
-              autoFocus
-              style={{
-                width: '100%',
-                background: 'var(--surface)',
-                border: '1px solid var(--border)',
-                color: 'var(--text)',
-                padding: '8px 10px',
-                fontFamily: 'inherit',
-                fontSize: '13px',
-                outline: 'none',
-              }}
-            />
-          </div>
-
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', color: 'var(--muted)', fontSize: '11px', marginBottom: '4px', letterSpacing: '0.05em' }}>
-              EMAIL
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              required
-              style={{
-                width: '100%',
-                background: 'var(--surface)',
-                border: '1px solid var(--border)',
-                color: 'var(--text)',
-                padding: '8px 10px',
-                fontFamily: 'inherit',
-                fontSize: '13px',
-                outline: 'none',
-              }}
-            />
-          </div>
-
-          <div style={{ marginBottom: '1.5rem' }}>
-            <label style={{ display: 'block', color: 'var(--muted)', fontSize: '11px', marginBottom: '4px', letterSpacing: '0.05em' }}>
-              PASSWORD
-            </label>
-            <input
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              required
-              style={{
-                width: '100%',
-                background: 'var(--surface)',
-                border: '1px solid var(--border)',
-                color: 'var(--text)',
-                padding: '8px 10px',
-                fontFamily: 'inherit',
-                fontSize: '13px',
-                outline: 'none',
-              }}
-            />
-          </div>
-
-          {!dbOK && !healthLoading && (
-            <div className="flex items-center gap-2" style={{ color: '#FF4444', fontSize: '12px', marginBottom: '1rem' }}>
-              <AlertCircle size={12} />
-              <span>Database unavailable - cannot create account</span>
-            </div>
-          )}
-
-          {error && (
-            <div className="flex items-center gap-2" style={{ color: '#FF4444', fontSize: '12px', marginBottom: '1rem' }}>
-              <AlertCircle size={12} />
-              <span>{error}</span>
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={!canSubmit}
-            style={{
-              width: '100%',
-              background: canSubmit ? 'var(--accent)' : 'var(--border)',
-              color: '#000',
-              border: 'none',
-              padding: '10px',
-              fontFamily: 'inherit',
-              fontSize: '12px',
-              fontWeight: 'bold',
-              letterSpacing: '0.1em',
-              cursor: canSubmit ? 'pointer' : 'not-allowed',
-            }}
-          >
-            {loading ? 'CREATING...' : 'CREATE ADMIN'}
-          </button>
-        </form>
       </div>
+
+      <div className="auth-tagline">FLIGHT RECORDER · OPERATIONAL</div>
     </div>
   )
 }
 
 function HealthRow({ label, status, message }: { label: string; status: 'ok' | 'error' | 'warn'; message?: string }) {
-  const color = status === 'ok' ? '#00FF41' : status === 'warn' ? '#FFA500' : '#FF4444'
-  const Icon = status === 'ok' ? CheckCircle : XCircle
+  const color = status === 'ok' ? 'var(--success)' : status === 'warn' ? 'var(--warning)' : 'var(--danger)'
+  const Icon = status === 'ok' ? CheckCircle : status === 'warn' ? AlertTriangle : XCircle
 
   return (
-    <div className="flex items-center gap-2" style={{ fontSize: '11px' }}>
-      <Icon size={12} style={{ color }} />
-      <span style={{ color: 'var(--muted)' }}>{label}</span>
-      <span style={{ color }}>
+    <div className="auth-health-row">
+      <Icon size={14} style={{ color, flexShrink: 0 }} />
+      <span className="auth-health-label">{label}</span>
+      <span className="auth-health-status" style={{ color }}>
         {status.toUpperCase()}
-        {message ? ` - ${message}` : ''}
+        {message ? ` — ${message}` : ''}
       </span>
     </div>
   )
