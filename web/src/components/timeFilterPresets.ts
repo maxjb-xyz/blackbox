@@ -1,9 +1,6 @@
 export type Preset = '15m' | '1h' | '6h' | '24h' | '7d'
 
-export interface PresetTimeRange {
-  start: Date
-  end: Date
-}
+export type PresetTimeRange = { start: Date; end: Date | null }
 
 export const DEFAULT_TIME_PRESET: Preset = '6h'
 
@@ -35,5 +32,5 @@ export function getPresetRange(preset: Preset): PresetTimeRange {
   if (!start) {
     throw new Error(`Failed to truncate start time for preset range: ${preset}`)
   }
-  return { start, end }
+  return { start, end: null }
 }

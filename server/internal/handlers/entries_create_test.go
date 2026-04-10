@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"blackbox/server/internal/handlers"
-	"blackbox/server/internal/models"
 	"blackbox/shared/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -47,16 +46,9 @@ func TestCreateEntry(t *testing.T) {
 			},
 		},
 		{
-			name:       "normalizes aliased services before saving",
-			body:       `{"title":"Failover completed","note":"manual run","services":["postgres-primary"],"timestamp":"2026-04-02T10:15:30Z"}`,
+			name:       "normalizes service names before saving",
+			body:       `{"title":"Failover completed","note":"manual run","services":["  Postgres  "],"timestamp":"2026-04-02T10:15:30Z"}`,
 			wantStatus: http.StatusCreated,
-			setup: func(t *testing.T, database *gorm.DB) {
-				t.Helper()
-				require.NoError(t, database.Create(&models.ServiceAlias{
-					Canonical: "postgres",
-					Alias:     "postgres-primary",
-				}).Error)
-			},
 			assertEntry: func(t *testing.T, entry types.Entry) {
 				t.Helper()
 				assert.Equal(t, "postgres", entry.Service)
@@ -71,15 +63,8 @@ func TestCreateEntry(t *testing.T) {
 		},
 		{
 			name:       "ignores blank normalized services",
-			body:       `{"title":"Failover completed","note":"manual run","services":["   ","postgres-primary"],"timestamp":"2026-04-02T10:15:30Z"}`,
+			body:       `{"title":"Failover completed","note":"manual run","services":["   ","  POSTGRES  "],"timestamp":"2026-04-02T10:15:30Z"}`,
 			wantStatus: http.StatusCreated,
-			setup: func(t *testing.T, database *gorm.DB) {
-				t.Helper()
-				require.NoError(t, database.Create(&models.ServiceAlias{
-					Canonical: "postgres",
-					Alias:     "postgres-primary",
-				}).Error)
-			},
 			assertEntry: func(t *testing.T, entry types.Entry) {
 				t.Helper()
 				assert.Equal(t, "postgres", entry.Service)

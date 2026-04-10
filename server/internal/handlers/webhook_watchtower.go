@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"blackbox/server/internal/hub"
-	"blackbox/server/internal/services"
 	"blackbox/shared/types"
 	"github.com/oklog/ulid/v2"
 	"gorm.io/gorm"
@@ -42,11 +41,7 @@ func WebhookWatchtower(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.En
 		if payload.Level != "" {
 			meta["watchtower.level"] = payload.Level
 		}
-		updatedServices, err := extractWatchtowerServices(database, payload.Message)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to normalize watchtower services")
-			return
-		}
+		updatedServices := extractWatchtowerServices(payload.Message)
 		if len(updatedServices) > 0 {
 			meta["watchtower.services"] = updatedServices
 		}
@@ -57,11 +52,7 @@ func WebhookWatchtower(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.En
 			metaBytes = []byte("{}")
 		}
 
-		serviceName, err := services.NormalizeService(database, "watchtower")
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to normalize service")
-			return
-		}
+		serviceName := "watchtower"
 
 		entry := types.Entry{
 			ID:        ulid.Make().String(),
@@ -88,21 +79,21 @@ func WebhookWatchtower(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.En
 	}
 }
 
-func extractWatchtowerServices(database *gorm.DB, message string) ([]string, error) {
+func extractWatchtowerServices(message string) []string {
 	message = strings.TrimSpace(message)
 	if message == "" {
-		return nil, nil
+		return nil
 	}
 
 	candidateSection := message
 	idx := strings.Index(candidateSection, ":")
 	if idx < 0 {
-		return nil, nil
+		return nil
 	}
 	candidateSection = candidateSection[idx+1:]
 	candidateSection = strings.TrimSpace(candidateSection)
 	if candidateSection == "" {
-		return nil, nil
+		return nil
 	}
 
 	parts := strings.FieldsFunc(candidateSection, func(r rune) bool {
@@ -118,10 +109,7 @@ func extractWatchtowerServices(database *gorm.DB, message string) ([]string, err
 			continue
 		}
 
-		normalized, err := services.NormalizeService(database, part)
-		if err != nil {
-			return nil, err
-		}
+		normalized := strings.ToLower(strings.TrimSpace(part))
 		if normalized == "" {
 			continue
 		}
@@ -132,5 +120,5 @@ func extractWatchtowerServices(database *gorm.DB, message string) ([]string, err
 		servicesList = append(servicesList, normalized)
 	}
 
-	return servicesList, nil
+	return servicesList
 }

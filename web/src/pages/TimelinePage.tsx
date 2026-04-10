@@ -17,6 +17,25 @@ import { DEFAULT_TIME_PRESET, getPresetRange } from '../components/timeFilterPre
 import { useWebSocketContext } from '../components/WebSocketProvider'
 import { formatLocalTimestamp } from '../utils/time'
 
+function extractComposeService(entry: Entry): string | null {
+  if (entry.source !== 'docker') return null
+  try {
+    const meta = JSON.parse(entry.metadata || '{}')
+    // Direct event: metadata has the label directly
+    const direct = meta['com.docker.compose.service']
+    if (direct && direct !== entry.service) return direct
+    // Collapsed event: label lives inside raw_events[0].attributes
+    const rawEvents = meta['raw_events']
+    if (Array.isArray(rawEvents) && rawEvents.length > 0) {
+      const fromRaw = rawEvents[0]?.attributes?.['com.docker.compose.service']
+      if (fromRaw && fromRaw !== entry.service) return fromRaw
+    }
+  } catch {
+    return null
+  }
+  return null
+}
+
 const SOURCE_OPTIONS = ['', 'docker', 'files', 'systemd', 'agent', 'webhook']
 
 const FILTER_CONTROL_STYLE = {
@@ -1480,6 +1499,7 @@ function DiffModal({ entry, diff, open, onClose }: { entry: Entry; diff: FileDif
 
 function TimelineCard({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip, onTooltipClear }: EntryProps) {
   const possibleCause = entry.correlated_id ? parsePossibleCause(entry.metadata) : null
+  const composeService = extractComposeService(entry)
   const sourceLabel = webhookProviderLabel(entry) ?? entry.source
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (isInteractiveEntryTarget(e.target)) return
@@ -1543,6 +1563,9 @@ function TimelineCard({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip
         </span>
         {entry.service && (
           <span style={{ fontSize: 13, color: '#D0D0D0' }}>{entry.service}</span>
+        )}
+        {composeService && (
+          <span style={{ fontSize: 10, color: '#71717A', fontFamily: 'monospace' }}>· {composeService}</span>
         )}
         {isGhost && (
           <span
@@ -1624,6 +1647,7 @@ function TimelineCard({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip
 function TimelineRow({ entry, isExpanded, isDimmed, isGhost, incident, onClick, onTooltip, onTooltipClear }: EntryProps) {
   const navigate = useNavigate()
   const possibleCause = entry.correlated_id ? parsePossibleCause(entry.metadata) : null
+  const composeService = extractComposeService(entry)
   const sourceLabel = webhookProviderLabel(entry) ?? entry.source
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (isInteractiveEntryTarget(e.target)) return
@@ -1727,6 +1751,9 @@ function TimelineRow({ entry, isExpanded, isDimmed, isGhost, incident, onClick, 
           >
             {entry.service}
           </span>
+        )}
+        {composeService && (
+          <span style={{ display: 'block', fontSize: '10px', color: '#71717A', fontFamily: 'monospace', marginTop: '2px' }}>{composeService}</span>
         )}
       </div>
       <span style={{

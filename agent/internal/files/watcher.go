@@ -221,12 +221,17 @@ func rootFor(path string, roots []watchRoot) string {
 	return slashClean(filepath.Dir(path))
 }
 
+var collectionDirs = map[string]bool{
+	"stacks": true, "docker": true, "containers": true,
+	"compose": true, "apps": true, "services": true,
+}
+
 // serviceFromPath extracts a service name from a file path by stripping
 // common config directory prefixes. Falls back to the watch root path.
 func serviceFromPath(filePath string, roots []watchRoot) string {
 	logical := slashClean(logicalPathFor(filePath, roots))
 
-	prefixes := []string{"/etc/", "/opt/", "/var/lib/"}
+	prefixes := []string{"/etc/", "/opt/", "/var/lib/", "/srv/"}
 	for _, prefix := range prefixes {
 		base := strings.TrimSuffix(prefix, "/")
 		if logical == base || logical == prefix {
@@ -237,18 +242,31 @@ func serviceFromPath(filePath string, roots []watchRoot) string {
 			if rest == "" || rest == "/" {
 				return ""
 			}
-			parts := strings.SplitN(rest, "/", 2)
-			if parts[0] != "" {
+			parts := strings.SplitN(rest, "/", 3)
+			// Require 3 parts so parts[1] is a real directory, not a bare filename
+			// (e.g. /opt/stacks/.env splits to ["stacks", ".env"] — len 2 — and
+			// we should NOT return ".env" as the service name).
+			if len(parts) >= 3 && collectionDirs[parts[0]] && parts[1] != "" {
+				return parts[1]
+			}
+			// Don't return collection dir names (stacks, docker, …) as the service.
+			// A file sitting directly inside a collection dir has no determinable
+			// service; fall through to rootFor.
+			if parts[0] != "" && !collectionDirs[parts[0]] {
 				return parts[0]
 			}
 		}
 	}
 
-	// Handle /home/<user>/docker/<service>/...
+	// Handle /home/<user>/<collection>/<service>/...
 	if strings.HasPrefix(logical, "/home/") {
 		rest := strings.TrimPrefix(logical, "/home/")
-		parts := strings.SplitN(rest, "/", 4) // user / "docker" / service / ...
-		if len(parts) >= 3 && parts[1] == "docker" && parts[2] != "" {
+		parts := strings.SplitN(rest, "/", 4) // user / dir / service / file
+		// Require 4 parts: user, collection dir, service dir, and at least one
+		// more component (the file). len==3 means the file sits directly inside
+		// the collection dir (/home/user/stacks/.env) and we can't identify a
+		// service from it.
+		if len(parts) >= 4 && collectionDirs[parts[1]] && parts[2] != "" {
 			return parts[2]
 		}
 	}

@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync/atomic"
 	"time"
 
@@ -14,7 +13,6 @@ import (
 	"blackbox/shared/types"
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
 )
 
@@ -43,16 +41,6 @@ func Init(path string) (*gorm.DB, error) {
 		}
 		sqlDB.SetMaxOpenConns(1)
 	}
-	var preservedAliases []models.ServiceAlias
-	if database.Migrator().HasTable(&models.ServiceAlias{}) {
-		if err := database.Exec("DELETE FROM service_aliases WHERE TRIM(canonical) = '' OR canonical IS NULL OR TRIM(alias) = '' OR alias IS NULL").Error; err != nil {
-			return nil, err
-		}
-		if err := database.Raw("SELECT TRIM(canonical) AS canonical, TRIM(alias) AS alias FROM service_aliases").Scan(&preservedAliases).Error; err != nil {
-			return nil, err
-		}
-		preservedAliases = normalizePreservedAliases(preservedAliases)
-	}
 	if err := database.AutoMigrate(
 		&models.SetupState{},
 		&models.User{},
@@ -63,7 +51,6 @@ func Init(path string) (*gorm.DB, error) {
 		&types.Entry{},
 		&models.Node{},
 		&models.EntryNote{},
-		&models.ServiceAlias{},
 		&models.Incident{},
 		&models.IncidentEntry{},
 		&models.SystemdUnitConfig{},
@@ -73,47 +60,7 @@ func Init(path string) (*gorm.DB, error) {
 	if err := ensureEntryIndexes(database); err != nil {
 		return nil, err
 	}
-	if err := database.Exec("DELETE FROM service_aliases WHERE TRIM(canonical) = '' OR canonical IS NULL OR TRIM(alias) = '' OR alias IS NULL").Error; err != nil {
-		return nil, err
-	}
-	if len(preservedAliases) > 0 {
-		if err := database.Exec("DELETE FROM service_aliases").Error; err != nil {
-			return nil, err
-		}
-		if err := database.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "alias"}},
-			DoUpdates: clause.AssignmentColumns([]string{"canonical"}),
-		}).Create(&preservedAliases).Error; err != nil {
-			return nil, err
-		}
-	}
 	return database, nil
-}
-
-func normalizePreservedAliases(aliases []models.ServiceAlias) []models.ServiceAlias {
-	normalized := make([]models.ServiceAlias, 0, len(aliases))
-	indexByAlias := make(map[string]int, len(aliases))
-
-	for _, alias := range aliases {
-		trimmedCanonical := strings.TrimSpace(alias.Canonical)
-		trimmedAlias := strings.TrimSpace(alias.Alias)
-		if trimmedCanonical == "" || trimmedAlias == "" {
-			continue
-		}
-
-		if index, ok := indexByAlias[trimmedAlias]; ok {
-			normalized[index].Canonical = trimmedCanonical
-			continue
-		}
-
-		indexByAlias[trimmedAlias] = len(normalized)
-		normalized = append(normalized, models.ServiceAlias{
-			Canonical: trimmedCanonical,
-			Alias:     trimmedAlias,
-		})
-	}
-
-	return normalized
 }
 
 func ensureEntryIndexes(database *gorm.DB) error {

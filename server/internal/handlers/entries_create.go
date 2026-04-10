@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"blackbox/server/internal/hub"
-	servicealiases "blackbox/server/internal/services"
 	"blackbox/shared/types"
 	"github.com/oklog/ulid/v2"
 	"gorm.io/gorm"
@@ -50,11 +49,7 @@ func CreateEntry(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry, s
 
 		normalizedServices := make([]string, 0, len(serviceNames))
 		for _, name := range serviceNames {
-			normalized, err := servicealiases.NormalizeService(database, name)
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, "failed to normalize service")
-				return
-			}
+			normalized := strings.ToLower(strings.TrimSpace(name))
 			if normalized != "" {
 				normalizedServices = append(normalizedServices, normalized)
 			}

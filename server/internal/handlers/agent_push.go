@@ -6,12 +6,12 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"blackbox/server/internal/hub"
 	"blackbox/server/internal/middleware"
 	"blackbox/server/internal/models"
-	"blackbox/server/internal/services"
 	"blackbox/shared/types"
 	"github.com/oklog/ulid/v2"
 	"gorm.io/gorm"
@@ -47,11 +47,7 @@ func AgentPush(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry, shu
 			return
 		}
 		entry.NodeName = nodeName
-		serviceName, err := services.NormalizeService(database, entry.Service)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to normalize service")
-			return
-		}
+		serviceName := strings.ToLower(strings.TrimSpace(entry.Service))
 		if serviceName == "" && !isAgentMetaEvent(entry) {
 			writeError(w, http.StatusBadRequest, "service is required")
 			return
