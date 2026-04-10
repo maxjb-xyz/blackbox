@@ -7,6 +7,10 @@ function formatForInput(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
+function formatEndForInput(date: Date | null): string {
+  return date ? formatForInput(date) : 'LIVE'
+}
+
 function parseInput(value: string): Date | null {
   const d = new Date(value.replace(' ', 'T'))
   return Number.isNaN(d.getTime()) ? null : d
@@ -35,7 +39,7 @@ export default function TimeFilter({ onChange, initialRange: providedInitialRang
   const initialRange = useMemo<TimeRange>(() => ({ start: initialStart, end: initialEnd }), [initialEnd, initialStart])
   const [activePreset, setActivePreset] = useState<Preset | null>(DEFAULT_TIME_PRESET)
   const [startInput, setStartInput] = useState(() => formatForInput(initialStart))
-  const [endInput, setEndInput] = useState(() => formatForInput(initialEnd))
+  const [endInput, setEndInput] = useState(() => formatEndForInput(initialEnd))
   const emittedStartRef = useRef<Date | null>(initialRange.start)
   const emittedEndRef = useRef<Date | null>(initialRange.end)
   const onChangeRef = useRef<(range: TimeRange) => void>(() => {})
@@ -48,7 +52,7 @@ export default function TimeFilter({ onChange, initialRange: providedInitialRang
     const { start, end } = getPresetRange(preset)
     setActivePreset(preset)
     setStartInput(formatForInput(start))
-    setEndInput(formatForInput(end))
+    setEndInput(formatEndForInput(end))
     emittedStartRef.current = start
     emittedEndRef.current = end
     onChangeRef.current({ start, end })
@@ -88,7 +92,7 @@ export default function TimeFilter({ onChange, initialRange: providedInitialRang
     const end = truncateToMinute(parseInput(endInput))
     if (!start || !end) {
       setStartInput(emittedStartRef.current ? formatForInput(emittedStartRef.current) : '')
-      setEndInput(emittedEndRef.current ? formatForInput(emittedEndRef.current) : '')
+      setEndInput(formatEndForInput(emittedEndRef.current))
       return
     }
     if (sameTimeValue(start, emittedStartRef.current) && sameTimeValue(end, emittedEndRef.current)) {
