@@ -1621,11 +1621,12 @@ function TimelineCard({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip
               color: '#888',
               fontStyle: 'italic',
               marginLeft: isExpanded ? 0 : 'auto',
-              overflow: 'hidden',
+              overflow: isExpanded ? 'visible' : 'hidden',
               textOverflow: isExpanded ? 'clip' : 'ellipsis',
               whiteSpace: isExpanded ? 'normal' : 'nowrap',
               maxWidth: isExpanded ? '100%' : '50%',
               flexBasis: isExpanded ? '100%' : 'auto',
+              overflowWrap: isExpanded ? 'anywhere' : 'normal',
               lineHeight: 1.5,
             }}
           >
