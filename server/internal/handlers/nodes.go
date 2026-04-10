@@ -31,10 +31,6 @@ func ListNodes(database *gorm.DB) http.HandlerFunc {
 		now := time.Now()
 		resp := make([]nodeResponse, len(nodes))
 		for i, node := range nodes {
-			status := "online"
-			if now.Sub(node.LastSeen) > 7*time.Minute {
-				status = "offline"
-			}
 			resp[i] = nodeResponse{
 				ID:           node.ID,
 				Name:         node.Name,
@@ -42,7 +38,7 @@ func ListNodes(database *gorm.DB) http.HandlerFunc {
 				AgentVersion: node.AgentVersion,
 				IPAddress:    node.IPAddress,
 				OsInfo:       node.OsInfo,
-				Status:       status,
+				Status:       effectiveNodeStatus(node, now),
 			}
 		}
 

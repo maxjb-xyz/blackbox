@@ -63,3 +63,29 @@ func TestListNodes_StatusOnlineOffline(t *testing.T) {
 	assert.Equal(t, "online", statusByName["online-node"])
 	assert.Equal(t, "offline", statusByName["offline-node"])
 }
+
+func TestListNodes_ExplicitOfflineOverridesFreshLastSeen(t *testing.T) {
+	database := newTestDB(t)
+
+	require.NoError(t, database.Create(&models.Node{
+		ID:       ulid.Make().String(),
+		Name:     "graceful-stop-node",
+		LastSeen: time.Now().UTC().Add(-30 * time.Second),
+		Status:   "offline",
+	}).Error)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/nodes", nil)
+	rr := httptest.NewRecorder()
+
+	handlers.ListNodes(database)(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	var nodes []struct {
+		Name   string `json:"name"`
+		Status string `json:"status"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &nodes))
+	require.Len(t, nodes, 1)
+	assert.Equal(t, "offline", nodes[0].Status)
+}

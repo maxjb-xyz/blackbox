@@ -66,6 +66,7 @@ func main() {
 	log.Printf("database initialized at %s", dbPath)
 	db.StartOIDCStateSweeper(rootCtx, database)
 	eventHub := hub.New()
+	handlers.StartNodeStatusMonitor(rootCtx, database, eventHub, 0)
 	incidentCh := incidents.NewChannel()
 	incidentMgr := incidents.NewManager(database, eventHub)
 	managerCtx, stopManager := context.WithCancel(context.Background())

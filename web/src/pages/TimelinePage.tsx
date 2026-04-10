@@ -30,7 +30,7 @@ const FILTER_CONTROL_STYLE = {
 const ROW_GRID_TEMPLATE = '20px 130px 110px 80px 140px 90px minmax(0, 1fr)'
 
 function eventBorderColor(event: string): string {
-  if (event === 'stop' || event === 'die' || event === 'down') return 'var(--danger)'
+  if (event === 'stop' || event === 'die' || event === 'down' || event === 'shutdown') return 'var(--danger)'
   if (event === 'start' || event === 'up') return 'var(--success)'
   if (event === 'pull') return 'var(--info)'
   if (event === 'restart' || event === 'update') return 'var(--warning)'
@@ -38,7 +38,7 @@ function eventBorderColor(event: string): string {
 }
 
 function eventTextColor(event: string): string {
-  if (event === 'stop' || event === 'die' || event === 'down') return 'var(--danger)'
+  if (event === 'stop' || event === 'die' || event === 'down' || event === 'shutdown') return 'var(--danger)'
   if (event === 'start' || event === 'up') return 'var(--success)'
   if (event === 'pull') return 'var(--info)'
   if (event === 'restart' || event === 'update') return 'var(--warning)'
