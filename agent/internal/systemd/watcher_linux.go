@@ -42,8 +42,6 @@ func watch(ctx context.Context, nodeName string, settings *Settings, out chan<- 
 		return err
 	}
 
-	unitStates := make(map[string]string)
-	deactivatingEmitted := make(map[string]bool)
 	var lastUnits []string
 
 	for {
@@ -56,16 +54,7 @@ func watch(ctx context.Context, nodeName string, settings *Settings, out chan<- 
 		units := settings.Units()
 
 		if !stringSlicesEqual(units, lastUnits) {
-			j.FlushMatches()
-			for _, unit := range units {
-				if err := j.AddMatch("_SYSTEMD_UNIT=" + unit); err != nil {
-					return err
-				}
-				if err := j.AddDisjunction(); err != nil {
-					return err
-				}
-			}
-			if err := j.AddMatch("SYSLOG_FACILITY=0"); err != nil {
+			if err := rebuildJournalMatches(j, units); err != nil {
 				return err
 			}
 			lastUnits = units
@@ -90,7 +79,6 @@ func watch(ctx context.Context, nodeName string, settings *Settings, out chan<- 
 			continue
 		}
 
-		unit := entry.Fields["_SYSTEMD_UNIT"]
 		message := entry.Fields["MESSAGE"]
 		facility := entry.Fields["SYSLOG_FACILITY"]
 
@@ -99,41 +87,15 @@ func watch(ctx context.Context, nodeName string, settings *Settings, out chan<- 
 			continue
 		}
 
-		if unit == "" {
+		unit, event := classifyLifecycleEvent(entry.Fields, units)
+		if unit == "" || event == "" {
 			continue
-		}
-
-		currState := entry.Fields["ACTIVE_STATE"]
-		if currState == "" {
-			continue
-		}
-
-		prevState := unitStates[unit]
-		if prevState == currState {
-			continue
-		}
-		unitStates[unit] = currState
-
-		event := mapTransition(prevState, currState)
-		if event == "" {
-			continue
-		}
-
-		if event == "stopped" && currState == "inactive" && deactivatingEmitted[unit] {
-			deactivatingEmitted[unit] = false
-			continue
-		}
-		if event == "stopped" && currState == "deactivating" {
-			deactivatingEmitted[unit] = true
-		} else {
-			deactivatingEmitted[unit] = false
 		}
 
 		ts := time.Unix(0, int64(entry.RealtimeTimestamp)*int64(time.Microsecond)).UTC()
 
 		meta := map[string]interface{}{
-			"unit":           unit,
-			"previous_state": prevState,
+			"unit": unit,
 		}
 
 		if event == "failed" {
