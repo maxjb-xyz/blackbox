@@ -80,7 +80,7 @@ export default function TimeFilter({ onChange, initialRange: providedInitialRang
 
   function handleEndChange(value: string) {
     setEndInput(value)
-    if (value === 'LIVE') {
+    if (value.trim().toUpperCase() === 'LIVE') {
       emittedEndRef.current = null
       setActivePreset(null)
       onChangeRef.current({ start: emittedStartRef.current, end: null })
@@ -95,7 +95,7 @@ export default function TimeFilter({ onChange, initialRange: providedInitialRang
 
   function commitRange() {
     const start = truncateToMinute(parseInput(startInput))
-    const isLive = endInput === 'LIVE'
+    const isLive = endInput.trim().toUpperCase() === 'LIVE'
     const end = isLive ? null : truncateToMinute(parseInput(endInput))
     if (!start || (!isLive && !end)) {
       setStartInput(emittedStartRef.current ? formatForInput(emittedStartRef.current) : '')

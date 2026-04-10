@@ -249,7 +249,10 @@ func serviceFromPath(filePath string, roots []watchRoot) string {
 			if len(parts) >= 3 && collectionDirs[parts[0]] && parts[1] != "" {
 				return parts[1]
 			}
-			if parts[0] != "" {
+			// Don't return collection dir names (stacks, docker, …) as the service.
+			// A file sitting directly inside a collection dir has no determinable
+			// service; fall through to rootFor.
+			if parts[0] != "" && !collectionDirs[parts[0]] {
 				return parts[0]
 			}
 		}
@@ -258,8 +261,12 @@ func serviceFromPath(filePath string, roots []watchRoot) string {
 	// Handle /home/<user>/<collection>/<service>/...
 	if strings.HasPrefix(logical, "/home/") {
 		rest := strings.TrimPrefix(logical, "/home/")
-		parts := strings.SplitN(rest, "/", 4) // user / dir / service / ...
-		if len(parts) >= 3 && collectionDirs[parts[1]] && parts[2] != "" {
+		parts := strings.SplitN(rest, "/", 4) // user / dir / service / file
+		// Require 4 parts: user, collection dir, service dir, and at least one
+		// more component (the file). len==3 means the file sits directly inside
+		// the collection dir (/home/user/stacks/.env) and we can't identify a
+		// service from it.
+		if len(parts) >= 4 && collectionDirs[parts[1]] && parts[2] != "" {
 			return parts[2]
 		}
 	}
