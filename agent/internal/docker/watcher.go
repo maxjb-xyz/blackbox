@@ -129,6 +129,11 @@ type serviceResolver struct {
 	cli dockerResolverClient
 }
 
+type containerIdentity struct {
+	service     string
+	displayName string
+}
+
 func newServiceResolver(ctx context.Context, cli dockerResolverClient) *serviceResolver {
 	return &serviceResolver{ctx: ctx, cli: cli}
 }
@@ -143,11 +148,13 @@ func buildEntry(nodeName string, msg dockerevents.Message, resolver *serviceReso
 	resolvedService := ""
 	displayName := ""
 	if action == "pull" || action == "delete" || msg.Type == "image" {
-		resolvedService = resolver.resolveImageService(msg.Actor.ID, attrs)
-		displayName = firstNonEmpty(resolvedService, cleanImageService(firstNonEmpty(attrs["name"], image, msg.Actor.ID)), msg.Actor.ID)
+		identity := resolver.resolveImageIdentity(msg.Actor.ID, attrs)
+		resolvedService = identity.service
+		displayName = firstNonEmpty(identity.displayName, resolvedService, cleanImageService(firstNonEmpty(attrs["name"], image, msg.Actor.ID)), msg.Actor.ID)
 	} else {
-		resolvedService = resolver.resolveContainerService(msg.Actor.ID, attrs, name)
-		displayName = firstNonEmpty(resolvedService, sanitizeContainerName(name), name, msg.Actor.ID)
+		identity := resolver.resolveContainerIdentity(msg.Actor.ID, attrs, name)
+		resolvedService = identity.service
+		displayName = firstNonEmpty(identity.displayName, resolvedService, sanitizeContainerName(name), name, msg.Actor.ID)
 	}
 
 	var content string
@@ -278,24 +285,27 @@ func buildCollapsedContainerEntry(nodeName, event string, rawEvents []dockereven
 	if len(rawEvents) > 0 {
 		containerID = rawEvents[len(rawEvents)-1].Actor.ID
 	}
-	service := resolver.resolveContainerService(containerID, attrs, rawName)
+	identity := resolver.resolveContainerIdentity(containerID, attrs, rawName)
+	service := identity.service
+	displayName := firstNonEmpty(identity.displayName, service, sanitizeContainerName(rawName), rawName)
 	if rawName == "" && service == "" && len(rawEvents) > 0 {
 		service = rawEvents[len(rawEvents)-1].Actor.ID
+		displayName = service
 	}
 
 	content := ""
 	switch event {
 	case "restart":
-		content = fmt.Sprintf("Container restarted: %s", service)
+		content = fmt.Sprintf("Container restarted: %s", displayName)
 	case "start":
-		content = fmt.Sprintf("Container started: %s", service)
+		content = fmt.Sprintf("Container started: %s", displayName)
 	case "stop":
-		content = fmt.Sprintf("Container stopped: %s", service)
+		content = fmt.Sprintf("Container stopped: %s", displayName)
 		if exitCode := exitCodeFromRawEvents(rawEvents); exitCode != "" {
-			content = fmt.Sprintf("Container stopped: %s (exit code: %s)", service, exitCode)
+			content = fmt.Sprintf("Container stopped: %s (exit code: %s)", displayName, exitCode)
 		}
 	default:
-		content = fmt.Sprintf("%s: %s", event, service)
+		content = fmt.Sprintf("%s: %s", event, displayName)
 	}
 
 	meta := map[string]interface{}{
@@ -376,38 +386,48 @@ func exitCodeFromRawEvents(rawEvents []dockerevents.Message) string {
 }
 
 func (r *serviceResolver) resolveContainerService(containerID string, attrs map[string]string, rawName string) string {
-	if service := cleanContainerService(attrs, rawName); service != "" {
-		return service
-	}
-	if r == nil || r.cli == nil || containerID == "" {
-		return sanitizeContainerName(rawName)
-	}
-
-	ctx, cancel := context.WithTimeout(r.parentContext(), dockerLookupTimeout)
-	defer cancel()
-
-	inspected, err := r.cli.ContainerInspect(ctx, containerID)
-	if err != nil {
-		return sanitizeContainerName(rawName)
-	}
-
-	inspectedName := strings.TrimPrefix(inspected.Name, "/")
-	labels := map[string]string{}
-	if inspected.Config != nil && inspected.Config.Labels != nil {
-		labels = inspected.Config.Labels
-	}
-
-	return cleanContainerService(labels, firstNonEmpty(inspectedName, rawName))
+	return r.resolveContainerIdentity(containerID, attrs, rawName).service
 }
 
 func (r *serviceResolver) resolveImageService(imageID string, attrs map[string]string) string {
-	ref := firstNonEmpty(attrs["name"], attrs["image"], imageID)
-	if r != nil && r.cli != nil {
-		if service := r.findContainerServiceForImage(imageID, ref); service != "" {
-			return service
+	return r.resolveImageIdentity(imageID, attrs).service
+}
+
+func (r *serviceResolver) resolveContainerIdentity(containerID string, attrs map[string]string, rawName string) containerIdentity {
+	if identity := cleanContainerIdentity(attrs, ""); identity.service != "" {
+		return identity
+	}
+	if r != nil && r.cli != nil && containerID != "" {
+		ctx, cancel := context.WithTimeout(r.parentContext(), dockerLookupTimeout)
+		defer cancel()
+
+		inspected, err := r.cli.ContainerInspect(ctx, containerID)
+		if err == nil {
+			inspectedName := strings.TrimPrefix(inspected.Name, "/")
+			labels := map[string]string{}
+			if inspected.Config != nil && inspected.Config.Labels != nil {
+				labels = inspected.Config.Labels
+			}
+			if identity := cleanContainerIdentity(labels, firstNonEmpty(inspectedName, rawName)); identity.service != "" || identity.displayName != "" {
+				return identity
+			}
 		}
 	}
-	return cleanImageService(ref)
+	return cleanContainerIdentity(nil, rawName)
+}
+
+func (r *serviceResolver) resolveImageIdentity(imageID string, attrs map[string]string) containerIdentity {
+	ref := firstNonEmpty(attrs["name"], attrs["image"], imageID)
+	if r != nil && r.cli != nil {
+		if identity := r.findContainerIdentityForImage(imageID, ref); identity.service != "" || identity.displayName != "" {
+			return identity
+		}
+	}
+	imageService := cleanImageService(ref)
+	return containerIdentity{
+		service:     imageService,
+		displayName: firstNonEmpty(imageService, ref, imageID),
+	}
 }
 
 // captureContainerLogs fetches the last logCaptureLines lines from a container.
@@ -451,48 +471,48 @@ func scanLogLines(r io.Reader) []string {
 	return lines
 }
 
-func (r *serviceResolver) findContainerServiceForImage(imageID, ref string) string {
+func (r *serviceResolver) findContainerIdentityForImage(imageID, ref string) containerIdentity {
 	ctx, cancel := context.WithTimeout(r.parentContext(), dockerLookupTimeout)
 	defer cancel()
 
 	containers, err := r.cli.ContainerList(ctx, dockercontainer.ListOptions{All: true})
 	if err != nil {
-		return ""
+		return containerIdentity{}
 	}
 
 	normalizedRef := normalizeImageRef(ref)
 	shortRef := cleanImageService(ref)
-	repositoryMatch := ""
-	shortNameMatch := ""
+	var repositoryMatch containerIdentity
+	var shortNameMatch containerIdentity
 
 	for _, summary := range containers {
-		service := cleanContainerService(summary.Labels, summaryContainerName(summary.Names))
-		if service == "" {
+		identity := cleanContainerIdentity(summary.Labels, summaryContainerName(summary.Names))
+		if identity.service == "" {
 			continue
 		}
 		if imageID != "" && summary.ImageID == imageID {
-			return service
+			return identity
 		}
 		if ref != "" && summary.Image == ref {
-			return service
+			return identity
 		}
-		if repositoryMatch == "" && normalizedRef != "" && normalizeImageRef(summary.Image) == normalizedRef {
-			repositoryMatch = service
+		if repositoryMatch.service == "" && normalizedRef != "" && normalizeImageRef(summary.Image) == normalizedRef {
+			repositoryMatch = identity
 		}
-		if shortNameMatch == "" && shortRef != "" && cleanImageService(summary.Image) == shortRef {
-			shortNameMatch = service
+		if shortNameMatch.service == "" && shortRef != "" && cleanImageService(summary.Image) == shortRef {
+			shortNameMatch = identity
 		}
 	}
 
-	if repositoryMatch != "" {
+	if repositoryMatch.service != "" {
 		return repositoryMatch
 	}
 	return shortNameMatch
 }
 
 func cleanContainerService(attrs map[string]string, rawName string) string {
-	if service := strings.TrimSpace(attrs["com.docker.compose.service"]); service != "" {
-		return service
+	if project := strings.TrimSpace(attrs["com.docker.compose.project"]); project != "" {
+		return project
 	}
 	if service := normalizeSwarmServiceName(
 		strings.TrimSpace(attrs["com.docker.swarm.service.name"]),
@@ -501,6 +521,29 @@ func cleanContainerService(attrs map[string]string, rawName string) string {
 		return service
 	}
 	return sanitizeContainerName(rawName)
+}
+
+func cleanContainerIdentity(attrs map[string]string, rawName string) containerIdentity {
+	service := cleanContainerService(attrs, rawName)
+	return containerIdentity{
+		service:     service,
+		displayName: cleanContainerDisplayName(attrs, rawName, service),
+	}
+}
+
+func cleanContainerDisplayName(attrs map[string]string, rawName, service string) string {
+	project := strings.TrimSpace(attrs["com.docker.compose.project"])
+	composeService := strings.TrimSpace(attrs["com.docker.compose.service"])
+	switch {
+	case project != "" && composeService != "":
+		return fmt.Sprintf("%s · %s", project, composeService)
+	case project != "":
+		return project
+	case service != "":
+		return service
+	default:
+		return sanitizeContainerName(rawName)
+	}
 }
 
 func normalizeSwarmServiceName(serviceName, stackName string) string {

@@ -150,14 +150,35 @@ func TestBuildEntry_StripsGeneratedPrefixesFromContainerNames(t *testing.T) {
 	}
 }
 
+func TestBuildEntry_UsesComposeProjectAsServiceAndDisplay(t *testing.T) {
+	entry := buildEntry(
+		"node-1",
+		testDockerMessageWithAttrs(time.Now().UTC(), "container", "die", "abc123", "my-app-web-1", "1", map[string]string{
+			"com.docker.compose.project": "my-app",
+			"com.docker.compose.service": "web",
+		}),
+		nil,
+	)
+
+	if entry.Service != "my-app" {
+		t.Fatalf("expected service my-app, got %q", entry.Service)
+	}
+	if entry.Content != "Container stopped: my-app · web (exit code: 1)" {
+		t.Fatalf("unexpected content: %q", entry.Content)
+	}
+}
+
 func TestBuildEntry_UsesContainerLookupForImagePullService(t *testing.T) {
 	resolver := newServiceResolver(context.Background(), fakeDockerResolverClient{
 		containers: []dockercontainer.Summary{
 			{
 				Image:   "lscr.io/linuxserver/sonarr:latest",
 				ImageID: "sha256:abc123",
-				Names:   []string{"/generatedprefix_sonarr"},
-				Labels:  map[string]string{"com.docker.compose.service": "sonarr"},
+				Names:   []string{"/generatedprefix_web"},
+				Labels: map[string]string{
+					"com.docker.compose.project": "my-app",
+					"com.docker.compose.service": "web",
+				},
 			},
 		},
 	})
@@ -168,11 +189,32 @@ func TestBuildEntry_UsesContainerLookupForImagePullService(t *testing.T) {
 		resolver,
 	)
 
-	if entry.Service != "sonarr" {
-		t.Fatalf("expected service sonarr, got %q", entry.Service)
+	if entry.Service != "my-app" {
+		t.Fatalf("expected service my-app, got %q", entry.Service)
 	}
-	if entry.Content != "Image pulled: sonarr" {
+	if entry.Content != "Image pulled: my-app · web" {
 		t.Fatalf("unexpected content: %q", entry.Content)
+	}
+}
+
+func TestResolveContainerService_UsesInspectedComposeProject(t *testing.T) {
+	resolver := newServiceResolver(context.Background(), fakeDockerResolverClient{
+		inspectResponse: dockercontainer.InspectResponse{
+			ContainerJSONBase: &dockercontainer.ContainerJSONBase{
+				Name: "/generatedprefix_web",
+			},
+			Config: &dockercontainer.Config{
+				Labels: map[string]string{
+					"com.docker.compose.project": "my-app",
+					"com.docker.compose.service": "web",
+				},
+			},
+		},
+	})
+
+	service := resolver.resolveContainerService("abc123", nil, "generatedprefix_web")
+	if service != "my-app" {
+		t.Fatalf("expected inspected compose project my-app, got %q", service)
 	}
 }
 
@@ -241,6 +283,27 @@ func TestBuildCollapsedContainerEntry_UsesSwarmServiceLabel(t *testing.T) {
 		t.Fatalf("expected service sonarr, got %q", entry.Service)
 	}
 	if entry.Content != "Container restarted: sonarr" {
+		t.Fatalf("unexpected content: %q", entry.Content)
+	}
+}
+
+func TestBuildCollapsedContainerEntry_UsesComposeProjectDisplay(t *testing.T) {
+	base := time.Now().UTC()
+	entry := buildCollapsedContainerEntry("node-1", "restart", []dockerevents.Message{
+		testDockerMessageWithAttrs(base, "container", "stop", "abc123", "my-app-web-1", "", map[string]string{
+			"com.docker.compose.project": "my-app",
+			"com.docker.compose.service": "web",
+		}),
+		testDockerMessageWithAttrs(base.Add(time.Second), "container", "start", "abc123", "my-app-web-1", "", map[string]string{
+			"com.docker.compose.project": "my-app",
+			"com.docker.compose.service": "web",
+		}),
+	}, nil)
+
+	if entry.Service != "my-app" {
+		t.Fatalf("expected service my-app, got %q", entry.Service)
+	}
+	if entry.Content != "Container restarted: my-app · web" {
 		t.Fatalf("unexpected content: %q", entry.Content)
 	}
 }
