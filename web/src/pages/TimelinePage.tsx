@@ -953,7 +953,19 @@ function TimelineFeed({
   }, [])
 
   useEffect(() => {
-    if (!lastMessage || lastMessage.type !== 'entry') return
+    if (!lastMessage) return
+
+    if (lastMessage.type === 'entry_replaced') {
+      const { entry } = lastMessage.data as { old_id: string; entry: Entry }
+      onEntriesChanged()
+      setEntries(prev => {
+        if (!prev.some(existing => existing.id === entry.id)) return prev
+        return prev.map(existing => (existing.id === entry.id ? entry : existing))
+      })
+      return
+    }
+
+    if (lastMessage.type !== 'entry') return
     onEntriesChanged()
     const newEntry = lastMessage.data as Entry
     const materializedGhost = ghostEntryRef.current?.id === newEntry.id

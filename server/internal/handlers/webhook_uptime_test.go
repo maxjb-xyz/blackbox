@@ -55,12 +55,13 @@ func TestWebhookUptime_DownEvent_WithCorrelation(t *testing.T) {
 	webhookTime := time.Date(2026, 4, 2, 2, 0, 0, 0, time.UTC)
 	agentEntry := types.Entry{
 		ID:        "01AGENTENTRY000001",
-		Timestamp: webhookTime.Add(-60 * time.Second),
+		Timestamp: webhookTime.Add(-30 * time.Second),
 		NodeName:  "homelab-01",
 		Source:    "docker",
 		Service:   "my-app",
 		Event:     "die",
 		Content:   "container 'my-app' died (exit code: 137)",
+		Metadata:  `{"exitCode":"137"}`,
 	}
 	require.NoError(t, database.Create(&agentEntry).Error)
 
@@ -91,7 +92,7 @@ func TestWebhookUptime_DownEvent_WithCorrelation(t *testing.T) {
 	assert.Equal(t, "homelab-01", meta["cause_node"])
 	assert.Equal(t, "die", meta["cause_event"])
 	assert.Equal(t, "01AGENTENTRY000001", meta["cause_entry_id"])
-	assert.Equal(t, float64(60), meta["cause_score"])
+	assert.Equal(t, float64(80), meta["cause_score"])
 }
 
 func TestWebhookUptime_DownEvent_WithCorrelation_CaseInsensitiveService(t *testing.T) {

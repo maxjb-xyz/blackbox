@@ -22,7 +22,7 @@ import (
 	"blackbox/shared/types"
 )
 
-const debounceWindow = 3 * time.Second
+const restartTrackingWindow = 15 * time.Second
 const dockerLookupTimeout = 2 * time.Second
 const logCaptureLines = 50
 const logCaptureTimeout = 5 * time.Second
@@ -185,14 +185,15 @@ func buildEntry(nodeName string, msg dockerevents.Message, resolver *serviceReso
 	metaBytes, _ := json.Marshal(attrs)
 
 	return types.Entry{
-		ID:        ulid.Make().String(),
-		Timestamp: messageTimestamp(msg),
-		NodeName:  nodeName,
-		Source:    "docker",
-		Service:   resolvedService,
-		Event:     action,
-		Content:   content,
-		Metadata:  string(metaBytes),
+		ID:             ulid.Make().String(),
+		Timestamp:      messageTimestamp(msg),
+		NodeName:       nodeName,
+		Source:         "docker",
+		Service:        resolvedService,
+		ComposeService: strings.TrimSpace(attrs["com.docker.compose.service"]),
+		Event:          action,
+		Content:        content,
+		Metadata:       string(metaBytes),
 	}
 }
 
@@ -203,8 +204,9 @@ type eventCollapser struct {
 }
 
 type pendingContainerEvent struct {
-	rawEvents []dockerevents.Message
-	deadline  time.Time
+	rawEvents    []dockerevents.Message
+	emittedEntry *types.Entry
+	deadline     time.Time
 }
 
 type rawDockerEvent struct {
@@ -233,23 +235,45 @@ func (c *eventCollapser) Handle(now time.Time, msg dockerevents.Message) []types
 
 	containerID := msg.Actor.ID
 	switch action {
-	case "stop", "die":
+	case "stop":
 		pending := c.pending[containerID]
 		if pending == nil {
 			pending = &pendingContainerEvent{}
 			c.pending[containerID] = pending
 		}
 		pending.rawEvents = append(pending.rawEvents, msg)
-		pending.deadline = now.Add(debounceWindow)
+		pending.deadline = now.Add(restartTrackingWindow)
 		return entries
+	case "die":
+		pending := c.pending[containerID]
+		if pending == nil {
+			pending = &pendingContainerEvent{}
+			c.pending[containerID] = pending
+		}
+		pending.rawEvents = append(pending.rawEvents, msg)
+		pending.deadline = now.Add(restartTrackingWindow)
+		if pending.emittedEntry != nil {
+			return entries
+		}
+		stopEntry := buildCollapsedContainerEntry(c.nodeName, "stop", pending.rawEvents, c.resolver)
+		pending.emittedEntry = &stopEntry
+		return append(entries, stopEntry)
 	case "start":
 		pending := c.pending[containerID]
 		if pending == nil {
 			return append(entries, buildCollapsedContainerEntry(c.nodeName, "start", []dockerevents.Message{msg}, c.resolver))
 		}
+		if pending.emittedEntry == nil {
+			stopEntry := buildCollapsedContainerEntry(c.nodeName, "stop", pending.rawEvents, c.resolver)
+			entries = append(entries, stopEntry)
+			pending.emittedEntry = &stopEntry
+		}
 		rawEvents := append(append([]dockerevents.Message{}, pending.rawEvents...), msg)
 		delete(c.pending, containerID)
-		return append(entries, buildCollapsedContainerEntry(c.nodeName, "restart", rawEvents, c.resolver))
+		restartEntry := buildCollapsedContainerEntry(c.nodeName, "restart", rawEvents, c.resolver)
+		restartEntry.ID = pending.emittedEntry.ID
+		restartEntry.ReplaceID = pending.emittedEntry.ID
+		return append(entries, restartEntry)
 	default:
 		return append(entries, buildEntry(c.nodeName, msg, c.resolver))
 	}
@@ -267,7 +291,9 @@ func (c *eventCollapser) FlushExpired(now time.Time) []types.Entry {
 	entries := make([]types.Entry, 0, len(ids))
 	for _, id := range ids {
 		pending := c.pending[id]
-		entries = append(entries, buildCollapsedContainerEntry(c.nodeName, "stop", pending.rawEvents, c.resolver))
+		if pending.emittedEntry == nil {
+			entries = append(entries, buildCollapsedContainerEntry(c.nodeName, "stop", pending.rawEvents, c.resolver))
+		}
 		delete(c.pending, id)
 	}
 
@@ -325,14 +351,15 @@ func buildCollapsedContainerEntry(nodeName, event string, rawEvents []dockereven
 	timestamp := collapsedEntryTimestamp(event, rawEvents)
 
 	return types.Entry{
-		ID:        ulid.Make().String(),
-		Timestamp: timestamp,
-		NodeName:  nodeName,
-		Source:    "docker",
-		Service:   service,
-		Event:     event,
-		Content:   content,
-		Metadata:  string(metaBytes),
+		ID:             ulid.Make().String(),
+		Timestamp:      timestamp,
+		NodeName:       nodeName,
+		Source:         "docker",
+		Service:        service,
+		ComposeService: strings.TrimSpace(attrs["com.docker.compose.service"]),
+		Event:          event,
+		Content:        content,
+		Metadata:       string(metaBytes),
 	}
 }
 

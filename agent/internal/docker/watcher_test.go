@@ -23,18 +23,29 @@ func TestEventCollapser_CollapsesRestartSequence(t *testing.T) {
 	if entries := collapser.Handle(base, testDockerMessage(base, "container", "stop", "abc123", "traefik", "")); len(entries) != 0 {
 		t.Fatalf("expected stop to be buffered, got %d entries", len(entries))
 	}
-	if entries := collapser.Handle(base.Add(time.Second), testDockerMessage(base.Add(time.Second), "container", "die", "abc123", "traefik", "137")); len(entries) != 0 {
-		t.Fatalf("expected die to be buffered, got %d entries", len(entries))
+	stopEntries := collapser.Handle(base.Add(time.Second), testDockerMessage(base.Add(time.Second), "container", "die", "abc123", "traefik", "137"))
+	if len(stopEntries) != 1 {
+		t.Fatalf("expected die to emit 1 stop entry, got %d", len(stopEntries))
+	}
+	stopEntry := stopEntries[0]
+	if stopEntry.Event != "stop" {
+		t.Fatalf("expected stop event, got %q", stopEntry.Event)
 	}
 
-	entries := collapser.Handle(base.Add(2*time.Second), testDockerMessage(base.Add(2*time.Second), "container", "start", "abc123", "traefik", ""))
-	if len(entries) != 1 {
-		t.Fatalf("expected 1 restart entry, got %d", len(entries))
+	restartEntries := collapser.Handle(base.Add(2*time.Second), testDockerMessage(base.Add(2*time.Second), "container", "start", "abc123", "traefik", ""))
+	if len(restartEntries) != 1 {
+		t.Fatalf("expected 1 restart entry, got %d", len(restartEntries))
 	}
 
-	entry := entries[0]
+	entry := restartEntries[0]
 	if entry.Event != "restart" {
 		t.Fatalf("expected restart event, got %q", entry.Event)
+	}
+	if entry.ID != stopEntry.ID {
+		t.Fatalf("expected restart id %q, got %q", stopEntry.ID, entry.ID)
+	}
+	if entry.ReplaceID != stopEntry.ID {
+		t.Fatalf("expected replace id %q, got %q", stopEntry.ID, entry.ReplaceID)
 	}
 	if entry.Content != "Container restarted: traefik" {
 		t.Fatalf("unexpected content: %q", entry.Content)
@@ -60,20 +71,17 @@ func TestEventCollapser_CollapsesRestartSequence(t *testing.T) {
 	}
 }
 
-func TestEventCollapser_EmitsStopAfterDebounce(t *testing.T) {
+func TestEventCollapser_EmitsStopImmediatelyOnDie(t *testing.T) {
 	collapser := newEventCollapser("node-1", nil)
 	base := time.Date(2026, 4, 2, 12, 0, 0, 0, time.UTC)
 
 	if entries := collapser.Handle(base, testDockerMessage(base, "container", "stop", "abc123", "traefik", "")); len(entries) != 0 {
 		t.Fatalf("expected stop to be buffered, got %d entries", len(entries))
 	}
-	if entries := collapser.Handle(base.Add(time.Second), testDockerMessage(base.Add(time.Second), "container", "die", "abc123", "traefik", "137")); len(entries) != 0 {
-		t.Fatalf("expected die to be buffered, got %d entries", len(entries))
-	}
 
-	entries := collapser.FlushExpired(base.Add(4*time.Second + time.Millisecond))
+	entries := collapser.Handle(base.Add(time.Second), testDockerMessage(base.Add(time.Second), "container", "die", "abc123", "traefik", "137"))
 	if len(entries) != 1 {
-		t.Fatalf("expected 1 stop entry, got %d", len(entries))
+		t.Fatalf("expected die to emit 1 stop entry, got %d", len(entries))
 	}
 
 	entry := entries[0]
@@ -83,18 +91,148 @@ func TestEventCollapser_EmitsStopAfterDebounce(t *testing.T) {
 	if entry.Content != "Container stopped: traefik (exit code: 137)" {
 		t.Fatalf("unexpected content: %q", entry.Content)
 	}
-	if !entry.Timestamp.Equal(base) {
-		t.Fatalf("expected timestamp %v, got %v", base, entry.Timestamp)
+
+	if entries := collapser.FlushExpired(base.Add(16 * time.Second)); len(entries) != 0 {
+		t.Fatalf("expected no entries on flush after immediate die emit, got %d", len(entries))
+	}
+}
+
+func TestEventCollapser_EmitsRestartWithSameIDWhenStartFollowsDie(t *testing.T) {
+	collapser := newEventCollapser("node-1", nil)
+	base := time.Date(2026, 4, 2, 12, 0, 0, 0, time.UTC)
+
+	if entries := collapser.Handle(base, testDockerMessage(base, "container", "stop", "abc123", "traefik", "")); len(entries) != 0 {
+		t.Fatalf("expected stop to be buffered, got %d entries", len(entries))
 	}
 
-	var meta struct {
-		RawEvents []map[string]interface{} `json:"raw_events"`
+	stopEntries := collapser.Handle(base.Add(time.Second), testDockerMessage(base.Add(time.Second), "container", "die", "abc123", "traefik", "137"))
+	if len(stopEntries) != 1 {
+		t.Fatalf("expected die to emit 1 stop entry, got %d", len(stopEntries))
 	}
-	if err := json.Unmarshal([]byte(entry.Metadata), &meta); err != nil {
-		t.Fatalf("unmarshal metadata: %v", err)
+	stopEntry := stopEntries[0]
+	if stopEntry.Event != "stop" {
+		t.Fatalf("expected stop event, got %q", stopEntry.Event)
 	}
-	if len(meta.RawEvents) != 2 {
-		t.Fatalf("expected 2 raw events, got %d", len(meta.RawEvents))
+
+	restartEntries := collapser.Handle(base.Add(2*time.Second), testDockerMessage(base.Add(2*time.Second), "container", "start", "abc123", "traefik", ""))
+	if len(restartEntries) != 1 {
+		t.Fatalf("expected start to emit 1 restart entry, got %d", len(restartEntries))
+	}
+	restartEntry := restartEntries[0]
+	if restartEntry.Event != "restart" {
+		t.Fatalf("expected restart event, got %q", restartEntry.Event)
+	}
+	if restartEntry.ID != stopEntry.ID {
+		t.Fatalf("expected restart to reuse stop id %q, got %q", stopEntry.ID, restartEntry.ID)
+	}
+	if restartEntry.ReplaceID != stopEntry.ID {
+		t.Fatalf("expected replace id %q, got %q", stopEntry.ID, restartEntry.ReplaceID)
+	}
+}
+
+func TestEventCollapser_EmitsStartNormallyWhenNoPendingDie(t *testing.T) {
+	collapser := newEventCollapser("node-1", nil)
+	base := time.Date(2026, 4, 2, 12, 0, 0, 0, time.UTC)
+
+	entries := collapser.Handle(base, testDockerMessage(base, "container", "start", "abc123", "traefik", ""))
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 start entry, got %d", len(entries))
+	}
+
+	entry := entries[0]
+	if entry.Event != "start" {
+		t.Fatalf("expected start event, got %q", entry.Event)
+	}
+	if entry.ReplaceID != "" {
+		t.Fatalf("expected empty replace id, got %q", entry.ReplaceID)
+	}
+}
+
+func TestEventCollapser_ComposeServicePopulated(t *testing.T) {
+	collapser := newEventCollapser("node-1", nil)
+	base := time.Date(2026, 4, 2, 12, 0, 0, 0, time.UTC)
+
+	if entries := collapser.Handle(base, testDockerMessage(base, "container", "stop", "abc123", "my-app-web-1", "")); len(entries) != 0 {
+		t.Fatalf("expected stop to be buffered, got %d entries", len(entries))
+	}
+
+	entries := collapser.Handle(base.Add(time.Second), testDockerMessageWithAttrs(base.Add(time.Second), "container", "die", "abc123", "my-app-web-1", "137", map[string]string{
+		"com.docker.compose.project": "my-app",
+		"com.docker.compose.service": "web",
+	}))
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 emitted stop entry, got %d", len(entries))
+	}
+	if entries[0].ComposeService != "web" {
+		t.Fatalf("expected compose service web, got %q", entries[0].ComposeService)
+	}
+}
+
+func TestEventCollapser_EmitsStopForStopWithoutDieOnFlush(t *testing.T) {
+	collapser := newEventCollapser("node-1", nil)
+	base := time.Date(2026, 4, 2, 12, 0, 0, 0, time.UTC)
+
+	if entries := collapser.Handle(base, testDockerMessage(base, "container", "stop", "abc123", "traefik", "")); len(entries) != 0 {
+		t.Fatalf("expected stop to be buffered, got %d entries", len(entries))
+	}
+
+	entries := collapser.FlushExpired(base.Add(16 * time.Second))
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 stop entry on flush, got %d", len(entries))
+	}
+	if entries[0].Event != "stop" {
+		t.Fatalf("expected stop event, got %q", entries[0].Event)
+	}
+}
+
+func TestEventCollapser_StopWithoutDieCollapsingIntoRestartWhenStartArrivesInWindow(t *testing.T) {
+	collapser := newEventCollapser("node-1", nil)
+	base := time.Date(2026, 4, 2, 12, 0, 0, 0, time.UTC)
+
+	// stop arrives, no die
+	if entries := collapser.Handle(base, testDockerMessage(base, "container", "stop", "abc123", "traefik", "")); len(entries) != 0 {
+		t.Fatalf("expected stop to be buffered, got %d entries", len(entries))
+	}
+
+	// start arrives within window, no die ever sent — should emit stop then restart
+	entries := collapser.Handle(base.Add(5*time.Second), testDockerMessage(base.Add(5*time.Second), "container", "start", "abc123", "traefik", ""))
+	if len(entries) != 2 {
+		t.Fatalf("expected stop+restart entries, got %d", len(entries))
+	}
+	if entries[0].Event != "stop" {
+		t.Fatalf("expected first entry to be stop, got %q", entries[0].Event)
+	}
+	if entries[1].Event != "restart" {
+		t.Fatalf("expected second entry to be restart, got %q", entries[1].Event)
+	}
+	if entries[1].ID != entries[0].ID {
+		t.Fatalf("expected restart to reuse stop ID %q, got %q", entries[0].ID, entries[1].ID)
+	}
+	if entries[1].ReplaceID != entries[0].ID {
+		t.Fatalf("expected restart ReplaceID %q, got %q", entries[0].ID, entries[1].ReplaceID)
+	}
+
+	// flush should emit nothing — both entries already emitted and pending cleared
+	if flushed := collapser.FlushExpired(base.Add(20 * time.Second)); len(flushed) != 0 {
+		t.Fatalf("expected no entries on flush, got %d", len(flushed))
+	}
+}
+
+func TestEventCollapser_FlushDoesNotReEmitAfterDieEmittedStop(t *testing.T) {
+	collapser := newEventCollapser("node-1", nil)
+	base := time.Date(2026, 4, 2, 12, 0, 0, 0, time.UTC)
+
+	if entries := collapser.Handle(base, testDockerMessage(base, "container", "stop", "abc123", "traefik", "")); len(entries) != 0 {
+		t.Fatalf("expected stop to be buffered, got %d entries", len(entries))
+	}
+	entries := collapser.Handle(base.Add(time.Second), testDockerMessage(base.Add(time.Second), "container", "die", "abc123", "traefik", "137"))
+	if len(entries) != 1 {
+		t.Fatalf("expected die to emit 1 stop entry, got %d", len(entries))
+	}
+
+	entries = collapser.FlushExpired(base.Add(16 * time.Second))
+	if len(entries) != 0 {
+		t.Fatalf("expected no entries on flush after die already emitted stop, got %d", len(entries))
 	}
 }
 
@@ -348,18 +486,28 @@ func TestRunWatchLoop_PreservesBufferedEventsAcrossReconnect(t *testing.T) {
 		})
 	}()
 
-	entry := <-out
-	if entry.Event != "restart" {
-		t.Fatalf("expected restart event after reconnect, got %q", entry.Event)
+	stopEntry := <-out
+	restartEntry := <-out
+	if stopEntry.Event != "stop" {
+		t.Fatalf("expected stop event after reconnect, got %q", stopEntry.Event)
 	}
-	if entry.Service != "traefik" {
-		t.Fatalf("expected service traefik, got %q", entry.Service)
+	if restartEntry.Event != "restart" {
+		t.Fatalf("expected restart event after reconnect, got %q", restartEntry.Event)
+	}
+	if restartEntry.Service != "traefik" {
+		t.Fatalf("expected service traefik, got %q", restartEntry.Service)
+	}
+	if restartEntry.ID != stopEntry.ID {
+		t.Fatalf("expected restart id %q, got %q", stopEntry.ID, restartEntry.ID)
+	}
+	if restartEntry.ReplaceID != stopEntry.ID {
+		t.Fatalf("expected replace id %q, got %q", stopEntry.ID, restartEntry.ReplaceID)
 	}
 
 	var meta struct {
 		RawEvents []map[string]interface{} `json:"raw_events"`
 	}
-	if err := json.Unmarshal([]byte(entry.Metadata), &meta); err != nil {
+	if err := json.Unmarshal([]byte(restartEntry.Metadata), &meta); err != nil {
 		t.Fatalf("unmarshal metadata: %v", err)
 	}
 	if len(meta.RawEvents) != 2 {
@@ -410,8 +558,14 @@ func TestRunWatchLoop_EmitsExpiredStopBeforeLateStartWithoutTicker(t *testing.T)
 	if first.Event != "stop" {
 		t.Fatalf("expected expired stop entry first, got %q", first.Event)
 	}
-	if second.Event != "start" {
-		t.Fatalf("expected start entry second, got %q", second.Event)
+	if second.Event != "restart" {
+		t.Fatalf("expected restart entry second, got %q", second.Event)
+	}
+	if second.ID != first.ID {
+		t.Fatalf("expected restart id %q, got %q", first.ID, second.ID)
+	}
+	if second.ReplaceID != first.ID {
+		t.Fatalf("expected replace id %q, got %q", first.ID, second.ReplaceID)
 	}
 
 	if err := <-done; err == nil || err.Error() != "docker event message channel closed" {
