@@ -47,6 +47,11 @@ interface OIDCProviderFormState {
 type Tab = 'invites' | 'users' | 'oidc' | 'settings' | 'systemd'
 type OIDCPolicy = 'open' | 'existing_only' | 'invite_required'
 
+const UNIT_SUFFIXES = ['.service','.socket','.device','.mount','.automount',
+  '.swap','.target','.path','.timer','.slice','.scope']
+const normalizeUnit = (name: string) =>
+  UNIT_SUFFIXES.some(s => name.endsWith(s)) ? name : name + '.service'
+
 const OIDC_POLICY_OPTIONS: Array<{ value: OIDCPolicy; description: string }> = [
   { value: 'open', description: 'Any OIDC user can sign in (new accounts created automatically)' },
   { value: 'existing_only', description: 'Only users with existing accounts can sign in via OIDC' },
@@ -107,8 +112,10 @@ export default function AdminPage() {
 
   const handleAddUnit = useCallback((nodeName: string) => {
     const units = systemdSettings[nodeName] ?? []
-    const val = (systemdInputs[nodeName] ?? '').trim()
-    if (!val || units.includes(val)) return
+    const raw = (systemdInputs[nodeName] ?? '').trim()
+    if (!raw) return
+    const val = normalizeUnit(raw)
+    if (units.map(normalizeUnit).includes(val)) return
 
     setSystemdSettings(prev => ({ ...prev, [nodeName]: [...units, val] }))
     setSystemdInputs(prev => ({ ...prev, [nodeName]: '' }))

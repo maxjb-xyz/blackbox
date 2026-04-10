@@ -54,11 +54,21 @@ func UpdateSystemdSettings(db *gorm.DB) http.HandlerFunc {
 			req.Units = []string{}
 		}
 
+		seen := make(map[string]struct{}, len(req.Units))
 		clean := make([]string, 0, len(req.Units))
 		for _, u := range req.Units {
-			if t := strings.TrimSpace(u); t != "" {
-				clean = append(clean, t)
+			t := strings.TrimSpace(u)
+			if t == "" {
+				continue
 			}
+			if !hasUnitTypeSuffix(t) {
+				t = t + ".service"
+			}
+			if _, dup := seen[t]; dup {
+				continue
+			}
+			seen[t] = struct{}{}
+			clean = append(clean, t)
 		}
 
 		unitsJSON, err := json.Marshal(clean)
@@ -81,4 +91,18 @@ func UpdateSystemdSettings(db *gorm.DB) http.HandlerFunc {
 
 		w.WriteHeader(http.StatusNoContent)
 	}
+}
+
+var unitTypeSuffixes = []string{
+	".service", ".socket", ".device", ".mount", ".automount",
+	".swap", ".target", ".path", ".timer", ".slice", ".scope",
+}
+
+func hasUnitTypeSuffix(name string) bool {
+	for _, s := range unitTypeSuffixes {
+		if strings.HasSuffix(name, s) {
+			return true
+		}
+	}
+	return false
 }
