@@ -9,11 +9,11 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Go-1.26-00798A?style=plastic&logo=go&logoColor=white" />
-  <img src="https://img.shields.io/badge/React-19-149ECA?style=plastic&logo=react&logoColor=white" />
-  <img src="https://img.shields.io/badge/SQLite-portable-002040?style=plastic&logo=sqlite&logoColor=white" />
-  <img src="https://img.shields.io/badge/Docker-ready-0B5EA8?style=plastic&logo=docker&logoColor=white" />
-  <img src="https://img.shields.io/badge/license-AGPL_v3-A00000?style=plastic" />
+  <img src="https://img.shields.io/badge/Go-1.26-00798A?style=social&logo=go&logoColor=white" />
+  <img src="https://img.shields.io/badge/React-19-149ECA?style=social&logo=react&logoColor=white" />
+  <img src="https://img.shields.io/badge/SQLite-portable-002040?style=social&logo=sqlite&logoColor=white" />
+  <img src="https://img.shields.io/badge/Docker-ready-0B5EA8?style=social&logo=docker&logoColor=white" />
+  <img src="https://img.shields.io/badge/license-AGPL_v3-A00000?style=social" />
 </p>
 
 ---
