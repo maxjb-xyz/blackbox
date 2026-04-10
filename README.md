@@ -36,7 +36,7 @@ When your homelab breaks, Blackbox tells you what happened. You don't need to li
 
 ---
 
-> [!IMPORTANT]
+> [!CAUTION]
 > This is beta software. I am working towards 1.0, but in the meantime, it is being actively developed. Expect changes. Possible breaking ones. During beta development, I would much appreciate if you report issues when you find them and suggest features.
 
 ---
