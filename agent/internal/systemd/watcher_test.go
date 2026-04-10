@@ -189,8 +189,6 @@ func TestRebuildJournalMatches(t *testing.T) {
 
 	want := []string{
 		"flush",
-		"match:_SYSTEMD_UNIT=nginx.service",
-		"or",
 		"match:UNIT=nginx.service",
 		"and",
 		"match:_PID=1",

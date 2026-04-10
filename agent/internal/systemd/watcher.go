@@ -101,16 +101,15 @@ type journalMatcher interface {
 func rebuildJournalMatches(j journalMatcher, units []string) error {
 	j.FlushMatches()
 
-	groups := make([][]string, 0, len(units)*3+1)
+	groups := make([][]string, 0, len(units)*2+1)
 	for _, unit := range units {
 		unit = strings.TrimSpace(unit)
 		if unit == "" {
 			continue
 		}
-		// journalctl -u expands to more than _SYSTEMD_UNIT=. Manager-originated
-		// lifecycle messages are attached via UNIT=/OBJECT_SYSTEMD_UNIT=.
+		// Only match manager-originated lifecycle messages. _SYSTEMD_UNIT= is
+		// too broad – it includes every log line emitted by the service itself.
 		groups = append(groups,
-			[]string{"_SYSTEMD_UNIT=" + unit},
 			[]string{"UNIT=" + unit, "_PID=1"},
 			[]string{"OBJECT_SYSTEMD_UNIT=" + unit, "_UID=0"},
 		)

@@ -60,7 +60,7 @@ func UpdateSystemdSettings(db *gorm.DB) http.HandlerFunc {
 			if t == "" {
 				continue
 			}
-			if !strings.Contains(t, ".") {
+			if !hasUnitTypeSuffix(t) {
 				t = t + ".service"
 			}
 			clean = append(clean, t)
@@ -86,4 +86,18 @@ func UpdateSystemdSettings(db *gorm.DB) http.HandlerFunc {
 
 		w.WriteHeader(http.StatusNoContent)
 	}
+}
+
+var unitTypeSuffixes = []string{
+	".service", ".socket", ".device", ".mount", ".automount",
+	".swap", ".target", ".path", ".timer", ".slice", ".scope",
+}
+
+func hasUnitTypeSuffix(name string) bool {
+	for _, s := range unitTypeSuffixes {
+		if strings.HasSuffix(name, s) {
+			return true
+		}
+	}
+	return false
 }
