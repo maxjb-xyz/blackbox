@@ -18,6 +18,10 @@
 
 ---
 
+<img width="1502" height="810" alt="image" src="https://github.com/user-attachments/assets/a00c9afb-b10d-4bb5-b66b-13d12d846656" />
+
+---
+
 ## What is Blackbox?
 
 Blackbox is a lightweight, self-hosted event correlation platform built for homelabbers who want to understand their infrastructure at a glance. It collects events from Docker, config file changes, selected systemd units, uptime monitors, and container update tools, correlates them into a single chronological timeline, and groups likely outages into incidents with scored cause candidates and optional local-AI analysis or AI-enhanced correlation.
@@ -29,6 +33,10 @@ When your homelab breaks, Blackbox tells you what happened. You don't need to li
 - **The Forensic Timeline** — Every event (Docker, file change, systemd, webhook) is timestamped and correlated. Nothing is lost.
 - **The "Discipline" Fix** — Automation handles the *what*. Your notes handle the *why*. No manual logging of events that can be detected automatically.
 - **The 2 AM Rule** — High-density, low eye strain (dark mode), zero-friction navigation. Built for stressful troubleshooting.
+
+---
+
+> [!IMPORTANT] This is beta software. I am working towards 1.0, but in the meantime, it is being actively developed. Expect changes. Possible breaking ones. During beta development, I would much appreciate if you report issues when you find them and suggest features.
 
 ---
 
@@ -633,12 +641,11 @@ The database is automatically migrated on startup — no manual schema managemen
 - [x] Uptime Kuma + Watchtower webhook ingestion
 - [x] React timeline UI (Zerobyte dark theme)
 - [x] Node management + pulse indicator
-- [x] Manual entry creation + notes
-- [x] Service aliases
+- [x] Manual note creation with attribution
 - [x] Incident lifecycle engine
 - [x] Improved correlation engine (automatic causation for downtime events)
 - [x] Optional local AI analysis via Ollama
-- [x] Incidents UI + sidebar badge
+- [x] Incidents UI + header badge
 - [x] Optional AI-enhanced correlation engine
 - [x] Support tracking systemd services
 - [ ] Timeline UI polish and interaction improvements
@@ -651,6 +658,14 @@ The database is automatically migrated on startup — no manual schema managemen
 ## License
 
 [AGPL-3.0](LICENSE)
+
+---
+
+## AI Usage
+
+A disclaimer - generative AI is used in the development of this repository. The agenda, features, roadmap, etc. are all set by me (a human), but a large portion of the code in this project is created by generative AI. I scan this code for issues and vulnerabilities the best I know how, but I'm not an experienced programmer. 
+
+If that makes you uncomfortable, please feel free to poke around the codebase and submit issues for anything out of place. I welcome feedback and suggestions from those more experienced than me. Please send me a private message if you find a security vulnerability that may affect other users, so I can fix it before informing everyone.
 
 ---
 
