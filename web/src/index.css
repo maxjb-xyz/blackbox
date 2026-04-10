@@ -194,6 +194,11 @@ body {
   border-left-color: var(--accent);
 }
 
+.auth-input:focus-visible {
+  border-left-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
 .auth-input[readonly] {
   color: var(--muted);
 }

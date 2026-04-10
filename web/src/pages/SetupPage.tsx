@@ -73,7 +73,7 @@ export default function SetupPage({ onBootstrapped }: SetupPageProps) {
             <div className="auth-health-title">SYSTEM DIAGNOSTICS</div>
             {healthLoading ? (
               <div className="auth-health-row auth-health-loading">
-                <Loader size={11} />
+                <Loader size={14} />
                 <span>Checking…</span>
               </div>
             ) : (
@@ -134,14 +134,14 @@ export default function SetupPage({ onBootstrapped }: SetupPageProps) {
 
             {!dbOK && !healthLoading && (
               <div role="alert" aria-live="assertive" className="auth-error">
-                <AlertCircle size={13} className="auth-error-icon" />
+                <AlertCircle size={14} className="auth-error-icon" />
                 <span>Database unavailable — cannot create account</span>
               </div>
             )}
 
             {error && (
               <div role="alert" aria-live="assertive" className="auth-error">
-                <AlertCircle size={13} className="auth-error-icon" />
+                <AlertCircle size={14} className="auth-error-icon" />
                 <span>{error}</span>
               </div>
             )}
@@ -168,7 +168,7 @@ function HealthRow({ label, status, message }: { label: string; status: 'ok' | '
 
   return (
     <div className="auth-health-row">
-      <Icon size={11} style={{ color, flexShrink: 0 }} />
+      <Icon size={14} style={{ color, flexShrink: 0 }} />
       <span className="auth-health-label">{label}</span>
       <span className="auth-health-status" style={{ color }}>
         {status.toUpperCase()}
