@@ -21,7 +21,8 @@ import { eventBorderColor, eventTextColor } from '../utils/eventColors'
 function isEntry(value: unknown): value is Entry {
   if (typeof value !== 'object' || value === null) return false
   const e = value as Record<string, unknown>
-  return typeof e.id === 'string' && typeof e.timestamp === 'string' && typeof e.source === 'string'
+  const requiredKeys: (keyof Entry)[] = ['id', 'timestamp', 'node_name', 'source', 'service', 'event', 'content', 'metadata']
+  return requiredKeys.every(key => typeof e[key] === 'string')
 }
 
 function extractComposeService(entry: Entry): string | null {
