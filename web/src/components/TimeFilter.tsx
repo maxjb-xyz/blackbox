@@ -11,6 +11,10 @@ function formatEndForInput(date: Date | null): string {
   return date ? formatForInput(date) : 'LIVE'
 }
 
+function isLiveInput(v: string): boolean {
+  return v.trim().toUpperCase() === 'LIVE'
+}
+
 function parseInput(value: string): Date | null {
   const d = new Date(value.replace(' ', 'T'))
   return Number.isNaN(d.getTime()) ? null : d
@@ -80,7 +84,7 @@ export default function TimeFilter({ onChange, initialRange: providedInitialRang
 
   function handleEndChange(value: string) {
     setEndInput(value)
-    if (value.trim().toUpperCase() === 'LIVE') {
+    if (isLiveInput(value)) {
       emittedEndRef.current = null
       setActivePreset(null)
       onChangeRef.current({ start: emittedStartRef.current, end: null })
@@ -95,7 +99,7 @@ export default function TimeFilter({ onChange, initialRange: providedInitialRang
 
   function commitRange() {
     const start = truncateToMinute(parseInput(startInput))
-    const isLive = endInput.trim().toUpperCase() === 'LIVE'
+    const isLive = isLiveInput(endInput)
     const end = isLive ? null : truncateToMinute(parseInput(endInput))
     if (!start || (!isLive && !end)) {
       setStartInput(emittedStartRef.current ? formatForInput(emittedStartRef.current) : '')
