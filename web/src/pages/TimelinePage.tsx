@@ -967,6 +967,11 @@ function TimelineFeed({
 
   useEffect(() => {
     if (!focusEntry) return
+    if (ghostEntryRef.current) {
+      renderedIdsRef.current.delete(ghostEntryRef.current.id)
+      ghostEntryRef.current = null
+    }
+    renderedIdsRef.current.delete(focusEntry.id)
     expandedIdRef.current = focusEntry.id
     setExpandedId(focusEntry.id)
     setGhostEntry(null)
@@ -1086,8 +1091,11 @@ function TimelineFeed({
   }, [])
 
   const displayEntries = (() => {
-    const result = pinnedEntry
-      ? [pinnedEntry, ...entries.filter(entry => entry.id !== pinnedEntry.id)]
+    const latestPinnedEntry = pinnedEntry
+      ? entries.find(entry => entry.id === pinnedEntry.id) ?? pinnedEntry
+      : null
+    const result = latestPinnedEntry
+      ? [latestPinnedEntry, ...entries.filter(entry => entry.id !== latestPinnedEntry.id)]
       : [...entries]
     if (expandedId && ghostEntry) {
       const expandedIndex = result.findIndex(entry => entry.id === expandedId)
