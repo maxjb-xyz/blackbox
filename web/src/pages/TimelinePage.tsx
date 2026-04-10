@@ -16,6 +16,7 @@ import type { TimeRange } from '../components/TimeFilter'
 import { DEFAULT_TIME_PRESET, getPresetRange } from '../components/timeFilterPresets'
 import { useWebSocketContext } from '../components/WebSocketProvider'
 import { formatLocalTimestamp } from '../utils/time'
+import { eventBorderColor, eventTextColor } from '../utils/eventColors'
 
 function extractComposeService(entry: Entry): string | null {
   if (entry.source !== 'docker') return null
@@ -48,21 +49,6 @@ const FILTER_CONTROL_STYLE = {
 
 const ROW_GRID_TEMPLATE = '20px 130px 110px 80px 140px 90px minmax(0, 1fr)'
 
-function eventBorderColor(event: string): string {
-  if (event === 'stop' || event === 'die' || event === 'down' || event === 'shutdown') return 'var(--danger)'
-  if (event === 'start' || event === 'up') return 'var(--success)'
-  if (event === 'pull') return 'var(--info)'
-  if (event === 'restart' || event === 'update') return 'var(--warning)'
-  return 'var(--border)'
-}
-
-function eventTextColor(event: string): string {
-  if (event === 'stop' || event === 'die' || event === 'down' || event === 'shutdown') return 'var(--danger)'
-  if (event === 'start' || event === 'up') return 'var(--success)'
-  if (event === 'pull') return 'var(--info)'
-  if (event === 'restart' || event === 'update') return 'var(--warning)'
-  return 'var(--text)'
-}
 
 function formatTimestamp(ts?: string | null) {
   if (!ts) return ''

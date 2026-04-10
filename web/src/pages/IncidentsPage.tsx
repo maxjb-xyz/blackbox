@@ -17,30 +17,14 @@ import { useWebSocketContext } from '../components/WebSocketProvider'
 import PageHeader from '../components/PageHeader'
 import StatRow from '../components/StatRow'
 import { formatLocalTimestamp } from '../utils/time'
-
-function eventBorderColor(event: string): string {
-  const e = event.toLowerCase()
-  if (e === 'stop' || e === 'die' || e === 'down') return 'var(--danger)'
-  if (e === 'start' || e === 'up') return 'var(--success)'
-  if (e === 'pull') return 'var(--info, #3b82f6)'
-  if (e === 'restart' || e === 'update') return 'var(--warning)'
-  return 'var(--border)'
-}
-
-function eventTextColor(event: string): string {
-  const e = event.toLowerCase()
-  if (e === 'stop' || e === 'die' || e === 'down') return 'var(--danger)'
-  if (e === 'start' || e === 'up') return 'var(--success)'
-  if (e === 'pull') return 'var(--info, #3b82f6)'
-  if (e === 'restart' || e === 'update') return 'var(--warning)'
-  return 'var(--text)'
-}
+import { eventBorderColor, eventTextColor } from '../utils/eventColors'
 
 function EventCardOverlay({ entry, onClose }: { entry: Entry; onClose: () => void }) {
   const navigate = useNavigate()
 
   function viewOnTimeline() {
     const ts = new Date(entry.timestamp).getTime()
+    if (!Number.isFinite(ts)) return
     const from = new Date(ts - 30 * 60 * 1000).toISOString()
     const to = new Date(ts + 30 * 60 * 1000).toISOString()
     navigate(`/timeline?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)
@@ -420,6 +404,7 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
                   {deterministicEntries.map(({ link, entry }) => (
                     <div
                       key={link.entry_id}
+                      className="event-chain-row"
                       role="button"
                       tabIndex={0}
                       onClick={() => setSelectedEntry(entry)}
@@ -431,8 +416,6 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
                         padding: '3px 4px',
                         alignItems: 'start',
                         cursor: 'pointer',
-                        borderRadius: 0,
-                        outline: 'none',
                       }}
                       onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.04)' }}
                       onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
@@ -485,6 +468,7 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
                     {aiCauseEntries.map(({ link, entry }) => (
                       <div
                         key={link.entry_id}
+                        className="event-chain-row"
                         role="button"
                         tabIndex={0}
                         onClick={() => setSelectedEntry(entry)}
@@ -493,7 +477,6 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
                           borderLeft: '2px solid #a855f7',
                           padding: '2px 4px 2px 10px',
                           cursor: 'pointer',
-                          outline: 'none',
                         }}
                         onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(168,85,247,0.06)' }}
                         onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
