@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"blackbox/server/internal/handlers"
-	"blackbox/server/internal/models"
 	"blackbox/shared/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -43,12 +42,8 @@ func TestWebhookWatchtower_SavesEntry(t *testing.T) {
 	require.Equal(t, []interface{}{"my-app"}, meta["watchtower.services"])
 }
 
-func TestWebhookWatchtower_NormalizesServiceAlias(t *testing.T) {
+func TestWebhookWatchtower_NormalizesServiceNames(t *testing.T) {
 	database := newTestDB(t)
-	require.NoError(t, database.Create(&models.ServiceAlias{
-		Canonical: "sonarr",
-		Alias:     "my-app",
-	}).Error)
 
 	body := `{"Title":"Watchtower Updates","Message":"Updated containers","Level":"info"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/webhooks/watchtower", bytes.NewBufferString(body))
@@ -63,7 +58,7 @@ func TestWebhookWatchtower_NormalizesServiceAlias(t *testing.T) {
 	require.NoError(t, database.First(&entry).Error)
 	assert.Equal(t, "watchtower", entry.Service)
 
-	body = `{"Title":"Watchtower Updates","Message":"Updated containers: my-app","Level":"info"}`
+	body = `{"Title":"Watchtower Updates","Message":"Updated containers: My-App, Other-App, my-app","Level":"info"}`
 	req = httptest.NewRequest(http.MethodPost, "/api/webhooks/watchtower", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	w = httptest.NewRecorder()
@@ -76,15 +71,15 @@ func TestWebhookWatchtower_NormalizesServiceAlias(t *testing.T) {
 	require.NoError(t, database.Where("source = ? AND event = ?", "webhook", "update").Find(&entries).Error)
 	require.Len(t, entries, 2)
 	for _, candidate := range entries {
-		if candidate.Content == "Updated containers: my-app" {
+		if candidate.Content == "Updated containers: My-App, Other-App, my-app" {
 			entry = candidate
 			break
 		}
 	}
-	require.Equal(t, "Updated containers: my-app", entry.Content)
+	require.Equal(t, "Updated containers: My-App, Other-App, my-app", entry.Content)
 	var meta map[string]interface{}
 	require.NoError(t, json.Unmarshal([]byte(entry.Metadata), &meta))
-	require.Equal(t, []interface{}{"sonarr"}, meta["watchtower.services"])
+	require.Equal(t, []interface{}{"my-app", "other-app"}, meta["watchtower.services"])
 }
 
 func TestWebhookWatchtower_RejectsMalformedJSON(t *testing.T) {

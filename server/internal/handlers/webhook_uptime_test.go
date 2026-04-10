@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"blackbox/server/internal/handlers"
-	"blackbox/server/internal/models"
 	"blackbox/shared/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -161,10 +160,6 @@ func TestWebhookUptime_UpEvent(t *testing.T) {
 
 func TestWebhookUptime_UpEvent_AddsOutageDurationAndNormalizesService(t *testing.T) {
 	database := newTestDB(t)
-	require.NoError(t, database.Create(&models.ServiceAlias{
-		Canonical: "traefik",
-		Alias:     "traefik-proxy",
-	}).Error)
 
 	downAt := time.Date(2026, 4, 2, 2, 0, 0, 0, time.UTC)
 	require.NoError(t, database.Create(&types.Entry{
@@ -172,7 +167,7 @@ func TestWebhookUptime_UpEvent_AddsOutageDurationAndNormalizesService(t *testing
 		Timestamp: downAt,
 		NodeName:  "webhook",
 		Source:    "webhook",
-		Service:   "traefik",
+		Service:   "traefik-proxy",
 		Event:     "down",
 		Content:   "Monitor 'traefik-proxy' is down: timeout",
 		Metadata:  `{"monitor":"traefik-proxy","status":"down"}`,
@@ -192,7 +187,7 @@ func TestWebhookUptime_UpEvent_AddsOutageDurationAndNormalizesService(t *testing
 
 	var entry types.Entry
 	require.NoError(t, database.Where("event = ?", "up").First(&entry).Error)
-	assert.Equal(t, "traefik", entry.Service)
+	assert.Equal(t, "traefik-proxy", entry.Service)
 
 	var meta map[string]interface{}
 	require.NoError(t, json.Unmarshal([]byte(entry.Metadata), &meta))
@@ -200,12 +195,8 @@ func TestWebhookUptime_UpEvent_AddsOutageDurationAndNormalizesService(t *testing
 	assert.Equal(t, "2026-04-02T02:00:00Z", meta["down_since"])
 }
 
-func TestWebhookUptime_UpEvent_UsesRawAliasHistoryDuringRollout(t *testing.T) {
+func TestWebhookUptime_UpEvent_UsesRawServiceHistoryDuringRollout(t *testing.T) {
 	database := newTestDB(t)
-	require.NoError(t, database.Create(&models.ServiceAlias{
-		Canonical: "traefik",
-		Alias:     "traefik-proxy",
-	}).Error)
 
 	downAt := time.Date(2026, 4, 2, 2, 0, 0, 0, time.UTC)
 	require.NoError(t, database.Create(&types.Entry{
@@ -213,7 +204,7 @@ func TestWebhookUptime_UpEvent_UsesRawAliasHistoryDuringRollout(t *testing.T) {
 		Timestamp: downAt,
 		NodeName:  "webhook",
 		Source:    "webhook",
-		Service:   "traefik-proxy",
+		Service:   "Traefik-Proxy",
 		Event:     "down",
 		Content:   "Monitor 'traefik-proxy' is down: timeout",
 		Metadata:  `{"monitor":"traefik-proxy","status":"down"}`,
@@ -221,7 +212,7 @@ func TestWebhookUptime_UpEvent_UsesRawAliasHistoryDuringRollout(t *testing.T) {
 
 	body := `{
 		"heartbeat": {"status": 1, "time": "2026-04-02T02:05:30Z", "msg": "OK"},
-		"monitor":   {"name": "traefik-proxy"}
+		"monitor":   {"name": "Traefik-Proxy"}
 	}`
 	req := httptest.NewRequest(http.MethodPost, "/api/webhooks/uptime", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -233,7 +224,7 @@ func TestWebhookUptime_UpEvent_UsesRawAliasHistoryDuringRollout(t *testing.T) {
 
 	var entry types.Entry
 	require.NoError(t, database.Where("event = ?", "up").First(&entry).Error)
-	assert.Equal(t, "traefik", entry.Service)
+	assert.Equal(t, "traefik-proxy", entry.Service)
 
 	var meta map[string]interface{}
 	require.NoError(t, json.Unmarshal([]byte(entry.Metadata), &meta))

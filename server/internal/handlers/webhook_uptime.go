@@ -11,7 +11,6 @@ import (
 
 	"blackbox/server/internal/correlation"
 	"blackbox/server/internal/hub"
-	"blackbox/server/internal/services"
 	"blackbox/shared/types"
 	"github.com/oklog/ulid/v2"
 	"gorm.io/gorm"
@@ -40,11 +39,7 @@ func WebhookUptime(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry,
 		}
 
 		rawServiceName := strings.TrimSpace(payload.Monitor.Name)
-		serviceName, err := services.NormalizeService(database, rawServiceName)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to normalize service")
-			return
-		}
+		serviceName := strings.ToLower(strings.TrimSpace(rawServiceName))
 		if serviceName == "" {
 			writeError(w, http.StatusBadRequest, "service name is required")
 			return
