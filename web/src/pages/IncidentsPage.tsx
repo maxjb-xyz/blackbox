@@ -1,8 +1,11 @@
 ﻿import { useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { AnimatePresence, motion } from 'framer-motion'
+import { ChevronDown, ChevronRight, ExternalLink, X } from 'lucide-react'
 import {
   fetchIncident,
   fetchIncidents,
+  type Entry,
   type Incident,
   type IncidentDetail,
   parseIncidentMetadata,
@@ -14,6 +17,137 @@ import { useWebSocketContext } from '../components/WebSocketProvider'
 import PageHeader from '../components/PageHeader'
 import StatRow from '../components/StatRow'
 import { formatLocalTimestamp } from '../utils/time'
+
+function eventBorderColor(event: string): string {
+  const e = event.toLowerCase()
+  if (e === 'stop' || e === 'die' || e === 'down') return 'var(--danger)'
+  if (e === 'start' || e === 'up') return 'var(--success)'
+  if (e === 'pull') return 'var(--info, #3b82f6)'
+  if (e === 'restart' || e === 'update') return 'var(--warning)'
+  return 'var(--border)'
+}
+
+function eventTextColor(event: string): string {
+  const e = event.toLowerCase()
+  if (e === 'stop' || e === 'die' || e === 'down') return 'var(--danger)'
+  if (e === 'start' || e === 'up') return 'var(--success)'
+  if (e === 'pull') return 'var(--info, #3b82f6)'
+  if (e === 'restart' || e === 'update') return 'var(--warning)'
+  return 'var(--text)'
+}
+
+function EventCardOverlay({ entry, onClose }: { entry: Entry; onClose: () => void }) {
+  const navigate = useNavigate()
+
+  function viewOnTimeline() {
+    const ts = new Date(entry.timestamp).getTime()
+    const from = new Date(ts - 30 * 60 * 1000).toISOString()
+    const to = new Date(ts + 30 * 60 * 1000).toISOString()
+    navigate(`/timeline?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.18 }}
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 200,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backdropFilter: 'blur(4px)',
+        background: 'rgba(0,0,0,0.55)',
+        padding: 24,
+      }}
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 12, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 8, scale: 0.97 }}
+        transition={{ duration: 0.2, ease: 'easeOut' }}
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: '#0F0F0F',
+          border: '1px solid #1E1E1E',
+          borderLeft: `3px solid ${eventBorderColor(entry.event)}`,
+          maxWidth: 600,
+          width: '100%',
+          fontFamily: 'inherit',
+          fontSize: 12,
+        }}
+      >
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px 10px', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 14, fontWeight: 600, letterSpacing: '0.04em', color: eventTextColor(entry.event) }}>
+            {entry.event}
+          </span>
+          {entry.service && (
+            <span style={{ fontSize: 13, color: '#D0D0D0' }}>{entry.service}</span>
+          )}
+          <span style={{ marginLeft: 'auto', fontSize: 12, color: '#AAB4BD', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>
+            {formatLocalTimestamp(new Date(entry.timestamp))}
+          </span>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: 2, display: 'flex' }}
+            aria-label="Close"
+          >
+            <X size={14} />
+          </button>
+        </div>
+
+        {/* Meta */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '0 16px 14px', flexWrap: 'wrap', borderBottom: '1px solid #181818' }}>
+          {entry.node_name && (
+            <span style={{ fontSize: 11 }}>
+              <span style={{ color: '#8B949E', letterSpacing: '0.1em', fontSize: 10 }}>NODE </span>
+              <span style={{ color: '#C3CDD6' }}>{entry.node_name}</span>
+            </span>
+          )}
+          <span style={{ fontSize: 11 }}>
+            <span style={{ color: '#8B949E', letterSpacing: '0.1em', fontSize: 10 }}>SOURCE </span>
+            <span style={{ color: '#C3CDD6' }}>{entry.source}</span>
+          </span>
+          {entry.content && (
+            <span style={{ fontSize: 12, color: '#888', fontStyle: 'italic', marginLeft: 'auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '50%' }}>
+              {entry.content}
+            </span>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: '10px 16px', display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            type="button"
+            onClick={viewOnTimeline}
+            style={{
+              background: 'none',
+              border: '1px solid var(--accent)',
+              color: 'var(--accent)',
+              padding: '6px 12px',
+              fontFamily: 'inherit',
+              fontSize: 11,
+              letterSpacing: '0.08em',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+            }}
+          >
+            VIEW ON TIMELINE
+            <ExternalLink size={12} />
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  )
+}
 
 function incidentBorderColor(inc: Incident): string {
   if (inc.status === 'resolved') return 'var(--success)'
@@ -135,6 +269,7 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
   const [expanded, setExpanded] = useState(defaultOpen)
   const [detail, setDetail] = useState<IncidentDetail | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
+  const [selectedEntry, setSelectedEntry] = useState<Entry | null>(null)
 
   useEffect(() => {
     if (!detail) return
@@ -249,6 +384,12 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
         {incident.title}
       </div>
 
+      <AnimatePresence>
+        {selectedEntry && (
+          <EventCardOverlay entry={selectedEntry} onClose={() => setSelectedEntry(null)} />
+        )}
+      </AnimatePresence>
+
       {expanded && (
         <div style={{ padding: '0 12px 12px 36px', fontSize: 11 }}>
           {loadingDetail && (
@@ -279,13 +420,22 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
                   {deterministicEntries.map(({ link, entry }) => (
                     <div
                       key={link.entry_id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setSelectedEntry(entry)}
+                      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedEntry(entry) } }}
                       style={{
                         display: 'grid',
                         gridTemplateColumns: '70px 130px 80px 80px 140px 1fr',
                         gap: 8,
-                        padding: '2px 0',
+                        padding: '3px 4px',
                         alignItems: 'start',
+                        cursor: 'pointer',
+                        borderRadius: 0,
+                        outline: 'none',
                       }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.04)' }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
                     >
                       <span style={{ color: roleColor(link.role) }}>
                         {link.role.toUpperCase()}
@@ -335,10 +485,18 @@ function IncidentCard({ incident, defaultOpen = false }: IncidentCardProps) {
                     {aiCauseEntries.map(({ link, entry }) => (
                       <div
                         key={link.entry_id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setSelectedEntry(entry)}
+                        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedEntry(entry) } }}
                         style={{
                           borderLeft: '2px solid #a855f7',
-                          padding: '2px 0 2px 10px',
+                          padding: '2px 4px 2px 10px',
+                          cursor: 'pointer',
+                          outline: 'none',
                         }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(168,85,247,0.06)' }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
                       >
                         <div style={{ color: 'var(--text)', marginBottom: 4 }}>
                           {entry.service || 'unknown service'}

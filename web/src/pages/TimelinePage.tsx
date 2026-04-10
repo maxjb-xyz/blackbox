@@ -569,7 +569,18 @@ export default function TimelinePage() {
   const [viewMode, setViewMode] = useState<ViewMode>(getStoredViewMode)
   const [hideHeartbeat, setHideHeartbeat] = useState<boolean>(getStoredHideHeartbeat)
   const [serviceOptions, setServiceOptions] = useState<string[]>([])
-  const [timeRange, setTimeRange] = useState<TimeRange>(() => getPresetRange(DEFAULT_TIME_PRESET))
+  const [timeRange, setTimeRange] = useState<TimeRange>(() => {
+    const fromParam = searchParams.get('from')
+    const toParam = searchParams.get('to')
+    if (fromParam || toParam) {
+      const start = fromParam ? new Date(fromParam) : null
+      const end = toParam ? new Date(toParam) : null
+      const validStart = start && !Number.isNaN(start.getTime()) ? start : null
+      const validEnd = end && !Number.isNaN(end.getTime()) ? end : null
+      if (validStart || validEnd) return { start: validStart, end: validEnd }
+    }
+    return getPresetRange(DEFAULT_TIME_PRESET)
+  })
   const [visibleCount, setVisibleCount] = useState(0)
 
   const serviceMountedRef = useRef(true)
