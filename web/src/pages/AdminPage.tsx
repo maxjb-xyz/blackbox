@@ -107,8 +107,10 @@ export default function AdminPage() {
 
   const handleAddUnit = useCallback((nodeName: string) => {
     const units = systemdSettings[nodeName] ?? []
-    const val = (systemdInputs[nodeName] ?? '').trim()
-    if (!val || units.includes(val)) return
+    let val = (systemdInputs[nodeName] ?? '').trim()
+    if (!val) return
+    if (!val.includes('.')) val = val + '.service'
+    if (units.includes(val)) return
 
     setSystemdSettings(prev => ({ ...prev, [nodeName]: [...units, val] }))
     setSystemdInputs(prev => ({ ...prev, [nodeName]: '' }))

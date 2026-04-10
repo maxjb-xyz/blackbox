@@ -56,9 +56,14 @@ func UpdateSystemdSettings(db *gorm.DB) http.HandlerFunc {
 
 		clean := make([]string, 0, len(req.Units))
 		for _, u := range req.Units {
-			if t := strings.TrimSpace(u); t != "" {
-				clean = append(clean, t)
+			t := strings.TrimSpace(u)
+			if t == "" {
+				continue
 			}
+			if !strings.Contains(t, ".") {
+				t = t + ".service"
+			}
+			clean = append(clean, t)
 		}
 
 		unitsJSON, err := json.Marshal(clean)
