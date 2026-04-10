@@ -1078,11 +1078,12 @@ function TimelineFeed({
     function onKeyDown(e: KeyboardEvent) {
       if (e.key !== 'Escape') return
       if (!expandedIdRef.current) return
+      const prevExpandedId = expandedIdRef.current
       if (ghostEntryRef.current) {
         renderedIdsRef.current.delete(ghostEntryRef.current.id)
         ghostEntryRef.current = null
       }
-      setPinnedEntry(current => (current?.id === expandedIdRef.current ? null : current))
+      setPinnedEntry(current => (current?.id === prevExpandedId ? null : current))
       expandedIdRef.current = null
       setExpandedId(null)
       setGhostEntry(null)
