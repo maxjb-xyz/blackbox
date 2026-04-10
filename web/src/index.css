@@ -322,6 +322,32 @@ body {
   color: var(--muted);
 }
 
+.auth-health-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.auth-setup-copy {
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 0;
+  margin-bottom: 18px;
+  line-height: 1.6;
+}
+
+.auth-field-last {
+  margin-bottom: 18px;
+}
+
+.auth-health-label {
+  color: var(--muted);
+}
+
+.auth-health-status {
+  margin-left: auto;
+}
+
 .nodes-table {
   width: 100%;
   border-collapse: collapse;

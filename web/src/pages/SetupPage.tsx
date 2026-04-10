@@ -77,7 +77,7 @@ export default function SetupPage({ onBootstrapped }: SetupPageProps) {
                 <span>Checking…</span>
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+              <div className="auth-health-stack">
                 <HealthRow label="DATABASE" status={health?.database === 'ok' ? 'ok' : 'error'} />
                 {health?.oidc_enabled && (
                   <HealthRow
@@ -90,7 +90,7 @@ export default function SetupPage({ onBootstrapped }: SetupPageProps) {
             )}
           </div>
 
-          <p style={{ color: 'var(--muted)', fontSize: '11px', marginBottom: 18, lineHeight: 1.6, marginTop: 0 }}>
+          <p className="auth-setup-copy">
             No admin account found. Create the first admin user to continue.
           </p>
 
@@ -120,7 +120,7 @@ export default function SetupPage({ onBootstrapped }: SetupPageProps) {
               />
             </div>
 
-            <div className="auth-field" style={{ marginBottom: 18 }}>
+            <div className="auth-field auth-field-last">
               <label htmlFor="setup-password" className="auth-label">PASSWORD</label>
               <input
                 id="setup-password"
@@ -169,8 +169,8 @@ function HealthRow({ label, status, message }: { label: string; status: 'ok' | '
   return (
     <div className="auth-health-row">
       <Icon size={11} style={{ color, flexShrink: 0 }} />
-      <span style={{ color: 'var(--muted)' }}>{label}</span>
-      <span style={{ color, marginLeft: 'auto' }}>
+      <span className="auth-health-label">{label}</span>
+      <span className="auth-health-status" style={{ color }}>
         {status.toUpperCase()}
         {message ? ` — ${message}` : ''}
       </span>
