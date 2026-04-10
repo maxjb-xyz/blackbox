@@ -33,12 +33,13 @@ func TestFindCause_ReturnsMatchInWindow(t *testing.T) {
 
 	entry := types.Entry{
 		ID:        "01TEST00000000001",
-		Timestamp: now.Add(-60 * time.Second),
+		Timestamp: now.Add(-30 * time.Second),
 		NodeName:  "homelab-01",
 		Source:    "docker",
 		Service:   "my-app",
 		Event:     "die",
 		Content:   "container 'my-app' died (exit code: 137)",
+		Metadata:  `{"exitCode":"137"}`,
 	}
 	require.NoError(t, database.Create(&entry).Error)
 
@@ -156,11 +157,11 @@ func TestScoreCauses_SystemdFailedScores90(t *testing.T) {
 		Metadata:  `{}`,
 	}).Error)
 
-	candidates, err := correlation.ScoreCauses(database, []string{"nginx.service"}, now)
+	candidates, err := correlation.ScoreCauses(database, []string{"nginx.service"}, now, "")
 	require.NoError(t, err)
 	require.Len(t, candidates, 1)
 	require.Equal(t, failedID, candidates[0].Entry.ID)
-	require.GreaterOrEqual(t, candidates[0].Score, 90)
+	require.Equal(t, 72, candidates[0].Score)
 }
 
 func TestScoreCauses_OOMKillScores100(t *testing.T) {
@@ -179,9 +180,9 @@ func TestScoreCauses_OOMKillScores100(t *testing.T) {
 		Metadata:  `{}`,
 	}).Error)
 
-	candidates, err := correlation.ScoreCauses(database, []string{"kernel"}, now)
+	candidates, err := correlation.ScoreCauses(database, []string{"kernel"}, now, "")
 	require.NoError(t, err)
 	require.Len(t, candidates, 1)
 	require.Equal(t, oomID, candidates[0].Entry.ID)
-	require.Equal(t, 100, candidates[0].Score)
+	require.Equal(t, 90, candidates[0].Score)
 }

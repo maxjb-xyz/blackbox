@@ -64,7 +64,9 @@ func WebhookUptime(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry,
 			meta["status"] = "down"
 
 			if !timeFallback {
-				candidates, err := correlation.ScoreCauses(database, serviceCandidates, ts)
+				// Webhook triggers have no compose service context — pass "" to skip
+				// docker compose-service filtering and consider all candidates for the project.
+				candidates, err := correlation.ScoreCauses(database, serviceCandidates, ts, "")
 				if err != nil {
 					log.Printf("correlation lookup failed for %s: %v", payload.Monitor.Name, err)
 				} else if len(candidates) > 0 {

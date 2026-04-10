@@ -38,17 +38,24 @@ const maxLookbackWindow = 300 * time.Second
 // ScoreCauses returns all candidate cause entries above MinCauseScore,
 // ordered by score descending. The caller should apply ApplyNodeBonus
 // once the trigger node is known.
-func ScoreCauses(db *gorm.DB, services []string, at time.Time) ([]CauseCandidate, error) {
+func ScoreCauses(db *gorm.DB, services []string, at time.Time, triggerComposeService string) ([]CauseCandidate, error) {
 	if len(services) == 0 {
 		return []CauseCandidate{}, nil
 	}
 	windowStart := at.Add(-maxLookbackWindow)
 
 	var candidates []types.Entry
-	err := db.Where(
+	query := db.Where(
 		"service IN ? AND timestamp BETWEEN ? AND ? AND NOT (source = ? AND event IN ?)",
 		services, windowStart, at, "webhook", []string{"down", "up"},
-	).Order("timestamp DESC").Find(&candidates).Error
+	)
+	if triggerComposeService != "" {
+		query = query.Where(
+			"NOT (source = ? AND compose_service != ? AND compose_service != ?)",
+			"docker", "", triggerComposeService,
+		)
+	}
+	err := query.Order("timestamp DESC").Find(&candidates).Error
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +78,10 @@ func ScoreCauses(db *gorm.DB, services []string, at time.Time) ([]CauseCandidate
 		if hasLogSnippet(e) {
 			bonus += 10
 		}
-		score := base + bonus
+		elapsedSeconds := at.Sub(e.Timestamp).Seconds()
+		windowSeconds := window.Seconds()
+		decayFactor := 1.0 - (elapsedSeconds/windowSeconds)*0.4
+		score := int(float64(base+bonus) * decayFactor)
 		if score < MinCauseScore {
 			continue
 		}
@@ -79,7 +89,7 @@ func ScoreCauses(db *gorm.DB, services []string, at time.Time) ([]CauseCandidate
 		results = append(results, CauseCandidate{
 			Entry:  e,
 			Score:  score,
-			Reason: fmt.Sprintf("%s %s %ds before trigger", e.Source, e.Event, elapsed),
+			Reason: fmt.Sprintf("%s %s %ds before trigger (base=%d bonus=%d decay=%.2f score=%d)", e.Source, e.Event, elapsed, base, bonus, decayFactor, score),
 		})
 	}
 

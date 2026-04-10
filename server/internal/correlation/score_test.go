@@ -27,11 +27,11 @@ func TestScoreCauses_DieNonZeroExit(t *testing.T) {
 	}
 	require.NoError(t, database.Create(&cause).Error)
 
-	candidates, err := correlation.ScoreCauses(database, []string{"nginx"}, now)
+	candidates, err := correlation.ScoreCauses(database, []string{"nginx"}, now, "")
 	require.NoError(t, err)
 	require.Len(t, candidates, 1)
 	assert.Equal(t, cause.ID, candidates[0].Entry.ID)
-	assert.Equal(t, 100, candidates[0].Score)
+	assert.Equal(t, 93, candidates[0].Score)
 }
 
 func TestScoreCauses_DieNonZeroNumericExit(t *testing.T) {
@@ -49,10 +49,10 @@ func TestScoreCauses_DieNonZeroNumericExit(t *testing.T) {
 	}
 	require.NoError(t, database.Create(&cause).Error)
 
-	candidates, err := correlation.ScoreCauses(database, []string{"nginx"}, now)
+	candidates, err := correlation.ScoreCauses(database, []string{"nginx"}, now, "")
 	require.NoError(t, err)
 	require.Len(t, candidates, 1)
-	assert.Equal(t, 100, candidates[0].Score)
+	assert.Equal(t, 93, candidates[0].Score)
 }
 
 func TestScoreCauses_ExcludesWebhooks(t *testing.T) {
@@ -70,7 +70,7 @@ func TestScoreCauses_ExcludesWebhooks(t *testing.T) {
 	}
 	require.NoError(t, database.Create(&webhook).Error)
 
-	candidates, err := correlation.ScoreCauses(database, []string{"nginx"}, now)
+	candidates, err := correlation.ScoreCauses(database, []string{"nginx"}, now, "")
 	require.NoError(t, err)
 	assert.Empty(t, candidates)
 }
@@ -90,7 +90,7 @@ func TestScoreCauses_ExcludesOutsideWindow(t *testing.T) {
 	}
 	require.NoError(t, database.Create(&old).Error)
 
-	candidates, err := correlation.ScoreCauses(database, []string{"nginx"}, now)
+	candidates, err := correlation.ScoreCauses(database, []string{"nginx"}, now, "")
 	require.NoError(t, err)
 	assert.Empty(t, candidates)
 }
@@ -119,11 +119,119 @@ func TestScoreCauses_RankedByScore(t *testing.T) {
 	require.NoError(t, database.Create(&restart).Error)
 	require.NoError(t, database.Create(&fileWrite).Error)
 
-	candidates, err := correlation.ScoreCauses(database, []string{"nginx"}, now)
+	candidates, err := correlation.ScoreCauses(database, []string{"nginx"}, now, "")
 	require.NoError(t, err)
 	require.Len(t, candidates, 2)
-	assert.Equal(t, restart.ID, candidates[0].Entry.ID) // score 90 > 50
+	assert.Equal(t, restart.ID, candidates[0].Entry.ID) // decay still leaves restart ahead of file write
 	assert.Equal(t, fileWrite.ID, candidates[1].Entry.ID)
+}
+
+func TestScoreCauses_TimeDecayReducesScoreAtWindowEdge(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	now := time.Now().UTC()
+	near := types.Entry{
+		ID:        "01NEARDIE",
+		Timestamp: now.Add(-5 * time.Second),
+		Service:   "nginx",
+		Source:    "docker",
+		Event:     "die",
+		Metadata:  `{"exitCode":"1"}`,
+	}
+	far := types.Entry{
+		ID:        "01FARDIE0",
+		Timestamp: now.Add(-55 * time.Second),
+		Service:   "nginx",
+		Source:    "docker",
+		Event:     "die",
+		Metadata:  `{"exitCode":"1"}`,
+	}
+	require.NoError(t, database.Create(&near).Error)
+	require.NoError(t, database.Create(&far).Error)
+
+	candidates, err := correlation.ScoreCauses(database, []string{"nginx"}, now, "")
+	require.NoError(t, err)
+	require.Len(t, candidates, 2)
+	assert.Equal(t, near.ID, candidates[0].Entry.ID)
+	assert.Greater(t, candidates[0].Score, candidates[1].Score)
+}
+
+func TestScoreCauses_ComposeServiceFiltersDockerCandidates(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	now := time.Now().UTC()
+	redis := types.Entry{
+		ID:             "01REDISDIE",
+		Timestamp:      now.Add(-10 * time.Second),
+		Service:        "myapp",
+		Source:         "docker",
+		ComposeService: "redis",
+		Event:          "die",
+		Metadata:       `{"exitCode":"1"}`,
+	}
+	web := types.Entry{
+		ID:             "01WEBDOCKR",
+		Timestamp:      now.Add(-12 * time.Second),
+		Service:        "myapp",
+		Source:         "docker",
+		ComposeService: "web",
+		Event:          "die",
+		Metadata:       `{"exitCode":"1"}`,
+	}
+	systemd := types.Entry{
+		ID:        "01SYSTEMD1",
+		Timestamp: now.Add(-8 * time.Second),
+		Service:   "myapp",
+		Source:    "systemd",
+		Event:     "failed",
+		Metadata:  `{}`,
+	}
+	require.NoError(t, database.Create(&redis).Error)
+	require.NoError(t, database.Create(&web).Error)
+	require.NoError(t, database.Create(&systemd).Error)
+
+	candidates, err := correlation.ScoreCauses(database, []string{"myapp"}, now, "web")
+	require.NoError(t, err)
+	require.Len(t, candidates, 2)
+	returnedIDs := []string{candidates[0].Entry.ID, candidates[1].Entry.ID}
+	assert.Contains(t, returnedIDs, web.ID)
+	assert.Contains(t, returnedIDs, systemd.ID)
+	assert.NotContains(t, returnedIDs, redis.ID)
+}
+
+func TestScoreCauses_EmptyTriggerComposeServiceAllowsAllDockerCandidates(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	now := time.Now().UTC()
+	redis := types.Entry{
+		ID:             "01REDISALL",
+		Timestamp:      now.Add(-10 * time.Second),
+		Service:        "myapp",
+		Source:         "docker",
+		ComposeService: "redis",
+		Event:          "die",
+		Metadata:       `{"exitCode":"1"}`,
+	}
+	web := types.Entry{
+		ID:             "01WEBALLOW",
+		Timestamp:      now.Add(-12 * time.Second),
+		Service:        "myapp",
+		Source:         "docker",
+		ComposeService: "web",
+		Event:          "die",
+		Metadata:       `{"exitCode":"1"}`,
+	}
+	require.NoError(t, database.Create(&redis).Error)
+	require.NoError(t, database.Create(&web).Error)
+
+	candidates, err := correlation.ScoreCauses(database, []string{"myapp"}, now, "")
+	require.NoError(t, err)
+	require.Len(t, candidates, 2)
+	assert.Equal(t, redis.ID, candidates[0].Entry.ID)
+	assert.Equal(t, web.ID, candidates[1].Entry.ID)
 }
 
 func TestApplyNodeBonus(t *testing.T) {
@@ -161,7 +269,7 @@ func TestScoreCauses_TieBreaksByTimestampThenID(t *testing.T) {
 	require.NoError(t, database.Create(&older).Error)
 	require.NoError(t, database.Create(&newer).Error)
 
-	candidates, err := correlation.ScoreCauses(database, []string{"nginx"}, now)
+	candidates, err := correlation.ScoreCauses(database, []string{"nginx"}, now, "")
 	require.NoError(t, err)
 	require.Len(t, candidates, 2)
 	assert.Equal(t, newer.ID, candidates[0].Entry.ID)
