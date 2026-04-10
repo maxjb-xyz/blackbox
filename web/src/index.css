@@ -244,6 +244,12 @@ body {
   cursor: not-allowed;
 }
 
+.auth-btn-primary:focus,
+.auth-btn-primary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .auth-btn-oidc {
   display: block;
   width: 100%;
@@ -265,6 +271,12 @@ body {
   color: var(--text);
 }
 
+.auth-btn-oidc:focus,
+.auth-btn-oidc:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .auth-footer-link {
   display: block;
   color: var(--muted);
@@ -277,6 +289,12 @@ body {
 
 .auth-footer-link:hover {
   color: var(--text);
+}
+
+.auth-footer-link:focus,
+.auth-footer-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .auth-tagline {

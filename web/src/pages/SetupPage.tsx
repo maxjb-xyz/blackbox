@@ -20,10 +20,12 @@ export default function SetupPage({ onBootstrapped }: SetupPageProps) {
   const [healthLoading, setHealthLoading] = useState(true)
 
   useEffect(() => {
+    let cancelled = false
     checkHealth()
-      .then(setHealth)
-      .catch(() => setHealth({ database: 'error', oidc: 'disabled', oidc_enabled: false }))
-      .finally(() => setHealthLoading(false))
+      .then(h => { if (!cancelled) setHealth(h) })
+      .catch(() => { if (!cancelled) setHealth({ database: 'error', oidc: 'disabled', oidc_enabled: false }) })
+      .finally(() => { if (!cancelled) setHealthLoading(false) })
+    return () => { cancelled = true }
   }, [])
 
   async function handleSubmit(e: React.FormEvent) {
