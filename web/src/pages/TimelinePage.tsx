@@ -1509,6 +1509,7 @@ function TimelineCard({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip
     <motion.div
       data-row
       role="button"
+      aria-expanded={isExpanded}
       tabIndex={isDimmed ? -1 : 0}
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: isDimmed ? 0.2 : 1, y: 0 }}
@@ -1619,11 +1620,13 @@ function TimelineCard({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip
               fontSize: 12,
               color: '#888',
               fontStyle: 'italic',
-              marginLeft: 'auto',
+              marginLeft: isExpanded ? 0 : 'auto',
               overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              maxWidth: '50%',
+              textOverflow: isExpanded ? 'clip' : 'ellipsis',
+              whiteSpace: isExpanded ? 'normal' : 'nowrap',
+              maxWidth: isExpanded ? '100%' : '50%',
+              flexBasis: isExpanded ? '100%' : 'auto',
+              lineHeight: 1.5,
             }}
           >
             {entry.content}
