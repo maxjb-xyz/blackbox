@@ -95,7 +95,6 @@ type journalMatcher interface {
 	FlushMatches()
 	AddMatch(string) error
 	AddDisjunction() error
-	AddConjunction() error
 }
 
 func rebuildJournalMatches(j journalMatcher, units []string) error {
@@ -133,12 +132,7 @@ func applyMatchGroups(j journalMatcher, groups [][]string) error {
 			}
 		}
 		firstGroup = false
-		for i, match := range group {
-			if i > 0 {
-				if err := j.AddConjunction(); err != nil {
-					return err
-				}
-			}
+		for _, match := range group {
 			if err := j.AddMatch(match); err != nil {
 				return err
 			}
