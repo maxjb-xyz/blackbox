@@ -18,6 +18,12 @@ import { useWebSocketContext } from '../components/WebSocketProvider'
 import { formatLocalTimestamp } from '../utils/time'
 import { eventBorderColor, eventTextColor } from '../utils/eventColors'
 
+function isEntry(value: unknown): value is Entry {
+  if (typeof value !== 'object' || value === null) return false
+  const e = value as Record<string, unknown>
+  return typeof e.id === 'string' && typeof e.timestamp === 'string' && typeof e.source === 'string'
+}
+
 function extractComposeService(entry: Entry): string | null {
   if (entry.source !== 'docker') return null
   try {
@@ -580,8 +586,16 @@ export default function TimelinePage() {
   const serviceFilter = searchParams.get('service') ?? ''
   const qFilter = searchParams.get('q') ?? ''
   const focusEntry = (() => {
-    const state = location.state as { focusEntry?: Entry } | null
-    return state?.focusEntry ?? null
+    const state = location.state
+    if (
+      state !== null &&
+      typeof state === 'object' &&
+      'focusEntry' in state &&
+      isEntry((state as { focusEntry: unknown }).focusEntry)
+    ) {
+      return (state as { focusEntry: Entry }).focusEntry
+    }
+    return null
   })()
 
   const refreshServices = useCallback(function scheduleServiceRefresh() {
