@@ -115,7 +115,7 @@ export default function AdminPage() {
     const raw = (systemdInputs[nodeName] ?? '').trim()
     if (!raw) return
     const val = normalizeUnit(raw)
-    if (units.includes(val)) return
+    if (units.map(normalizeUnit).includes(val)) return
 
     setSystemdSettings(prev => ({ ...prev, [nodeName]: [...units, val] }))
     setSystemdInputs(prev => ({ ...prev, [nodeName]: '' }))

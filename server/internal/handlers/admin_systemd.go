@@ -54,6 +54,7 @@ func UpdateSystemdSettings(db *gorm.DB) http.HandlerFunc {
 			req.Units = []string{}
 		}
 
+		seen := make(map[string]struct{}, len(req.Units))
 		clean := make([]string, 0, len(req.Units))
 		for _, u := range req.Units {
 			t := strings.TrimSpace(u)
@@ -63,6 +64,10 @@ func UpdateSystemdSettings(db *gorm.DB) http.HandlerFunc {
 			if !hasUnitTypeSuffix(t) {
 				t = t + ".service"
 			}
+			if _, dup := seen[t]; dup {
+				continue
+			}
+			seen[t] = struct{}{}
 			clean = append(clean, t)
 		}
 
