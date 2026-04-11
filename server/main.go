@@ -212,6 +212,7 @@ func main() {
 		r.Use(middleware.AgentAuth(agentConfig))
 		r.Get("/api/agent/config", handlers.AgentConfig(database))
 		r.Post("/api/agent/push", handlers.AgentPush(database, eventHub, incidentCh, managerCtx.Done()))
+		r.Post("/api/agent/push/batch", handlers.AgentPushBatch(database, eventHub, incidentCh, managerCtx.Done()))
 	})
 
 	r.Group(func(r chi.Router) {
