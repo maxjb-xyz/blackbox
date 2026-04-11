@@ -62,7 +62,7 @@ func AgentPush(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry, shu
 				lookupID = entry.ReplaceID
 			}
 			var existing types.Entry
-			lookupErr := database.First(&existing, "id = ?", lookupID).Error
+			lookupErr := database.First(&existing, "id = ? AND node_name = ? AND source = ?", lookupID, nodeName, "docker").Error
 			if lookupErr != nil && !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
 				writeError(w, http.StatusInternalServerError, "failed to look up entry")
 				return
@@ -79,7 +79,7 @@ func AgentPush(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry, shu
 					writeError(w, http.StatusInternalServerError, "failed to update entry")
 					return
 				}
-				if err := database.Take(&existing, "id = ?", lookupID).Error; err != nil {
+				if err := database.Take(&existing, "id = ? AND node_name = ? AND source = ?", lookupID, nodeName, "docker").Error; err != nil {
 					writeError(w, http.StatusInternalServerError, "failed to fetch updated entry")
 					return
 				}

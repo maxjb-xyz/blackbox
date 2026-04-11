@@ -80,7 +80,7 @@ func AgentPushBatch(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry
 					lookupID = entry.ReplaceID
 				}
 				var existing types.Entry
-				lookupErr := database.First(&existing, "id = ?", lookupID).Error
+				lookupErr := database.First(&existing, "id = ? AND node_name = ? AND source = ?", lookupID, nodeName, "docker").Error
 				if lookupErr != nil && !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
 					resp.Failed = append(resp.Failed, batchPushError{ID: entry.ID, Reason: "failed to look up entry"})
 					continue
@@ -98,7 +98,7 @@ func AgentPushBatch(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry
 						continue
 					}
 					// Refresh existing to pick up any server-side defaults set during the update.
-					if err := database.Take(&existing, "id = ?", lookupID).Error; err != nil {
+					if err := database.Take(&existing, "id = ? AND node_name = ? AND source = ?", lookupID, nodeName, "docker").Error; err != nil {
 						resp.Failed = append(resp.Failed, batchPushError{ID: entry.ID, Reason: "failed to fetch updated entry"})
 						continue
 					}

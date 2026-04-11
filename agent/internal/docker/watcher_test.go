@@ -97,7 +97,7 @@ func TestEventCollapser_EmitsStopImmediatelyOnDie(t *testing.T) {
 	}
 }
 
-func TestEventCollapser_EmitsRestartWithSameIDWhenStartFollowsDie(t *testing.T) {
+func TestEventCollapser_EmitsRestartWithDistinctIDWhenStartFollowsDie(t *testing.T) {
 	collapser := newEventCollapser("node-1", nil)
 	base := time.Date(2026, 4, 2, 12, 0, 0, 0, time.UTC)
 
