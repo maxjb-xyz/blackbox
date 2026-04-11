@@ -629,6 +629,8 @@ All protected endpoints require an authenticated session cookie (obtained via lo
 
 The server stores all data in a single SQLite file at `/data/blackbox.db` (configurable via `DB_PATH`). Mount a named volume or host path to persist it across container restarts.
 
+The agent maintains its own persistent event queue at `/data/queue.db` (configurable via `QUEUE_DB_PATH`). Events are written to this queue before being sent to the server, so they survive agent restarts and network outages. Mount a named volume on the agent container to preserve the queue across restarts — without it, unsent events are lost when the container stops. Entries older than 7 days are automatically swept on startup.
+
 ```yaml
 volumes:
   - blackbox-data:/data        # named volume (recommended)
