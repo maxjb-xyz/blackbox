@@ -18,6 +18,9 @@ func TestLoadSystemdUnits(t *testing.T) {
 
 	c := client.NewWithHTTPClient("http://blackbox.test", "token", "node-1", &http.Client{
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if r.Method != http.MethodGet {
+				t.Fatalf("method = %q, want GET", r.Method)
+			}
 			if r.URL.Path != "/api/agent/config" {
 				t.Fatalf("unexpected path %q", r.URL.Path)
 			}
