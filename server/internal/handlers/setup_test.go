@@ -94,3 +94,21 @@ func TestSetupStatus_Bootstrapped(t *testing.T) {
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
 	assert.True(t, resp["bootstrapped"])
 }
+
+func authenticatedBatchRequest(t *testing.T, entries []types.Entry, nodeName string) (*http.Request, *httptest.ResponseRecorder, func(http.Handler) http.Handler) {
+	t.Helper()
+
+	body, err := json.Marshal(entries)
+	require.NoError(t, err)
+
+	config, err := middleware.NewAgentAuthConfig(nodeName + "=node-secret")
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/agent/push/batch", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Blackbox-Agent-Key", "node-secret")
+	req.Header.Set("X-Blackbox-Node-Name", nodeName)
+
+	w := httptest.NewRecorder()
+	return req, w, middleware.AgentAuth(config)
+}
