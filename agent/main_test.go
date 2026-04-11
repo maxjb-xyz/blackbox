@@ -50,6 +50,18 @@ func TestRefreshSystemdSettingsKeepsExistingUnitsOnFetchFailure(t *testing.T) {
 
 	c := client.NewWithHTTPClient("http://blackbox.test", "token", "node-1", &http.Client{
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if r.Method != http.MethodGet {
+				t.Errorf("method = %q, want GET", r.Method)
+			}
+			if r.URL.Path != "/api/agent/config" {
+				t.Errorf("path = %q, want /api/agent/config", r.URL.Path)
+			}
+			if got := r.Header.Get("X-Blackbox-Agent-Key"); got != "token" {
+				t.Errorf("X-Blackbox-Agent-Key = %q, want %q", got, "token")
+			}
+			if got := r.Header.Get("X-Blackbox-Node-Name"); got != "node-1" {
+				t.Errorf("X-Blackbox-Node-Name = %q, want %q", got, "node-1")
+			}
 			return jsonResponse(http.StatusBadGateway, `boom`), nil
 		}),
 	})
@@ -82,6 +94,18 @@ func TestRefreshSystemdSettingsUpdatesUnitsOnSuccess(t *testing.T) {
 
 	c := client.NewWithHTTPClient("http://blackbox.test", "token", "node-1", &http.Client{
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if r.Method != http.MethodGet {
+				t.Errorf("method = %q, want GET", r.Method)
+			}
+			if r.URL.Path != "/api/agent/config" {
+				t.Errorf("path = %q, want /api/agent/config", r.URL.Path)
+			}
+			if got := r.Header.Get("X-Blackbox-Agent-Key"); got != "token" {
+				t.Errorf("X-Blackbox-Agent-Key = %q, want %q", got, "token")
+			}
+			if got := r.Header.Get("X-Blackbox-Node-Name"); got != "node-1" {
+				t.Errorf("X-Blackbox-Node-Name = %q, want %q", got, "node-1")
+			}
 			return jsonResponse(http.StatusOK, `{"systemd_units":["redis.service"]}`), nil
 		}),
 	})
