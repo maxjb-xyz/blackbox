@@ -24,7 +24,7 @@ func newTestSender(t *testing.T, srv *httptest.Server) (*Sender, *queue.Queue) {
 	}
 	t.Cleanup(func() { _ = q.Close() })
 	c := client.New(srv.URL, "test-token", "node-1")
-	s := newWithFlushInterval(c, q, 20*time.Millisecond)
+	s := newWithFlushInterval(c, q, 20*time.Millisecond, 200*time.Millisecond)
 	return s, q
 }
 
@@ -53,8 +53,9 @@ func TestSender_FlushesQueuedEntries(t *testing.T) {
 	s, _ := newTestSender(t, srv)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	go s.Start(ctx)
+	// Cancel and wait for full shutdown before q.Close() runs in t.Cleanup.
+	t.Cleanup(func() { cancel(); <-s.Done() })
 
 	entry := types.Entry{
 		ID:      ulid.Make().String(),
@@ -78,7 +79,10 @@ func TestSender_FlushesQueuedEntries(t *testing.T) {
 }
 
 func TestSender_LeavesEntriesOnServerFailure(t *testing.T) {
+	var requestsReceived atomic.Int32
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestsReceived.Add(1)
 		http.Error(w, "unavailable", http.StatusServiceUnavailable)
 	}))
 	defer srv.Close()
@@ -86,8 +90,9 @@ func TestSender_LeavesEntriesOnServerFailure(t *testing.T) {
 	s, q := newTestSender(t, srv)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	go s.Start(ctx)
+	// Cancel and wait for full shutdown before q.Close() runs in t.Cleanup.
+	t.Cleanup(func() { cancel(); <-s.Done() })
 
 	entry := types.Entry{
 		ID:      ulid.Make().String(),
@@ -98,7 +103,17 @@ func TestSender_LeavesEntriesOnServerFailure(t *testing.T) {
 	}
 	s.Chan() <- entry
 
-	time.Sleep(200 * time.Millisecond)
+	// Wait until at least one request has been attempted before asserting retention.
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if requestsReceived.Load() >= 1 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if requestsReceived.Load() < 1 {
+		t.Fatal("expected at least one send attempt within 500ms")
+	}
 
 	rows, err := q.Flush(10)
 	if err != nil {

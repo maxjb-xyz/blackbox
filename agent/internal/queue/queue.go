@@ -48,6 +48,9 @@ func New(dbPath string) (*Queue, error) {
 
 // Push persists an entry to the queue. The entry must have a non-empty ID.
 func (q *Queue) Push(entry types.Entry) error {
+	if entry.ID == "" {
+		return fmt.Errorf("queue: empty entry ID")
+	}
 	payload, err := json.Marshal(entry)
 	if err != nil {
 		return fmt.Errorf("queue: marshal entry: %w", err)
@@ -135,6 +138,9 @@ func (q *Queue) SweepStale(maxAge time.Duration) (int, error) {
 
 // PushAt persists an entry with a specific timestamp. Used in tests only.
 func (q *Queue) PushAt(entry types.Entry, at time.Time) error {
+	if entry.ID == "" {
+		return fmt.Errorf("queue: empty entry ID")
+	}
 	payload, err := json.Marshal(entry)
 	if err != nil {
 		return fmt.Errorf("queue: marshal entry: %w", err)

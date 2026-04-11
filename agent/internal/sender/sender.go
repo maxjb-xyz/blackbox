@@ -29,20 +29,22 @@ type Sender struct {
 	events        chan types.Entry
 	done          chan struct{}
 	flushInterval time.Duration
+	drainTimeout  time.Duration
 }
 
 // New creates a Sender with a 1-second flush interval.
 func New(c *client.Client, q *queue.Queue) *Sender {
-	return newWithFlushInterval(c, q, time.Second)
+	return newWithFlushInterval(c, q, time.Second, 10*time.Second)
 }
 
-func newWithFlushInterval(c *client.Client, q *queue.Queue, interval time.Duration) *Sender {
+func newWithFlushInterval(c *client.Client, q *queue.Queue, interval, drainTimeout time.Duration) *Sender {
 	return &Sender{
 		client:        c,
 		queue:         q,
 		events:        make(chan types.Entry, eventBufSize),
 		done:          make(chan struct{}),
 		flushInterval: interval,
+		drainTimeout:  drainTimeout,
 	}
 }
 
@@ -161,9 +163,9 @@ func (s *Sender) flushLoop(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			drainCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			drainCtx, cancel := context.WithTimeout(context.Background(), s.drainTimeout)
 			defer cancel()
-			for {
+			for drainCtx.Err() == nil {
 				entries, err := s.queue.Flush(flushBatch)
 				if err != nil || len(entries) == 0 {
 					break
