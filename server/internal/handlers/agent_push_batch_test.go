@@ -102,6 +102,20 @@ func TestAgentPushBatch_PartialFailure_MissingID(t *testing.T) {
 	assert.Equal(t, int64(1), count)
 }
 
+func TestAgentPushBatch_AcceptsExactlyMaxBatchSize(t *testing.T) {
+	database := newTestDB(t)
+
+	entries := make([]types.Entry, 200)
+	for i := range entries {
+		entries[i] = types.Entry{ID: ulid.Make().String(), Source: "docker", Service: "nginx", Event: "start"}
+	}
+
+	req, w, authMiddleware := authenticatedBatchRequest(t, entries, "homelab-01")
+	authMiddleware(handlers.AgentPushBatch(database, nil, testIncidentChannel(t), nil)).ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
+}
+
 func TestAgentPushBatch_RejectsTooLarge(t *testing.T) {
 	database := newTestDB(t)
 

@@ -93,8 +93,8 @@ func AgentPushBatch(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry
 						resp.Failed = append(resp.Failed, batchPushError{ID: entry.ID, Reason: "failed to update entry"})
 						continue
 					}
-					var updated types.Entry
-					if err := database.First(&updated, "id = ?", entry.ID).Error; err != nil {
+					// Refresh existing to pick up any server-side defaults set during the update.
+					if err := database.Take(&existing, "id = ?", entry.ID).Error; err != nil {
 						resp.Failed = append(resp.Failed, batchPushError{ID: entry.ID, Reason: "failed to fetch updated entry"})
 						continue
 					}
@@ -103,12 +103,12 @@ func AgentPushBatch(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry
 							OldID string      `json:"old_id"`
 							Entry types.Entry `json:"entry"`
 						}
-						if msg := MarshalWSMessage("entry_replaced", replacedPayload{OldID: entry.ID, Entry: updated}); msg != nil {
+						if msg := MarshalWSMessage("entry_replaced", replacedPayload{OldID: entry.ID, Entry: existing}); msg != nil {
 							h.Broadcast(msg)
 						}
 					}
-					dispatchToIncidentChannelWithShutdown(incidentCh, shutdown, updated)
-					if upsertNode(database, updated) {
+					dispatchToIncidentChannelWithShutdown(incidentCh, shutdown, existing)
+					if upsertNode(database, existing) {
 						nodeUpdated = true
 					}
 					resp.Accepted = append(resp.Accepted, entry.ID)

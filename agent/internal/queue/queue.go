@@ -55,6 +55,9 @@ func (q *Queue) Push(entry types.Entry) error {
 	if err != nil {
 		return fmt.Errorf("queue: marshal entry: %w", err)
 	}
+	// INSERT OR IGNORE: if an entry with this ID already exists the insert is
+	// silently skipped, providing idempotency on retry. RowsAffected will be 0
+	// for duplicates; check it if the caller needs to distinguish new vs. dup.
 	_, err = q.db.Exec(
 		`INSERT OR IGNORE INTO pending (id, queued_at, payload) VALUES (?, ?, ?)`,
 		entry.ID,

@@ -3,6 +3,7 @@ package client_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -73,6 +74,30 @@ func TestSendBatch_NonTwoXXReturnsError(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error for 500, got nil")
+	}
+}
+
+func TestSendBatch_FourXXReturnsPermanentError(t *testing.T) {
+	for _, status := range []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden} {
+		status := status
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				http.Error(w, "rejected", status)
+			}))
+			defer srv.Close()
+
+			c := client.New(srv.URL, "test-token", "node-1")
+			_, _, err := c.SendBatch(context.Background(), []types.Entry{
+				{ID: ulid.Make().String(), Source: "docker", Event: "start"},
+			})
+			if err == nil {
+				t.Fatalf("expected error for %d, got nil", status)
+			}
+			var permErr *client.PermanentError
+			if !errors.As(err, &permErr) {
+				t.Errorf("expected *client.PermanentError, got %T: %v", err, err)
+			}
+		})
 	}
 }
 
