@@ -373,6 +373,7 @@ services:
       - /run/log/journal:/run/log/journal:ro
       - /var/log/journal:/var/log/journal:ro
       - /etc/machine-id:/etc/machine-id:ro
+      - blackbox-agent-data:/data
     environment:
       SERVER_URL: "http://node-01.lan:8080"
       AGENT_TOKEN: "token-for-node-02"
@@ -380,6 +381,9 @@ services:
       WATCH_PATHS: "/watch/appdata"
       WATCH_SYSTEMD: "true"
       TZ: "America/New_York"
+
+volumes:
+  blackbox-agent-data:
 ```
 
 ---
