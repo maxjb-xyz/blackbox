@@ -101,11 +101,14 @@ type batchPushResponse struct {
 // On a non-2xx response the whole batch should be retried. On 200, accepted
 // and failed lists are returned so the caller can delete accepted rows only.
 func (c *Client) SendBatch(ctx context.Context, entries []types.Entry) (accepted []string, failed []BatchPushError, err error) {
-	for i := range entries {
-		entries[i].NodeName = c.nodeName
+	// Copy entries to avoid mutating the caller's slice.
+	stamped := make([]types.Entry, len(entries))
+	copy(stamped, entries)
+	for i := range stamped {
+		stamped[i].NodeName = c.nodeName
 	}
 
-	body, err := json.Marshal(entries)
+	body, err := json.Marshal(stamped)
 	if err != nil {
 		return nil, nil, fmt.Errorf("marshal batch: %w", err)
 	}
@@ -127,7 +130,12 @@ func (c *Client) SendBatch(ctx context.Context, entries []types.Entry) (accepted
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
-		return nil, nil, fmt.Errorf("server returned %d: %s", resp.StatusCode, strings.TrimSpace(string(bodyBytes)))
+		msg := strings.TrimSpace(string(bodyBytes))
+		// 4xx responses are permanent — retrying will not help.
+		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+			return nil, nil, &PermanentError{StatusCode: resp.StatusCode, Message: msg}
+		}
+		return nil, nil, fmt.Errorf("server returned %d: %s", resp.StatusCode, msg)
 	}
 
 	var result batchPushResponse
