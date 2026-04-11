@@ -653,6 +653,8 @@ The database is automatically migrated on startup — no manual schema managemen
 - [ ] Grafana data source plugin
 - [ ] Dynamic notifications to Discord
 - [ ] Mobile-friendly view
+- [ ] Support OpenAI/Other AI Providers
+- [ ] Bi-directional agent analysis
 
 ---
 
