@@ -75,8 +75,12 @@ func AgentPushBatch(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry
 			entry.Service = serviceName
 
 			if entry.Source == "docker" && entry.Event == "restart" {
+				lookupID := entry.ID
+				if entry.ReplaceID != "" {
+					lookupID = entry.ReplaceID
+				}
 				var existing types.Entry
-				lookupErr := database.First(&existing, "id = ?", entry.ID).Error
+				lookupErr := database.First(&existing, "id = ?", lookupID).Error
 				if lookupErr != nil && !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
 					resp.Failed = append(resp.Failed, batchPushError{ID: entry.ID, Reason: "failed to look up entry"})
 					continue
@@ -94,7 +98,7 @@ func AgentPushBatch(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry
 						continue
 					}
 					// Refresh existing to pick up any server-side defaults set during the update.
-					if err := database.Take(&existing, "id = ?", entry.ID).Error; err != nil {
+					if err := database.Take(&existing, "id = ?", lookupID).Error; err != nil {
 						resp.Failed = append(resp.Failed, batchPushError{ID: entry.ID, Reason: "failed to fetch updated entry"})
 						continue
 					}
@@ -103,7 +107,7 @@ func AgentPushBatch(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry
 							OldID string      `json:"old_id"`
 							Entry types.Entry `json:"entry"`
 						}
-						if msg := MarshalWSMessage("entry_replaced", replacedPayload{OldID: entry.ID, Entry: existing}); msg != nil {
+						if msg := MarshalWSMessage("entry_replaced", replacedPayload{OldID: existing.ID, Entry: existing}); msg != nil {
 							h.Broadcast(msg)
 						}
 					}

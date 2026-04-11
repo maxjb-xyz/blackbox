@@ -41,8 +41,8 @@ func TestEventCollapser_CollapsesRestartSequence(t *testing.T) {
 	if entry.Event != "restart" {
 		t.Fatalf("expected restart event, got %q", entry.Event)
 	}
-	if entry.ID != stopEntry.ID {
-		t.Fatalf("expected restart id %q, got %q", stopEntry.ID, entry.ID)
+	if entry.ID == stopEntry.ID {
+		t.Fatalf("expected restart to have its own id, not the stop id %q", stopEntry.ID)
 	}
 	if entry.ReplaceID != stopEntry.ID {
 		t.Fatalf("expected replace id %q, got %q", stopEntry.ID, entry.ReplaceID)
@@ -122,8 +122,8 @@ func TestEventCollapser_EmitsRestartWithSameIDWhenStartFollowsDie(t *testing.T) 
 	if restartEntry.Event != "restart" {
 		t.Fatalf("expected restart event, got %q", restartEntry.Event)
 	}
-	if restartEntry.ID != stopEntry.ID {
-		t.Fatalf("expected restart to reuse stop id %q, got %q", stopEntry.ID, restartEntry.ID)
+	if restartEntry.ID == stopEntry.ID {
+		t.Fatalf("expected restart to have its own id, not the stop id %q", stopEntry.ID)
 	}
 	if restartEntry.ReplaceID != stopEntry.ID {
 		t.Fatalf("expected replace id %q, got %q", stopEntry.ID, restartEntry.ReplaceID)
@@ -205,8 +205,8 @@ func TestEventCollapser_StopWithoutDieCollapsingIntoRestartWhenStartArrivesInWin
 	if entries[1].Event != "restart" {
 		t.Fatalf("expected second entry to be restart, got %q", entries[1].Event)
 	}
-	if entries[1].ID != entries[0].ID {
-		t.Fatalf("expected restart to reuse stop ID %q, got %q", entries[0].ID, entries[1].ID)
+	if entries[1].ID == entries[0].ID {
+		t.Fatalf("expected restart to have its own id, not the stop id %q", entries[0].ID)
 	}
 	if entries[1].ReplaceID != entries[0].ID {
 		t.Fatalf("expected restart ReplaceID %q, got %q", entries[0].ID, entries[1].ReplaceID)
@@ -497,8 +497,8 @@ func TestRunWatchLoop_PreservesBufferedEventsAcrossReconnect(t *testing.T) {
 	if restartEntry.Service != "traefik" {
 		t.Fatalf("expected service traefik, got %q", restartEntry.Service)
 	}
-	if restartEntry.ID != stopEntry.ID {
-		t.Fatalf("expected restart id %q, got %q", stopEntry.ID, restartEntry.ID)
+	if restartEntry.ID == stopEntry.ID {
+		t.Fatalf("expected restart to have its own id, not the stop id %q", stopEntry.ID)
 	}
 	if restartEntry.ReplaceID != stopEntry.ID {
 		t.Fatalf("expected replace id %q, got %q", stopEntry.ID, restartEntry.ReplaceID)
@@ -561,8 +561,8 @@ func TestRunWatchLoop_EmitsExpiredStopBeforeLateStartWithoutTicker(t *testing.T)
 	if second.Event != "restart" {
 		t.Fatalf("expected restart entry second, got %q", second.Event)
 	}
-	if second.ID != first.ID {
-		t.Fatalf("expected restart id %q, got %q", first.ID, second.ID)
+	if second.ID == first.ID {
+		t.Fatalf("expected restart to have its own id, not the stop id %q", first.ID)
 	}
 	if second.ReplaceID != first.ID {
 		t.Fatalf("expected replace id %q, got %q", first.ID, second.ReplaceID)

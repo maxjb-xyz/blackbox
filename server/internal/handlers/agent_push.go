@@ -54,8 +54,15 @@ func AgentPush(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry, shu
 		}
 		entry.Service = serviceName
 		if entry.Source == "docker" && entry.Event == "restart" {
+			// ReplaceID carries the stop entry's ID when the agent uses the
+			// persistent queue (restart has its own fresh ID). Fall back to
+			// entry.ID for entries sent via the legacy single-push path.
+			lookupID := entry.ID
+			if entry.ReplaceID != "" {
+				lookupID = entry.ReplaceID
+			}
 			var existing types.Entry
-			lookupErr := database.First(&existing, "id = ?", entry.ID).Error
+			lookupErr := database.First(&existing, "id = ?", lookupID).Error
 			if lookupErr != nil && !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
 				writeError(w, http.StatusInternalServerError, "failed to look up entry")
 				return
@@ -72,8 +79,7 @@ func AgentPush(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry, shu
 					writeError(w, http.StatusInternalServerError, "failed to update entry")
 					return
 				}
-				var updated types.Entry
-				if err := database.First(&updated, "id = ?", entry.ID).Error; err != nil {
+				if err := database.Take(&existing, "id = ?", lookupID).Error; err != nil {
 					writeError(w, http.StatusInternalServerError, "failed to fetch updated entry")
 					return
 				}
@@ -82,12 +88,12 @@ func AgentPush(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry, shu
 						OldID string      `json:"old_id"`
 						Entry types.Entry `json:"entry"`
 					}
-					if msg := MarshalWSMessage("entry_replaced", replacedPayload{OldID: entry.ID, Entry: updated}); msg != nil {
+					if msg := MarshalWSMessage("entry_replaced", replacedPayload{OldID: existing.ID, Entry: existing}); msg != nil {
 						h.Broadcast(msg)
 					}
 				}
-				dispatchToIncidentChannelWithShutdown(incidentCh, shutdown, updated)
-				if upsertNode(database, updated) {
+				dispatchToIncidentChannelWithShutdown(incidentCh, shutdown, existing)
+				if upsertNode(database, existing) {
 					broadcastNodeStatus(database, h)
 				}
 				w.WriteHeader(http.StatusOK)
