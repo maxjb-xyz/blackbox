@@ -12,6 +12,9 @@ import (
 )
 
 const (
+	// eventBufSize is the in-memory transit buffer between collectors and queueWriter.
+	// It is intentionally small (256 vs the old 2048) because SQLite is the primary
+	// buffer — this channel only needs to absorb bursts between queueWriter ticks.
 	eventBufSize = 256
 	flushBatch   = 50
 	maxBackoff   = 30 * time.Second
@@ -133,15 +136,21 @@ func (s *Sender) flushLoop(ctx context.Context) {
 		backoff = s.flushInterval
 	}
 
+	timer := time.NewTimer(backoff)
+	defer timer.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			drainCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			doFlush(drainCtx)
 			cancel()
 			return
-		case <-time.After(backoff):
+		case <-timer.C:
 			doFlush(ctx)
+			// timer.C was drained by the select receive, so Reset is safe without draining first.
+			timer.Reset(backoff)
 		}
 	}
 }

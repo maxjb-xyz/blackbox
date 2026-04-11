@@ -44,6 +44,8 @@ func New(serverURL, token, nodeName string) *Client {
 	}
 }
 
+// Send pushes a single entry to the server. Retained for compatibility with
+// the existing POST /api/agent/push endpoint; the sender now uses SendBatch.
 func (c *Client) Send(ctx context.Context, entry types.Entry) error {
 	entry.NodeName = c.nodeName
 

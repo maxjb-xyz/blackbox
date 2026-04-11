@@ -92,6 +92,9 @@ func (q *Queue) Flush(limit int) ([]types.Entry, error) {
 }
 
 // Delete removes entries by ID. Silently ignores IDs not in the table.
+// The SQL string is constructed by repeating '?' placeholders — IDs are
+// passed as bound parameters (args...) and never interpolated into the
+// query string, so there is no SQL injection risk.
 func (q *Queue) Delete(ids []string) error {
 	if len(ids) == 0 {
 		return nil
