@@ -51,6 +51,8 @@ func NewWithHTTPClient(serverURL, token, nodeName string, httpClient *http.Clien
 	}
 }
 
+// Send pushes a single entry to the server. Retained for compatibility with
+// the existing POST /api/agent/push endpoint; the sender now uses SendBatch.
 func (c *Client) Send(ctx context.Context, entry types.Entry) error {
 	entry.NodeName = c.nodeName
 
@@ -89,6 +91,68 @@ func (c *Client) Send(ctx context.Context, entry types.Entry) error {
 		return fmt.Errorf("server returned %d: %s", resp.StatusCode, msg)
 	}
 	return nil
+}
+
+// BatchPushError describes a single entry rejected by the server within a batch.
+// Permanent is true when the failure is a validation error that will never
+// succeed on retry; false means a transient server-side error (e.g. DB failure).
+type BatchPushError struct {
+	ID        string `json:"id"`
+	Reason    string `json:"reason"`
+	Permanent bool   `json:"permanent"`
+}
+
+type batchPushResponse struct {
+	Accepted []string         `json:"accepted"`
+	Failed   []BatchPushError `json:"failed"`
+}
+
+// SendBatch sends a batch of entries to the server's batch push endpoint.
+// On a non-2xx response the whole batch should be retried. On 200, accepted
+// and failed lists are returned so the caller can delete accepted rows only.
+func (c *Client) SendBatch(ctx context.Context, entries []types.Entry) (accepted []string, failed []BatchPushError, err error) {
+	// Copy entries to avoid mutating the caller's slice.
+	stamped := make([]types.Entry, len(entries))
+	copy(stamped, entries)
+	for i := range stamped {
+		stamped[i].NodeName = c.nodeName
+	}
+
+	body, err := json.Marshal(stamped)
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshal batch: %w", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, c.serverURL+"/api/agent/push/batch", bytes.NewReader(body))
+	if err != nil {
+		return nil, nil, fmt.Errorf("create batch request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Blackbox-Agent-Key", c.token)
+	req.Header.Set("X-Blackbox-Node-Name", c.nodeName)
+	req = req.WithContext(ctx)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, nil, fmt.Errorf("send batch: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
+		msg := strings.TrimSpace(string(bodyBytes))
+		// 4xx responses are permanent — retrying will not help.
+		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+			return nil, nil, &PermanentError{StatusCode: resp.StatusCode, Message: msg}
+		}
+		return nil, nil, fmt.Errorf("server returned %d: %s", resp.StatusCode, msg)
+	}
+
+	var result batchPushResponse
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&result); err != nil {
+		return nil, nil, fmt.Errorf("decode batch response: %w", err)
+	}
+	return result.Accepted, result.Failed, nil
 }
 
 func (c *Client) GetAgentConfig(ctx context.Context) (AgentConfig, error) {

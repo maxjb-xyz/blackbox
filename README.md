@@ -79,6 +79,7 @@ services:
       - no-new-privileges:true
     read_only: true
     volumes:
+      - blackbox-agent-data:/data
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /etc:/watch/etc:ro
       - /run/log/journal:/run/log/journal:ro
@@ -95,6 +96,7 @@ services:
       - blackbox
 
 volumes:
+  blackbox-agent-data:
   blackbox-data:
 
 networks:
@@ -185,6 +187,7 @@ docker compose up -d
 | `WATCH_PATHS` | No | — | Colon-separated list of directories to watch for file changes as seen inside the agent container (e.g., `/watch/etc:/watch/appdata`). |
 | `WATCH_IGNORE` | No | — | Colon-separated glob patterns to exclude from file watching. |
 | `WATCH_SYSTEMD` | No | `false` | Set to `true` on Linux agents to enable journal-based systemd monitoring for the units configured in the Admin UI. |
+| `QUEUE_DB_PATH` | No | `/data/queue.db` | Path to the agent's persistent event queue database. |
 | `PUID` | No | `65532` | UID the agent process runs as. Set to your host user's UID (`id -u`) when you own the watched paths. |
 | `PGID` | No | `65532` | GID the agent process runs as. Set to your host user's GID (`id -g`) when you own the watched paths. |
 | `TZ` | No | Container default | IANA timezone for process logs (for example `America/New_York`). Set this if you want container log timestamps to match your local clock. |
@@ -332,6 +335,7 @@ services:
       - no-new-privileges:true
     read_only: true
     volumes:
+      - blackbox-agent-data:/data
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /run/log/journal:/run/log/journal:ro
       - /var/log/journal:/var/log/journal:ro
@@ -344,6 +348,7 @@ services:
       TZ: "America/New_York"
 
 volumes:
+  blackbox-agent-data:
   blackbox-data:
 ```
 
@@ -368,6 +373,7 @@ services:
       - /run/log/journal:/run/log/journal:ro
       - /var/log/journal:/var/log/journal:ro
       - /etc/machine-id:/etc/machine-id:ro
+      - blackbox-agent-data:/data
     environment:
       SERVER_URL: "http://node-01.lan:8080"
       AGENT_TOKEN: "token-for-node-02"
@@ -375,6 +381,9 @@ services:
       WATCH_PATHS: "/watch/appdata"
       WATCH_SYSTEMD: "true"
       TZ: "America/New_York"
+
+volumes:
+  blackbox-agent-data:
 ```
 
 ---
@@ -619,6 +628,8 @@ All protected endpoints require an authenticated session cookie (obtained via lo
 ## Persistent Data
 
 The server stores all data in a single SQLite file at `/data/blackbox.db` (configurable via `DB_PATH`). Mount a named volume or host path to persist it across container restarts.
+
+The agent maintains its own persistent event queue at `/data/queue.db` (configurable via `QUEUE_DB_PATH`). Events are written to this queue before being sent to the server, so they survive agent restarts and network outages. Mount a named volume on the agent container to preserve the queue across restarts — without it, unsent events are lost when the container stops. Entries older than 7 days are automatically swept on startup.
 
 ```yaml
 volumes:

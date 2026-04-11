@@ -19,6 +19,7 @@ import (
 	"blackbox/agent/internal/client"
 	"blackbox/agent/internal/docker"
 	"blackbox/agent/internal/files"
+	"blackbox/agent/internal/queue"
 	"blackbox/agent/internal/sender"
 	"blackbox/agent/internal/systemd"
 	"blackbox/shared/timezone"
@@ -58,8 +59,28 @@ func main() {
 	watchPaths := splitEnv("WATCH_PATHS")
 	watchIgnore := splitEnv("WATCH_IGNORE")
 
+	queueDBPath := os.Getenv("QUEUE_DB_PATH")
+	if queueDBPath == "" {
+		queueDBPath = "/data/queue.db"
+	}
+	q, err := queue.New(queueDBPath)
+	if err != nil {
+		log.Fatalf("queue: failed to open persistent queue at %s: %v", queueDBPath, err)
+	}
+	defer func() {
+		if err := q.Close(); err != nil {
+			log.Printf("queue: close error: %v", err)
+		}
+	}()
+	swept, err := q.SweepStale(7 * 24 * time.Hour)
+	if err != nil {
+		log.Printf("queue: stale sweep failed: %v", err)
+	} else if swept > 0 {
+		log.Printf("queue: swept %d stale entries (older than 7 days)", swept)
+	}
+
 	c := client.New(serverURL, agentToken, nodeName)
-	s := sender.New(c)
+	s := sender.New(c, q)
 	out := s.Chan()
 
 	ctx, cancel := context.WithCancel(context.Background())
