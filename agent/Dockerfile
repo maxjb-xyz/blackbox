@@ -41,5 +41,11 @@ RUN apt-get update && \
 
 COPY --from=go-builder /blackbox-agent /blackbox-agent
 COPY --chmod=755 agent/entrypoint.sh /entrypoint.sh
+
+# Create /data owned by the nonroot user so the queue DB can be written
+# without requiring a privileged volume init step.
+RUN mkdir /data && chown 65532:65532 /data
+VOLUME /data
+
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD ["/bin/sh", "-c", "kill -0 1"]
 ENTRYPOINT ["/entrypoint.sh"]
