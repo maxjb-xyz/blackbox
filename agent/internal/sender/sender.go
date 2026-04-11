@@ -104,16 +104,9 @@ func (s *Sender) queueWriter(ctx context.Context) {
 func (s *Sender) flushLoop(ctx context.Context) {
 	backoff := s.flushInterval
 
-	doFlush := func(ctx context.Context) {
-		entries, err := s.queue.Flush(flushBatch)
-		if err != nil {
-			log.Printf("sender: flush read failed: %v", err)
-			return
-		}
-		if len(entries) == 0 {
-			return
-		}
-
+	// processBatch sends entries to the server and deletes accepted/rejected rows.
+	// Returns the number of entries processed (0 signals the drain loop to stop).
+	processBatch := func(ctx context.Context, entries []types.Entry) int {
 		flushCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
 
@@ -138,12 +131,14 @@ func (s *Sender) flushLoop(ctx context.Context) {
 					backoff = maxBackoff
 				}
 			}
-			return
+			return len(entries)
 		}
 		for _, f := range failed {
 			log.Printf("sender: server rejected entry id=%s: %s", f.ID, f.Reason)
 		}
 		// Delete accepted entries and any per-entry permanent failures.
+		// Per-entry failures are always permanent (server validation errors);
+		// transient failures surface as whole-batch errors above.
 		toDelete := accepted
 		for _, f := range failed {
 			toDelete = append(toDelete, f.ID)
@@ -154,6 +149,19 @@ func (s *Sender) flushLoop(ctx context.Context) {
 			}
 		}
 		backoff = s.flushInterval
+		return len(entries)
+	}
+
+	doFlush := func(ctx context.Context) {
+		entries, err := s.queue.Flush(flushBatch)
+		if err != nil {
+			log.Printf("sender: flush read failed: %v", err)
+			return
+		}
+		if len(entries) == 0 {
+			return
+		}
+		processBatch(ctx, entries)
 	}
 
 	timer := time.NewTimer(backoff)
@@ -170,7 +178,7 @@ func (s *Sender) flushLoop(ctx context.Context) {
 				if err != nil || len(entries) == 0 {
 					break
 				}
-				doFlush(drainCtx)
+				processBatch(drainCtx, entries)
 			}
 			return
 		case <-timer.C:

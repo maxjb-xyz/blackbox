@@ -32,6 +32,10 @@ func TestSender_FlushesQueuedEntries(t *testing.T) {
 	var batchReceived atomic.Int32
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/agent/push/batch" {
+			http.Error(w, "unexpected request", http.StatusBadRequest)
+			return
+		}
 		var entries []types.Entry
 		if err := json.NewDecoder(r.Body).Decode(&entries); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -82,6 +86,10 @@ func TestSender_LeavesEntriesOnServerFailure(t *testing.T) {
 	var requestsReceived atomic.Int32
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/agent/push/batch" {
+			http.Error(w, "unexpected request", http.StatusBadRequest)
+			return
+		}
 		requestsReceived.Add(1)
 		http.Error(w, "unavailable", http.StatusServiceUnavailable)
 	}))

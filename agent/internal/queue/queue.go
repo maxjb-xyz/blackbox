@@ -68,7 +68,12 @@ func (q *Queue) Push(entry types.Entry) error {
 }
 
 // Flush reads up to limit pending entries ordered oldest-first.
+// limit must be positive; a non-positive value is rejected to prevent
+// accidental unbounded reads (SQLite treats LIMIT -1 as no limit).
 func (q *Queue) Flush(limit int) ([]types.Entry, error) {
+	if limit <= 0 {
+		return nil, fmt.Errorf("queue: flush limit must be positive, got %d", limit)
+	}
 	rows, err := q.db.Query(
 		`SELECT id, payload FROM pending ORDER BY queued_at ASC LIMIT ?`,
 		limit,
@@ -76,29 +81,39 @@ func (q *Queue) Flush(limit int) ([]types.Entry, error) {
 	if err != nil {
 		return nil, fmt.Errorf("queue: flush query: %w", err)
 	}
-	defer func() {
-		if err := rows.Close(); err != nil {
-			log.Printf("queue: rows close: %v", err)
-		}
-	}()
 
+	// Collect corrupt row IDs during iteration; delete after rows.Close() to
+	// avoid competing for the single connection (SetMaxOpenConns(1)).
 	var entries []types.Entry
+	var corruptIDs []string
 	for rows.Next() {
 		var id, payload string
 		if err := rows.Scan(&id, &payload); err != nil {
+			if closeErr := rows.Close(); closeErr != nil {
+				log.Printf("queue: rows close: %v", closeErr)
+			}
 			return nil, fmt.Errorf("queue: scan row: %w", err)
 		}
 		var entry types.Entry
 		if err := json.Unmarshal([]byte(payload), &entry); err != nil {
-			log.Printf("queue: corrupt row id=%s, deleting: %v", id, err)
-			if _, delErr := q.db.Exec(`DELETE FROM pending WHERE id = ?`, id); delErr != nil {
-				log.Printf("queue: failed to delete corrupt row id=%s: %v", id, delErr)
-			}
+			log.Printf("queue: corrupt row id=%s, will delete: %v", id, err)
+			corruptIDs = append(corruptIDs, id)
 			continue
 		}
 		entries = append(entries, entry)
 	}
-	return entries, rows.Err()
+	rowsErr := rows.Err()
+	if err := rows.Close(); err != nil {
+		log.Printf("queue: rows close: %v", err)
+	}
+
+	// Delete corrupt rows now that the cursor is closed and the connection is free.
+	for _, id := range corruptIDs {
+		if _, delErr := q.db.Exec(`DELETE FROM pending WHERE id = ?`, id); delErr != nil {
+			log.Printf("queue: failed to delete corrupt row id=%s: %v", id, delErr)
+		}
+	}
+	return entries, rowsErr
 }
 
 // Delete removes entries by ID. Silently ignores IDs not in the table.
