@@ -33,7 +33,10 @@ func TestSender_FlushesQueuedEntries(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var entries []types.Entry
-		_ = json.NewDecoder(r.Body).Decode(&entries)
+		if err := json.NewDecoder(r.Body).Decode(&entries); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		batchReceived.Add(int32(len(entries)))
 		ids := make([]string, len(entries))
 		for i, e := range entries {

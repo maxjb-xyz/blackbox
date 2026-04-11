@@ -2,6 +2,7 @@ package sender
 
 import (
 	"context"
+	"errors"
 	"log"
 	"sync"
 	"time"
@@ -117,7 +118,19 @@ func (s *Sender) flushLoop(ctx context.Context) {
 		accepted, failed, err := s.client.SendBatch(flushCtx, entries)
 		if err != nil {
 			log.Printf("sender: batch send failed (backoff %s): %v", backoff, err)
-			if backoff < maxBackoff {
+			// Permanent errors (4xx) mean the whole batch is rejected; delete to
+			// avoid retrying entries the server will always refuse.
+			var permErr *client.PermanentError
+			if errors.As(err, &permErr) {
+				ids := make([]string, len(entries))
+				for i, e := range entries {
+					ids[i] = e.ID
+				}
+				if delErr := s.queue.Delete(ids); delErr != nil {
+					log.Printf("sender: failed to delete permanently rejected batch: %v", delErr)
+				}
+				backoff = s.flushInterval
+			} else if backoff < maxBackoff {
 				backoff *= 2
 				if backoff > maxBackoff {
 					backoff = maxBackoff
@@ -128,8 +141,13 @@ func (s *Sender) flushLoop(ctx context.Context) {
 		for _, f := range failed {
 			log.Printf("sender: server rejected entry id=%s: %s", f.ID, f.Reason)
 		}
-		if len(accepted) > 0 {
-			if err := s.queue.Delete(accepted); err != nil {
+		// Delete accepted entries and any per-entry permanent failures.
+		toDelete := accepted
+		for _, f := range failed {
+			toDelete = append(toDelete, f.ID)
+		}
+		if len(toDelete) > 0 {
+			if err := s.queue.Delete(toDelete); err != nil {
 				log.Printf("sender: failed to delete sent entries: %v", err)
 			}
 		}
@@ -144,8 +162,14 @@ func (s *Sender) flushLoop(ctx context.Context) {
 		case <-ctx.Done():
 			timer.Stop()
 			drainCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			doFlush(drainCtx)
-			cancel()
+			defer cancel()
+			for {
+				entries, err := s.queue.Flush(flushBatch)
+				if err != nil || len(entries) == 0 {
+					break
+				}
+				doFlush(drainCtx)
+			}
 			return
 		case <-timer.C:
 			doFlush(ctx)
