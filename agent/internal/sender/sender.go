@@ -133,15 +133,17 @@ func (s *Sender) flushLoop(ctx context.Context) {
 			}
 			return len(entries)
 		}
-		for _, f := range failed {
-			log.Printf("sender: server rejected entry id=%s: %s", f.ID, f.Reason)
-		}
-		// Delete accepted entries and any per-entry permanent failures.
-		// Per-entry failures are always permanent (server validation errors);
-		// transient failures surface as whole-batch errors above.
+		// Delete accepted entries and permanently-failed entries.
+		// Non-permanent per-entry failures (transient DB errors on the server)
+		// are left on the queue so they will be retried on the next flush.
 		toDelete := accepted
 		for _, f := range failed {
-			toDelete = append(toDelete, f.ID)
+			if f.Permanent {
+				log.Printf("sender: server permanently rejected entry id=%s: %s", f.ID, f.Reason)
+				toDelete = append(toDelete, f.ID)
+			} else {
+				log.Printf("sender: server transiently rejected entry id=%s (will retry): %s", f.ID, f.Reason)
+			}
 		}
 		if len(toDelete) > 0 {
 			if err := s.queue.Delete(toDelete); err != nil {

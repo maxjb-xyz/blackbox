@@ -16,8 +16,9 @@ import (
 type batchResponse struct {
 	Accepted []string `json:"accepted"`
 	Failed   []struct {
-		ID     string `json:"id"`
-		Reason string `json:"reason"`
+		ID        string `json:"id"`
+		Reason    string `json:"reason"`
+		Permanent bool   `json:"permanent"`
 	} `json:"failed"`
 }
 
@@ -93,7 +94,8 @@ func TestAgentPushBatch_PartialFailure_MissingID(t *testing.T) {
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
 	assert.Len(t, resp.Accepted, 1)
 	assert.Equal(t, goodID, resp.Accepted[0])
-	assert.Len(t, resp.Failed, 1)
+	require.Len(t, resp.Failed, 1)
+	assert.True(t, resp.Failed[0].Permanent, "missing-ID failure should be permanent")
 
 	var count int64
 	require.NoError(t, database.Model(&types.Entry{}).Count(&count).Error)

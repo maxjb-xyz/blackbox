@@ -85,7 +85,7 @@ func TestSendBatch_PartialFailure(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"accepted": []string{goodID},
-			"failed":   []map[string]string{{"id": badID, "reason": "entry id is required"}},
+			"failed":   []map[string]interface{}{{"id": badID, "reason": "entry id is required", "permanent": true}},
 		})
 	}))
 	defer srv.Close()
@@ -103,5 +103,8 @@ func TestSendBatch_PartialFailure(t *testing.T) {
 	}
 	if len(failed) != 1 || failed[0].ID != badID {
 		t.Errorf("expected failed=[%s], got %v", badID, failed)
+	}
+	if !failed[0].Permanent {
+		t.Errorf("expected failed[0].Permanent=true")
 	}
 }

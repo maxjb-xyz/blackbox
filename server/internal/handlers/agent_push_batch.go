@@ -24,8 +24,9 @@ type batchPushResponse struct {
 }
 
 type batchPushError struct {
-	ID     string `json:"id"`
-	Reason string `json:"reason"`
+	ID        string `json:"id"`
+	Reason    string `json:"reason"`
+	Permanent bool   `json:"permanent"`
 }
 
 // AgentPushBatch accepts a JSON array of entries and ingests each through the
@@ -58,17 +59,17 @@ func AgentPushBatch(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry
 
 		for _, entry := range entries {
 			if entry.ID == "" {
-				resp.Failed = append(resp.Failed, batchPushError{ID: entry.ID, Reason: "entry id is required"})
+				resp.Failed = append(resp.Failed, batchPushError{ID: entry.ID, Reason: "entry id is required", Permanent: true})
 				continue
 			}
 			if entry.NodeName != "" && entry.NodeName != nodeName {
-				resp.Failed = append(resp.Failed, batchPushError{ID: entry.ID, Reason: "agent node mismatch"})
+				resp.Failed = append(resp.Failed, batchPushError{ID: entry.ID, Reason: "agent node mismatch", Permanent: true})
 				continue
 			}
 			entry.NodeName = nodeName
 			serviceName := strings.ToLower(strings.TrimSpace(entry.Service))
 			if serviceName == "" && !isAgentMetaEvent(entry) {
-				resp.Failed = append(resp.Failed, batchPushError{ID: entry.ID, Reason: "service is required"})
+				resp.Failed = append(resp.Failed, batchPushError{ID: entry.ID, Reason: "service is required", Permanent: true})
 				continue
 			}
 			entry.Service = serviceName

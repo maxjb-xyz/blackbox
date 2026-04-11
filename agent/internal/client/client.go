@@ -87,9 +87,12 @@ func (c *Client) Send(ctx context.Context, entry types.Entry) error {
 }
 
 // BatchPushError describes a single entry rejected by the server within a batch.
+// Permanent is true when the failure is a validation error that will never
+// succeed on retry; false means a transient server-side error (e.g. DB failure).
 type BatchPushError struct {
-	ID     string `json:"id"`
-	Reason string `json:"reason"`
+	ID        string `json:"id"`
+	Reason    string `json:"reason"`
+	Permanent bool   `json:"permanent"`
 }
 
 type batchPushResponse struct {
