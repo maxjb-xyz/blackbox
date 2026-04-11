@@ -147,7 +147,10 @@ func (q *Queue) SweepStale(maxAge time.Duration) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("queue: sweep stale: %w", err)
 	}
-	n, _ := result.RowsAffected()
+	n, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("queue: sweep stale rows affected: %w", err)
+	}
 	return int(n), nil
 }
 
