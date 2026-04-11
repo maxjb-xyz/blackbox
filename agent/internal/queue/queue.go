@@ -67,23 +67,30 @@ func (q *Queue) Push(entry types.Entry) error {
 // Flush reads up to limit pending entries ordered oldest-first.
 func (q *Queue) Flush(limit int) ([]types.Entry, error) {
 	rows, err := q.db.Query(
-		`SELECT payload FROM pending ORDER BY queued_at ASC LIMIT ?`,
+		`SELECT id, payload FROM pending ORDER BY queued_at ASC LIMIT ?`,
 		limit,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("queue: flush query: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.Printf("queue: rows close: %v", err)
+		}
+	}()
 
 	var entries []types.Entry
 	for rows.Next() {
-		var payload string
-		if err := rows.Scan(&payload); err != nil {
+		var id, payload string
+		if err := rows.Scan(&id, &payload); err != nil {
 			return nil, fmt.Errorf("queue: scan row: %w", err)
 		}
 		var entry types.Entry
 		if err := json.Unmarshal([]byte(payload), &entry); err != nil {
-			log.Printf("queue: corrupt row, skipping: %v", err)
+			log.Printf("queue: corrupt row id=%s, deleting: %v", id, err)
+			if _, delErr := q.db.Exec(`DELETE FROM pending WHERE id = ?`, id); delErr != nil {
+				log.Printf("queue: failed to delete corrupt row id=%s: %v", id, delErr)
+			}
 			continue
 		}
 		entries = append(entries, entry)

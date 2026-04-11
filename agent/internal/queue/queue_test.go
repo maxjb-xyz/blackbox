@@ -52,6 +52,32 @@ func TestPush_StoresEntry(t *testing.T) {
 	}
 }
 
+func TestFlush_ReturnsEntriesInFIFOOrder(t *testing.T) {
+	q := newTestQueue(t)
+
+	base := time.Now().Add(-10 * time.Minute)
+	ids := make([]string, 4)
+	for i := range ids {
+		ids[i] = ulid.Make().String()
+		if err := q.PushAt(types.Entry{ID: ids[i], Source: "docker", Event: "start"}, base.Add(time.Duration(i)*time.Second)); err != nil {
+			t.Fatalf("PushAt %d: %v", i, err)
+		}
+	}
+
+	rows, err := q.Flush(10)
+	if err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+	if len(rows) != len(ids) {
+		t.Fatalf("expected %d rows, got %d", len(ids), len(rows))
+	}
+	for i, row := range rows {
+		if row.ID != ids[i] {
+			t.Errorf("position %d: expected id %q, got %q", i, ids[i], row.ID)
+		}
+	}
+}
+
 func TestFlush_RespectsLimit(t *testing.T) {
 	q := newTestQueue(t)
 
