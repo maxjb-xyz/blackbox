@@ -36,11 +36,18 @@ func (e *PermanentError) Error() string {
 }
 
 func New(serverURL, token, nodeName string) *Client {
+	return NewWithHTTPClient(serverURL, token, nodeName, nil)
+}
+
+func NewWithHTTPClient(serverURL, token, nodeName string, httpClient *http.Client) *Client {
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 10 * time.Second}
+	}
 	return &Client{
 		serverURL: serverURL,
 		token:     token,
 		nodeName:  nodeName,
-		http:      &http.Client{Timeout: 10 * time.Second},
+		http:      httpClient,
 	}
 }
 
