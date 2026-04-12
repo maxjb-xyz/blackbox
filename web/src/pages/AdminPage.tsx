@@ -1245,9 +1245,9 @@ function SettingsTab() {
                       padding: '4px 12px',
                       fontSize: 12,
                       border: '1px solid',
-                      borderColor: selected ? OLLAMA_MODE_ACTIVE_COLOR : 'var(--border)',
+                      borderColor: selected ? AI_SETTINGS_ACCENT_COLOR : 'var(--border)',
                       background: selected ? 'rgba(168, 85, 247, 0.1)' : 'transparent',
-                      color: selected ? OLLAMA_MODE_ACTIVE_COLOR : 'var(--muted)',
+                      color: selected ? AI_SETTINGS_ACCENT_COLOR : 'var(--muted)',
                       cursor: aiSaving ? 'not-allowed' : 'pointer',
                       fontFamily: 'inherit',
                     }}
@@ -1308,9 +1308,9 @@ function SettingsTab() {
                           padding: '4px 12px',
                           fontSize: 12,
                           border: '1px solid',
-                          borderColor: selected ? OLLAMA_MODE_ACTIVE_COLOR : 'var(--border)',
+                          borderColor: selected ? AI_SETTINGS_ACCENT_COLOR : 'var(--border)',
                           background: selected ? 'rgba(168, 85, 247, 0.1)' : 'transparent',
-                          color: selected ? OLLAMA_MODE_ACTIVE_COLOR : 'var(--muted)',
+                          color: selected ? AI_SETTINGS_ACCENT_COLOR : 'var(--muted)',
                           cursor: aiSaving ? 'not-allowed' : 'pointer',
                           fontFamily: 'inherit',
                         }}
@@ -1396,7 +1396,7 @@ const FILTER_CONTROL_STYLE: CSSProperties = {
   outline: 'none',
 }
 
-const OLLAMA_MODE_ACTIVE_COLOR = '#a855f7'
+const AI_SETTINGS_ACCENT_COLOR = '#a855f7'
 
 const actionBtnStyle: CSSProperties = {
   background: 'none',

@@ -1,6 +1,7 @@
 package incidents
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -24,7 +25,7 @@ func TestManager_SuspectedIncidentDispatchesAIAnalysisWithTriggerLogs(t *testing
 
 	promptSeen := make(chan string, 1)
 	originalCall := callGenerateFunc
-	callGenerateFunc = func(provider LLMProvider, model, prompt string, timeout time.Duration) (string, error) {
+	callGenerateFunc = func(_ context.Context, provider LLMProvider, model, prompt string, timeout time.Duration) (string, error) {
 		promptSeen <- prompt
 		return "Crash caused by invalid config", nil
 	}
@@ -71,7 +72,7 @@ func TestAIEnricher_SetsAndClearsPendingState(t *testing.T) {
 
 	release := make(chan struct{})
 	originalCall := callGenerateFunc
-	callGenerateFunc = func(provider LLMProvider, model, prompt string, timeout time.Duration) (string, error) {
+	callGenerateFunc = func(_ context.Context, provider LLMProvider, model, prompt string, timeout time.Duration) (string, error) {
 		<-release
 		return "Root cause: bad config", nil
 	}
@@ -176,7 +177,7 @@ func TestCorrelateAsync_WritesAICauseLinks(t *testing.T) {
 
 	originalCall := callCorrelateGenerateFunc
 	originalDelay := correlateDelay
-	callCorrelateGenerateFunc = func(provider LLMProvider, model, prompt string, timeout time.Duration) (string, error) {
+	callCorrelateGenerateFunc = func(_ context.Context, provider LLMProvider, model, prompt string, timeout time.Duration) (string, error) {
 		return `analysis wrapper {"summary":"nginx crashed due to resource exhaustion","causes":[{"entry_id":"` + candidateID + `","confidence":0.85,"reason":"Container exited before the outage"}]} done`, nil
 	}
 	correlateDelay = 0
@@ -273,7 +274,7 @@ func TestCorrelateAsync_UsesScopedIncidentNodesAndSetsVerified(t *testing.T) {
 	promptSeen := make(chan string, 1)
 	originalCall := callCorrelateGenerateFunc
 	originalDelay := correlateDelay
-	callCorrelateGenerateFunc = func(provider LLMProvider, model, prompt string, timeout time.Duration) (string, error) {
+	callCorrelateGenerateFunc = func(_ context.Context, provider LLMProvider, model, prompt string, timeout time.Duration) (string, error) {
 		promptSeen <- prompt
 		return `{"summary":"radarr failed on media-node","verified":true,"causes":[]}`, nil
 	}
@@ -342,7 +343,7 @@ func TestCorrelateAsync_DropsHallucinatedEntryIDs(t *testing.T) {
 
 	originalCall := callCorrelateGenerateFunc
 	originalDelay := correlateDelay
-	callCorrelateGenerateFunc = func(provider LLMProvider, model, prompt string, timeout time.Duration) (string, error) {
+	callCorrelateGenerateFunc = func(_ context.Context, provider LLMProvider, model, prompt string, timeout time.Duration) (string, error) {
 		return `{"summary":"something","causes":[{"entry_id":"` + fakeID + `","confidence":0.9,"reason":"ghost"}]}`, nil
 	}
 	correlateDelay = 0
@@ -472,7 +473,7 @@ func TestCorrelateAsync_ExcludesPriorAICauseLinksFromDeterministicPrompt(t *test
 	promptSeen := make(chan string, 1)
 	originalCall := callCorrelateGenerateFunc
 	originalDelay := correlateDelay
-	callCorrelateGenerateFunc = func(provider LLMProvider, model, prompt string, timeout time.Duration) (string, error) {
+	callCorrelateGenerateFunc = func(_ context.Context, provider LLMProvider, model, prompt string, timeout time.Duration) (string, error) {
 		promptSeen <- prompt
 		return `{"summary":"nginx down","verified":true,"causes":[]}`, nil
 	}
@@ -526,7 +527,7 @@ func TestAIEnricher_QueuesDuplicateDispatchesWithoutConcurrentCalls(t *testing.T
 	var active atomic.Int32
 	var maxActive atomic.Int32
 
-	callGenerateFunc = func(provider LLMProvider, model, prompt string, timeout time.Duration) (string, error) {
+	callGenerateFunc = func(_ context.Context, provider LLMProvider, model, prompt string, timeout time.Duration) (string, error) {
 		callNum := calls.Add(1)
 		currentActive := active.Add(1)
 		for {

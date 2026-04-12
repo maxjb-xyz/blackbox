@@ -22,8 +22,8 @@ type ollamaProvider struct {
 	baseURL string
 }
 
-func (p *ollamaProvider) Generate(_ context.Context, model, prompt string, timeout time.Duration) (string, error) {
-	return callOllamaWithTimeout(p.baseURL, model, prompt, timeout)
+func (p *ollamaProvider) Generate(ctx context.Context, model, prompt string, timeout time.Duration) (string, error) {
+	return callOllamaWithTimeout(ctx, p.baseURL, model, prompt, timeout)
 }
 
 // openAICompatProvider calls any OpenAI-compatible /v1/chat/completions endpoint.
@@ -51,14 +51,14 @@ type openAIResponse struct {
 	Choices []openAIChoice `json:"choices"`
 }
 
-func (p *openAICompatProvider) Generate(_ context.Context, model, prompt string, timeout time.Duration) (string, error) {
+func (p *openAICompatProvider) Generate(ctx context.Context, model, prompt string, timeout time.Duration) (string, error) {
 	reqBody, _ := json.Marshal(openAIRequest{
 		Model:    model,
 		Messages: []openAIMessage{{Role: "user", Content: prompt}},
 		Stream:   false,
 	})
 	client := &http.Client{Timeout: timeout}
-	req, err := http.NewRequest(http.MethodPost, p.baseURL+"/v1/chat/completions", bytes.NewReader(reqBody))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/v1/chat/completions", bytes.NewReader(reqBody))
 	if err != nil {
 		return "", err
 	}

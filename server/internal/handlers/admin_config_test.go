@@ -124,6 +124,9 @@ func TestUpdateAISettings_RejectsInvalidProvider(t *testing.T) {
 	handlers.UpdateAISettings(database)(w, req)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
+	var count int64
+	require.NoError(t, database.Model(&models.AppSetting{}).Count(&count).Error)
+	assert.Zero(t, count)
 }
 
 func TestUpdateAISettings_PersistsMode(t *testing.T) {
@@ -150,7 +153,9 @@ func TestUpdateAISettings_PreservesAPIKeyWhenBlank(t *testing.T) {
 	body1 := `{"ai_provider":"openai_compat","ai_url":"https://api.openai.com","ai_model":"gpt-4o","ai_api_key":"sk-original","ai_mode":"analysis"}`
 	req1 := httptest.NewRequest(http.MethodPut, "/api/admin/settings/ai", strings.NewReader(body1))
 	req1.Header.Set("Content-Type", "application/json")
-	handlers.UpdateAISettings(database)(httptest.NewRecorder(), req1)
+	w1 := httptest.NewRecorder()
+	handlers.UpdateAISettings(database)(w1, req1)
+	assert.Equal(t, http.StatusNoContent, w1.Code)
 
 	// Update without sending API key
 	body2 := `{"ai_provider":"openai_compat","ai_url":"https://api.openai.com","ai_model":"gpt-4o-mini","ai_api_key":"","ai_mode":"analysis"}`

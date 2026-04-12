@@ -35,12 +35,12 @@ const aiCorrelateTimeout = 90 * time.Second
 
 var correlateDelay = 3 * time.Second
 
-var callGenerateFunc = func(provider LLMProvider, model, prompt string, timeout time.Duration) (string, error) {
-	return provider.Generate(context.Background(), model, prompt, timeout)
+var callGenerateFunc = func(ctx context.Context, provider LLMProvider, model, prompt string, timeout time.Duration) (string, error) {
+	return provider.Generate(ctx, model, prompt, timeout)
 }
 
-var callCorrelateGenerateFunc = func(provider LLMProvider, model, prompt string, timeout time.Duration) (string, error) {
-	return provider.Generate(context.Background(), model, prompt, timeout)
+var callCorrelateGenerateFunc = func(ctx context.Context, provider LLMProvider, model, prompt string, timeout time.Duration) (string, error) {
+	return provider.Generate(ctx, model, prompt, timeout)
 }
 
 type AIEnricher struct {
@@ -241,7 +241,7 @@ func (e *AIEnricher) enrich(dispatch aiDispatch) {
 	}
 
 	prompt := buildPrompt(inc, dispatch.linkedEntries)
-	result, err := callGenerateFunc(dispatch.provider, dispatch.model, prompt, aiTimeout)
+	result, err := callGenerateFunc(context.Background(), dispatch.provider, dispatch.model, prompt, aiTimeout)
 	if err != nil {
 		log.Printf("incidents: ai enrichment failed for %s: %v", dispatch.incidentID, err)
 		e.clearPending(dispatch.incidentID)
@@ -337,7 +337,7 @@ func (e *AIEnricher) correlate(dispatch aiDispatch) {
 	}
 
 	prompt := buildCorrelationPrompt(inc, detLinks, detEntries, nodeEntries)
-	result, err := callCorrelateGenerateFunc(dispatch.provider, dispatch.model, prompt, aiCorrelateTimeout)
+	result, err := callCorrelateGenerateFunc(context.Background(), dispatch.provider, dispatch.model, prompt, aiCorrelateTimeout)
 	if err != nil {
 		log.Printf("incidents: ai correlation failed for %s: %v", dispatch.incidentID, err)
 		e.clearPending(dispatch.incidentID)
@@ -659,10 +659,15 @@ func extractJSON(s string) string {
 	return s[start : end+1]
 }
 
-func callOllamaWithTimeout(baseURL, model, prompt string, timeout time.Duration) (string, error) {
+func callOllamaWithTimeout(ctx context.Context, baseURL, model, prompt string, timeout time.Duration) (string, error) {
 	reqBody, _ := json.Marshal(ollamaRequest{Model: model, Prompt: prompt, Stream: false})
 	client := &http.Client{Timeout: timeout}
-	resp, err := client.Post(baseURL+"/api/generate", "application/json", bytes.NewReader(reqBody))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/api/generate", bytes.NewReader(reqBody))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
