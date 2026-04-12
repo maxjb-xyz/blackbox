@@ -54,46 +54,13 @@ func AgentPush(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry, shu
 		}
 		entry.Service = serviceName
 		if entry.Source == "docker" && entry.Event == "restart" {
-			// ReplaceID carries the stop entry's ID when the agent uses the
-			// persistent queue (restart has its own fresh ID). Fall back to
-			// entry.ID for entries sent via the legacy single-push path.
-			lookupID := entry.ID
-			if entry.ReplaceID != "" {
-				lookupID = entry.ReplaceID
-			}
-			var existing types.Entry
-			lookupErr := database.First(&existing, "id = ? AND node_name = ? AND source = ?", lookupID, nodeName, "docker").Error
-			if lookupErr != nil && !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
-				writeError(w, http.StatusInternalServerError, "failed to look up entry")
+			res := replaceDockerRestartEntry(database, entry, nodeName, h, incidentCh, shutdown)
+			if res.Err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to process restart entry")
 				return
 			}
-			if lookupErr == nil {
-				updates := map[string]interface{}{
-					"event":           entry.Event,
-					"content":         entry.Content,
-					"metadata":        entry.Metadata,
-					"timestamp":       entry.Timestamp,
-					"compose_service": entry.ComposeService,
-				}
-				if err := database.Model(&existing).Updates(updates).Error; err != nil {
-					writeError(w, http.StatusInternalServerError, "failed to update entry")
-					return
-				}
-				if err := database.Take(&existing, "id = ? AND node_name = ? AND source = ?", lookupID, nodeName, "docker").Error; err != nil {
-					writeError(w, http.StatusInternalServerError, "failed to fetch updated entry")
-					return
-				}
-				if h != nil {
-					type replacedPayload struct {
-						OldID string      `json:"old_id"`
-						Entry types.Entry `json:"entry"`
-					}
-					if msg := MarshalWSMessage("entry_replaced", replacedPayload{OldID: existing.ID, Entry: existing}); msg != nil {
-						h.Broadcast(msg)
-					}
-				}
-				dispatchToIncidentChannelWithShutdown(incidentCh, shutdown, existing)
-				if upsertNode(database, existing) {
+			if res.Found {
+				if upsertNode(database, res.Updated) {
 					broadcastNodeStatus(database, h)
 				}
 				w.WriteHeader(http.StatusOK)
