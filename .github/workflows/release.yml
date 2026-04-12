@@ -48,12 +48,71 @@ jobs:
           cache-from: type=gha,scope=server
           cache-to: type=gha,scope=server,mode=max
 
-  build-agent:
-    name: Build & Push Agent
+  build-agent-amd64:
+    name: Build & Push Agent AMD64
     runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@v4
 
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        id: build
+        with:
+          context: .
+          file: agent/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/blackbox-agent:build-${{ github.sha }}-amd64
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            COMMIT=${{ github.sha }}
+          platforms: linux/amd64
+          cache-from: type=gha,scope=agent-amd64
+          cache-to: type=gha,scope=agent-amd64,mode=max
+
+  build-agent-arm64:
+    name: Build & Push Agent ARM64
+    runs-on: ubuntu-24.04-arm
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        id: build
+        with:
+          context: .
+          file: agent/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/blackbox-agent:build-${{ github.sha }}-arm64
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            COMMIT=${{ github.sha }}
+          platforms: linux/arm64
+          cache-from: type=gha,scope=agent-arm64
+          cache-to: type=gha,scope=agent-arm64,mode=max
+
+  push-agent-manifest:
+    name: Push Agent Manifest
+    needs: [build-agent-amd64, build-agent-arm64]
+    runs-on: ubuntu-latest
+    steps:
       - uses: docker/setup-buildx-action@v3
 
       - uses: docker/login-action@v3
@@ -72,16 +131,12 @@ jobs:
             type=semver,pattern={{major}}
             type=raw,value=latest
 
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: agent/Dockerfile
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            VERSION=${{ github.ref_name }}
-            COMMIT=${{ github.sha }}
-          platforms: linux/amd64,linux/arm64
-          cache-from: type=gha,scope=agent
-          cache-to: type=gha,scope=agent,mode=max
+      - run: |
+          tags=()
+          while IFS= read -r tag; do
+            tags+=("-t" "$tag")
+          done <<< "${{ steps.meta.outputs.tags }}"
+          docker buildx imagetools create \
+            "${tags[@]}" \
+            ghcr.io/${{ github.repository_owner }}/blackbox-agent@${{ needs.build-agent-amd64.outputs.digest }} \
+            ghcr.io/${{ github.repository_owner }}/blackbox-agent@${{ needs.build-agent-arm64.outputs.digest }}
