@@ -200,7 +200,7 @@ func main() {
 		r.Get("/api/admin/settings/systemd", handlers.GetSystemdSettings(database))
 		r.Put("/api/admin/settings/systemd/{node_name}", handlers.UpdateSystemdSettings(database))
 		r.Put("/api/admin/settings/ai", handlers.UpdateAISettings(database))
-		r.Put("/api/admin/settings/ollama", handlers.UpdateAISettings(database)) // deprecated alias
+		r.Put("/api/admin/settings/ollama", handlers.UpdateOllamaSettingsLegacy(database)) // deprecated alias
 		r.Get("/api/admin/oidc/providers", handlers.ListOIDCProviders(database))
 		r.Post("/api/admin/oidc/providers", handlers.CreateOIDCProvider(database, registry))
 		r.Patch("/api/admin/oidc/providers/{id}", handlers.UpdateOIDCProvider(database, registry))

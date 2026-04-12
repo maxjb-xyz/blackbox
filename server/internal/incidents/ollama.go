@@ -430,7 +430,10 @@ func (e *AIEnricher) correlate(dispatch aiDispatch) {
 func (e *AIEnricher) loadAIConfig() aiConfig {
 	keys := []string{aiProviderKey, aiURLKey, aiModelKey, aiAPIKeyKey, aiModeKey, ollamaURLKey, ollamaModelKey, ollamaModeKey}
 	var settings []models.AppSetting
-	e.db.Where("key IN ?", keys).Find(&settings)
+	if res := e.db.Where("key IN ?", keys).Find(&settings); res.Error != nil {
+		log.Printf("incidents: loadAIConfig: DB query failed: %v", res.Error)
+		return aiConfig{mode: "analysis"}
+	}
 
 	m := make(map[string]string, len(settings))
 	for _, s := range settings {
@@ -466,10 +469,13 @@ func (e *AIEnricher) loadAIConfig() aiConfig {
 
 	var provider LLMProvider
 	switch providerType {
+	case "ollama":
+		provider = &ollamaProvider{baseURL: aiURL}
 	case "openai_compat":
 		provider = &openAICompatProvider{baseURL: aiURL, apiKey: m[aiAPIKeyKey]}
 	default:
-		provider = &ollamaProvider{baseURL: aiURL}
+		log.Printf("incidents: loadAIConfig: unknown ai_provider %q, AI enrichment disabled", providerType)
+		return aiConfig{mode: mode}
 	}
 
 	return aiConfig{provider: provider, model: model, mode: mode}

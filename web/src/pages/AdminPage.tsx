@@ -1138,6 +1138,8 @@ function SettingsTab() {
     setAISuccess(false)
     try {
       await updateAISettings(aiProvider, aiURL, aiModel, aiAPIKey, aiMode)
+      setAIAPIKey('')
+      setAIAPIKeySet(aiProvider === 'openai_compat' && (aiAPIKey !== '' || aiAPIKeySet))
       if (aiSuccessTimerRef.current !== null) {
         window.clearTimeout(aiSuccessTimerRef.current)
       }
@@ -1239,7 +1241,11 @@ function SettingsTab() {
                   <button
                     key={p}
                     type="button"
-                    onClick={() => { setAIProvider(p); setAISuccess(false) }}
+                    onClick={() => {
+                      if (p !== 'openai_compat') { setAIAPIKey(''); setAIAPIKeySet(false) }
+                      setAIProvider(p)
+                      setAISuccess(false)
+                    }}
                     disabled={aiSaving}
                     style={{
                       padding: '4px 12px',

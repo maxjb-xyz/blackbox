@@ -21,7 +21,7 @@ func TestOllamaProvider_Generate(t *testing.T) {
 		require.Equal(t, "test prompt", req.Prompt)
 		require.False(t, req.Stream)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(ollamaResponse{Response: "test result"})
+		_ = json.NewEncoder(w).Encode(ollamaResponse{Response: "test result"})
 	}))
 	defer srv.Close()
 
@@ -44,7 +44,7 @@ func TestOpenAICompatProvider_Generate(t *testing.T) {
 		require.Equal(t, "user", req.Messages[0].Role)
 		require.Equal(t, "test prompt", req.Messages[0].Content)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(openAIResponse{
+		_ = json.NewEncoder(w).Encode(openAIResponse{
 			Choices: []openAIChoice{{Message: openAIMessage{Role: "assistant", Content: "openai result"}}},
 		})
 	}))
@@ -59,7 +59,7 @@ func TestOpenAICompatProvider_Generate(t *testing.T) {
 func TestOpenAICompatProvider_Generate_ErrorStatus(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
-		w.Write([]byte(`{"error":"invalid api key"}`))
+		_, _ = w.Write([]byte(`{"error":"invalid api key"}`))
 	}))
 	defer srv.Close()
 
@@ -72,7 +72,7 @@ func TestOpenAICompatProvider_Generate_ErrorStatus(t *testing.T) {
 func TestOpenAICompatProvider_Generate_EmptyChoices(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(openAIResponse{Choices: nil})
+		_ = json.NewEncoder(w).Encode(openAIResponse{Choices: nil})
 	}))
 	defer srv.Close()
 

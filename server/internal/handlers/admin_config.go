@@ -58,11 +58,12 @@ func AdminConfig(db *gorm.DB, webhookSecret string) http.HandlerFunc {
 func UpdateAISettings(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
-			Provider string `json:"ai_provider"`
-			URL      string `json:"ai_url"`
-			Model    string `json:"ai_model"`
-			APIKey   string `json:"ai_api_key"`
-			Mode     string `json:"ai_mode"`
+			Provider    string `json:"ai_provider"`
+			URL         string `json:"ai_url"`
+			Model       string `json:"ai_model"`
+			APIKey      string `json:"ai_api_key"`
+			ClearAPIKey bool   `json:"ai_clear_api_key"`
+			Mode        string `json:"ai_mode"`
 		}
 		if !decodeJSONBody(w, r, 1<<20, &req) {
 			return
@@ -95,9 +96,9 @@ func UpdateAISettings(db *gorm.DB) http.HandlerFunc {
 			mode = "analysis"
 		}
 
-		// Preserve existing API key if blank submitted
+		// Blank key: preserve existing unless ClearAPIKey is explicitly true.
 		apiKey := strings.TrimSpace(req.APIKey)
-		if apiKey == "" {
+		if apiKey == "" && !req.ClearAPIKey {
 			var existing models.AppSetting
 			if err := db.First(&existing, "key = ?", aiAPIKeyKey).Error; err == nil {
 				apiKey = existing.Value
@@ -112,6 +113,67 @@ func UpdateAISettings(db *gorm.DB) http.HandlerFunc {
 			{Key: aiProviderKey, Value: provider, UpdatedAt: now},
 			{Key: aiURLKey, Value: aiURL, UpdatedAt: now},
 			{Key: aiModelKey, Value: strings.TrimSpace(req.Model), UpdatedAt: now},
+			{Key: aiAPIKeyKey, Value: apiKey, UpdatedAt: now},
+			{Key: aiModeKey, Value: mode, UpdatedAt: now},
+		}
+		for _, s := range settings {
+			if err := db.Save(&s).Error; err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to save setting")
+				return
+			}
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// UpdateOllamaSettingsLegacy handles PUT /api/admin/settings/ollama (deprecated).
+// Translates legacy ollama_* field names to ai_* and saves using the new schema,
+// always preserving any stored API key since the old endpoint had no key concept.
+func UpdateOllamaSettingsLegacy(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			OllamaURL   string `json:"ollama_url"`
+			OllamaModel string `json:"ollama_model"`
+			OllamaMode  string `json:"ollama_mode"`
+		}
+		if !decodeJSONBody(w, r, 1<<20, &req) {
+			return
+		}
+
+		aiURL := strings.TrimSpace(req.OllamaURL)
+		if aiURL != "" {
+			parsed, err := url.ParseRequestURI(aiURL)
+			if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+				writeError(w, http.StatusBadRequest, "ollama_url must be a valid absolute URL")
+				return
+			}
+		}
+
+		mode := strings.TrimSpace(req.OllamaMode)
+		if mode != "" && mode != "analysis" && mode != "enhanced" {
+			writeError(w, http.StatusBadRequest, "ollama_mode must be 'analysis' or 'enhanced'")
+			return
+		}
+		if mode == "" {
+			mode = "analysis"
+		}
+
+		// Preserve any existing API key — legacy endpoint has no key field.
+		var apiKey string
+		var existing models.AppSetting
+		if err := db.First(&existing, "key = ?", aiAPIKeyKey).Error; err == nil {
+			apiKey = existing.Value
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			writeError(w, http.StatusInternalServerError, "failed to load existing api key")
+			return
+		}
+
+		now := time.Now()
+		settings := []models.AppSetting{
+			{Key: aiProviderKey, Value: "ollama", UpdatedAt: now},
+			{Key: aiURLKey, Value: aiURL, UpdatedAt: now},
+			{Key: aiModelKey, Value: strings.TrimSpace(req.OllamaModel), UpdatedAt: now},
 			{Key: aiAPIKeyKey, Value: apiKey, UpdatedAt: now},
 			{Key: aiModeKey, Value: mode, UpdatedAt: now},
 		}
