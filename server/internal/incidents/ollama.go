@@ -351,10 +351,6 @@ func (e *AIEnricher) correlate(dispatch aiDispatch) {
 		return
 	}
 
-	if err := e.db.Where("incident_id = ? AND role = ?", dispatch.incidentID, "ai_cause").Delete(&models.IncidentEntry{}).Error; err != nil {
-		log.Printf("incidents: correlate clear ai_cause links for %s: %v", dispatch.incidentID, err)
-	}
-
 	validIDs := make(map[string]struct{}, len(detEntries)+len(nodeEntries))
 	for _, entry := range detEntries {
 		validIDs[entry.ID] = struct{}{}
@@ -363,53 +359,63 @@ func (e *AIEnricher) correlate(dispatch aiDispatch) {
 		validIDs[entry.ID] = struct{}{}
 	}
 
-	for _, cause := range response.Causes {
-		cause.EntryID = strings.TrimSpace(cause.EntryID)
-		if cause.EntryID == "" {
-			continue
-		}
-		if _, ok := validIDs[cause.EntryID]; !ok {
-			log.Printf("incidents: correlate dropped hallucinated entry_id %s for incident %s", cause.EntryID, dispatch.incidentID)
-			continue
+	if err := e.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("incident_id = ? AND role = ?", dispatch.incidentID, "ai_cause").Delete(&models.IncidentEntry{}).Error; err != nil {
+			return err
 		}
 
-		var existing models.IncidentEntry
-		err := e.db.Where("incident_id = ? AND entry_id = ?", dispatch.incidentID, cause.EntryID).First(&existing).Error
-		if err == nil && existing.Role != "ai_cause" {
-			log.Printf("incidents: correlate skipped existing deterministic link %s for incident %s", cause.EntryID, dispatch.incidentID)
-			continue
-		}
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			log.Printf("incidents: correlate lookup link %s for incident %s: %v", cause.EntryID, dispatch.incidentID, err)
-			continue
-		}
-
-		score := int(cause.Confidence * 100)
-		if score < 0 {
-			score = 0
-		}
-		if score > 100 {
-			score = 100
-		}
-
-		link := models.IncidentEntry{
-			IncidentID: dispatch.incidentID,
-			EntryID:    cause.EntryID,
-			Role:       "ai_cause",
-			Score:      score,
-			Reason:     sanitizeExternalText(cause.Reason),
-		}
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			if err := e.db.Create(&link).Error; err != nil {
-				log.Printf("incidents: correlate write ai_cause link %s->%s: %v", dispatch.incidentID, cause.EntryID, err)
+		for _, cause := range response.Causes {
+			cause.EntryID = strings.TrimSpace(cause.EntryID)
+			if cause.EntryID == "" {
+				continue
 			}
-			continue
+			if _, ok := validIDs[cause.EntryID]; !ok {
+				log.Printf("incidents: correlate dropped hallucinated entry_id %s for incident %s", cause.EntryID, dispatch.incidentID)
+				continue
+			}
+
+			var existing models.IncidentEntry
+			err := tx.Where("incident_id = ? AND entry_id = ?", dispatch.incidentID, cause.EntryID).First(&existing).Error
+			if err == nil && existing.Role != "ai_cause" {
+				log.Printf("incidents: correlate skipped existing deterministic link %s for incident %s", cause.EntryID, dispatch.incidentID)
+				continue
+			}
+			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("lookup link %s for incident %s: %w", cause.EntryID, dispatch.incidentID, err)
+			}
+
+			score := int(cause.Confidence * 100)
+			if score < 0 {
+				score = 0
+			}
+			if score > 100 {
+				score = 100
+			}
+
+			link := models.IncidentEntry{
+				IncidentID: dispatch.incidentID,
+				EntryID:    cause.EntryID,
+				Role:       "ai_cause",
+				Score:      score,
+				Reason:     sanitizeExternalText(cause.Reason),
+			}
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				if err := tx.Create(&link).Error; err != nil {
+					return fmt.Errorf("write ai_cause link %s->%s: %w", dispatch.incidentID, cause.EntryID, err)
+				}
+				continue
+			}
+			if err := tx.Model(&models.IncidentEntry{}).
+				Where("incident_id = ? AND entry_id = ?", dispatch.incidentID, cause.EntryID).
+				Updates(map[string]interface{}{"role": link.Role, "score": link.Score, "reason": link.Reason}).Error; err != nil {
+				return fmt.Errorf("update ai_cause link %s->%s: %w", dispatch.incidentID, cause.EntryID, err)
+			}
 		}
-		if err := e.db.Model(&models.IncidentEntry{}).
-			Where("incident_id = ? AND entry_id = ?", dispatch.incidentID, cause.EntryID).
-			Updates(map[string]interface{}{"role": link.Role, "score": link.Score, "reason": link.Reason}).Error; err != nil {
-			log.Printf("incidents: correlate update ai_cause link %s->%s: %v", dispatch.incidentID, cause.EntryID, err)
-		}
+		return nil
+	}); err != nil {
+		log.Printf("incidents: correlate write ai_cause links for %s: %v", dispatch.incidentID, err)
+		e.clearPending(dispatch.incidentID)
+		return
 	}
 
 	e.updateIncidentMetadata(dispatch.incidentID, func(meta map[string]interface{}) {
