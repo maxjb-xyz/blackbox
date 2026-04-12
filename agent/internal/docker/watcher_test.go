@@ -310,6 +310,15 @@ func TestBuildEntry_UsesContainerLookupForImagePullService(t *testing.T) {
 	resolver := newServiceResolver(context.Background(), fakeDockerResolverClient{
 		containers: []dockercontainer.Summary{
 			{
+				Image:   "ghcr.io/example/other-tag:stable",
+				ImageID: "sha256:abc123",
+				Names:   []string{"/other-app-web-1"},
+				Labels: map[string]string{
+					"com.docker.compose.project": "other-app",
+					"com.docker.compose.service": "web",
+				},
+			},
+			{
 				Image:   "lscr.io/linuxserver/sonarr:latest",
 				ImageID: "sha256:abc123",
 				Names:   []string{"/generatedprefix_web"},
@@ -323,7 +332,7 @@ func TestBuildEntry_UsesContainerLookupForImagePullService(t *testing.T) {
 
 	entry := buildEntry(
 		"node-1",
-		testDockerMessage(time.Now().UTC(), "image", "pull", "sha256:abc123", "ghcr.io/example/not-the-service-name:latest", ""),
+		testDockerMessage(time.Now().UTC(), "image", "pull", "sha256:abc123", "lscr.io/linuxserver/sonarr:latest", ""),
 		resolver,
 	)
 

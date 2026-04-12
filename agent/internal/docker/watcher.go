@@ -519,6 +519,7 @@ func (r *serviceResolver) findContainerIdentityForImage(imageID, ref string) con
 	normalizedRef := normalizeImageRef(ref)
 	shortRef := cleanImageService(ref)
 	exactMatches := []containerIdentity{}
+	digestMatches := []containerIdentity{}
 	repositoryMatches := []containerIdentity{}
 	shortNameMatches := []containerIdentity{}
 
@@ -527,8 +528,12 @@ func (r *serviceResolver) findContainerIdentityForImage(imageID, ref string) con
 		if identity.service == "" {
 			continue
 		}
-		if (imageID != "" && summary.ImageID == imageID) || (ref != "" && summary.Image == ref) {
+		if ref != "" && summary.Image == ref {
 			exactMatches = append(exactMatches, identity)
+			continue
+		}
+		if imageID != "" && summary.ImageID == imageID {
+			digestMatches = append(digestMatches, identity)
 			continue
 		}
 		if normalizedRef != "" && normalizeImageRef(summary.Image) == normalizedRef {
@@ -544,6 +549,9 @@ func (r *serviceResolver) findContainerIdentityForImage(imageID, ref string) con
 		return identity
 	}
 	if identity := resolveImageMatches(repositoryMatches); identity.service != "" || identity.displayName != "" {
+		return identity
+	}
+	if identity := resolveImageMatches(digestMatches); identity.service != "" || identity.displayName != "" {
 		return identity
 	}
 	return resolveImageMatches(shortNameMatches)
