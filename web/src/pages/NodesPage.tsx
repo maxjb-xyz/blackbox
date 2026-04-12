@@ -95,54 +95,56 @@ export default function NodesPage() {
                 : 'no agents registered'}
           </div>
         ) : (
-          <table className="nodes-table">
-            <thead>
-              <tr>
-                <th scope="col">NAME</th>
-                <th scope="col">STATUS</th>
-                <th scope="col">LAST SEEN</th>
-                <th scope="col">OS</th>
-                <th scope="col">VERSION</th>
-                <th scope="col">IP</th>
-              </tr>
-            </thead>
-            <tbody>
-              {nodes.map(node => {
-                const isOnline = node.status === 'online'
-                return (
-                  <tr key={node.id} style={isOnline ? undefined : { background: 'var(--danger-bg)' }}>
-                    <td className="nodes-cell-truncate" style={{ color: 'var(--text)' }}>
-                      {node.name}
-                    </td>
-                    <td style={{ fontSize: 11, letterSpacing: '0.1em', color: isOnline ? 'var(--success)' : 'var(--danger)' }}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                        <span
-                          className="nodes-status-dot"
-                          aria-hidden="true"
-                          style={{
-                            background: isOnline ? 'var(--success)' : 'var(--danger)',
-                          }}
-                        />
-                        <span>{node.status.toUpperCase()}</span>
-                      </span>
-                    </td>
-                    <td style={{ color: 'var(--muted)', fontSize: 12 }}>
-                      {formatTimestamp(node.last_seen)}
-                    </td>
-                    <td>
-                      <OsCell osInfo={node.os_info} />
-                    </td>
-                    <td style={{ color: 'var(--muted)', fontSize: 11 }}>
-                      {node.agent_version || '-'}
-                    </td>
-                    <td style={{ color: 'var(--muted)', fontSize: 12 }}>
-                      {node.ip_address || '-'}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+          <div className="nodes-table-scroll">
+            <table className="nodes-table">
+              <thead>
+                <tr>
+                  <th scope="col">NAME</th>
+                  <th scope="col">STATUS</th>
+                  <th scope="col">LAST SEEN</th>
+                  <th scope="col">OS</th>
+                  <th scope="col">VERSION</th>
+                  <th scope="col">IP</th>
+                </tr>
+              </thead>
+              <tbody>
+                {nodes.map(node => {
+                  const isOnline = node.status === 'online'
+                  return (
+                    <tr key={node.id} style={isOnline ? undefined : { background: 'var(--danger-bg)' }}>
+                      <td className="nodes-cell-truncate" style={{ color: 'var(--text)' }}>
+                        {node.name}
+                      </td>
+                      <td style={{ fontSize: 11, letterSpacing: '0.1em', color: isOnline ? 'var(--success)' : 'var(--danger)' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                          <span
+                            className="nodes-status-dot"
+                            aria-hidden="true"
+                            style={{
+                              background: isOnline ? 'var(--success)' : 'var(--danger)',
+                            }}
+                          />
+                          <span>{node.status.toUpperCase()}</span>
+                        </span>
+                      </td>
+                      <td style={{ color: 'var(--muted)', fontSize: 12 }}>
+                        {formatTimestamp(node.last_seen)}
+                      </td>
+                      <td>
+                        <OsCell osInfo={node.os_info} />
+                      </td>
+                      <td style={{ color: 'var(--muted)', fontSize: 11 }}>
+                        {node.agent_version || '-'}
+                      </td>
+                      <td style={{ color: 'var(--muted)', fontSize: 12 }}>
+                        {node.ip_address || '-'}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>

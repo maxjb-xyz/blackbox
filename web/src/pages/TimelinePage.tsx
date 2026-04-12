@@ -1161,6 +1161,7 @@ function TimelineFeed({
     <>
       {viewMode === 'rows' && (
         <div
+          className="timeline-header-row"
           style={{
             display: 'grid',
             gridTemplateColumns: ROW_GRID_TEMPLATE,
@@ -1466,6 +1467,7 @@ function DiffModal({ entry, diff, open, onClose }: { entry: Entry; diff: FileDif
 
   return (
     <div
+      className="diff-modal"
       onClick={e => { e.stopPropagation(); onClose() }}
       style={{
         position: 'fixed',
@@ -1521,8 +1523,8 @@ function DiffModal({ entry, diff, open, onClose }: { entry: Entry; diff: FileDif
         </div>
 
         <div style={{ overflow: 'auto', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', fontSize: '12px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, background: 'var(--surface)', zIndex: 1 }}>
-            <div style={{ padding: '8px 12px', borderRight: '1px solid var(--border)', color: 'var(--danger)' }}>BEFORE</div>
+          <div className="diff-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, background: 'var(--surface)', zIndex: 1 }}>
+            <div className="diff-cell-before" style={{ padding: '8px 12px', borderRight: '1px solid var(--border)', color: 'var(--danger)' }}>BEFORE</div>
             <div style={{ padding: '8px 12px', color: 'var(--success)' }}>AFTER</div>
           </div>
 
@@ -1547,8 +1549,8 @@ function DiffModal({ entry, diff, open, onClose }: { entry: Entry; diff: FileDif
                 : 'rgba(255,255,255,0.02)'
 
             return (
-              <div key={`row-${index}`} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                <pre style={{ margin: 0, padding: '6px 12px', whiteSpace: 'pre-wrap', wordBreak: 'break-word', borderRight: '1px solid var(--border)', background: leftBackground, color: row.leftType === 'remove' ? '#ff9b9b' : 'var(--text)', minHeight: 32 }}>
+              <div className="diff-grid" key={`row-${index}`} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                <pre className="diff-cell-before" style={{ margin: 0, padding: '6px 12px', whiteSpace: 'pre-wrap', wordBreak: 'break-word', borderRight: '1px solid var(--border)', background: leftBackground, color: row.leftType === 'remove' ? '#ff9b9b' : 'var(--text)', minHeight: 32 }}>
                   {row.left}
                 </pre>
                 <pre style={{ margin: 0, padding: '6px 12px', whiteSpace: 'pre-wrap', wordBreak: 'break-word', background: rightBackground, color: row.rightType === 'add' ? '#9cffb4' : 'var(--text)', minHeight: 32 }}>
@@ -1763,7 +1765,7 @@ function TimelineRow({ entry, isExpanded, isDimmed, isGhost, incident, onClick, 
       }
       onMouseLeave={possibleCause ? onTooltipClear : undefined}
     >
-      <div style={{ width: 20, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div className="tr-indicator" style={{ width: 20, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         {incident ? (
           <button
             type="button"
@@ -1793,16 +1795,16 @@ function TimelineRow({ entry, isExpanded, isDimmed, isGhost, incident, onClick, 
           </span>
         )}
       </div>
-      <span style={{ color: 'var(--muted)', fontSize: '12px', whiteSpace: 'nowrap' }}>
+      <span className="tr-timestamp" style={{ color: 'var(--muted)', fontSize: '12px', whiteSpace: 'nowrap' }}>
         {formatTimestamp(entry.timestamp)}
       </span>
-      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text)', minWidth: 0 }}>
+      <span className="tr-node" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text)', minWidth: 0 }}>
         {entry.node_name}
       </span>
-      <span style={{ color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+      <span className="tr-source" style={{ color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
         {sourceLabel}
       </span>
-      <div style={{ overflow: 'hidden', minWidth: 0 }}>
+      <div className="tr-service" style={{ overflow: 'hidden', minWidth: 0 }}>
         {entry.service && (
           <span
             style={{
@@ -1826,7 +1828,7 @@ function TimelineRow({ entry, isExpanded, isDimmed, isGhost, incident, onClick, 
           <span style={{ display: 'block', fontSize: '10px', color: '#71717A', fontFamily: 'monospace', marginTop: '2px' }}>{composeService}</span>
         )}
       </div>
-      <span style={{
+      <span className="tr-event" style={{
         color: eventTextColor(entry.event),
         overflow: 'hidden',
         textOverflow: 'ellipsis',
@@ -1836,7 +1838,7 @@ function TimelineRow({ entry, isExpanded, isDimmed, isGhost, incident, onClick, 
         {entry.event}
       </span>
 
-      <div style={{ minWidth: 0, width: '100%' }}>
+      <div className="tr-content" style={{ minWidth: 0, width: '100%' }}>
         <span style={{
           color: 'var(--text)',
           overflow: 'hidden',

@@ -81,7 +81,7 @@ export default function Topbar() {
       </span>
 
       {/* Primary nav */}
-      <nav className="flex h-full flex-1 items-stretch gap-0.5">
+      <nav className="mobile-hide-nav flex h-full flex-1 items-stretch gap-0.5">
         <NavLink to="/incidents" className={({ isActive }) => navClass(isActive)}>
           <AlertTriangle size={14} />
           INCIDENTS
