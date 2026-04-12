@@ -248,12 +248,14 @@ func (e *AIEnricher) enrich(dispatch aiDispatch) {
 		return
 	}
 
-	e.updateIncidentMetadata(dispatch.incidentID, func(meta map[string]interface{}) {
+	if !e.updateIncidentMetadata(dispatch.incidentID, func(meta map[string]interface{}) {
 		delete(meta, "ai_pending")
 		meta["ai_analysis"] = result
 		meta["ai_model"] = dispatch.model
 		meta["ai_enriched_at"] = time.Now().UTC().Format(time.RFC3339)
-	})
+	}) {
+		return
+	}
 }
 
 func (e *AIEnricher) correlate(dispatch aiDispatch) {
@@ -412,7 +414,7 @@ func (e *AIEnricher) correlate(dispatch aiDispatch) {
 		return
 	}
 
-	e.updateIncidentMetadata(dispatch.incidentID, func(meta map[string]interface{}) {
+	if !e.updateIncidentMetadata(dispatch.incidentID, func(meta map[string]interface{}) {
 		delete(meta, "ai_pending")
 		if summary := sanitizeExternalText(response.Summary); summary != "" {
 			meta["ai_analysis"] = summary
@@ -424,7 +426,9 @@ func (e *AIEnricher) correlate(dispatch aiDispatch) {
 		}
 		meta["ai_model"] = dispatch.model
 		meta["ai_enriched_at"] = time.Now().UTC().Format(time.RFC3339)
-	})
+	}) {
+		return
+	}
 }
 
 func (e *AIEnricher) loadAIConfig() aiConfig {
@@ -440,8 +444,8 @@ func (e *AIEnricher) loadAIConfig() aiConfig {
 		m[s.Key] = strings.TrimSpace(s.Value)
 	}
 
-	providerType := m[aiProviderKey]
-	if providerType == "" {
+	providerType, providerSet := m[aiProviderKey]
+	if !providerSet {
 		providerType = "ollama"
 	}
 
@@ -507,6 +511,9 @@ func (e *AIEnricher) updateIncidentMetadata(incidentID string, apply func(map[st
 
 	meta := make(map[string]interface{})
 	if err := json.Unmarshal([]byte(inc.Metadata), &meta); err != nil {
+		meta = make(map[string]interface{})
+	}
+	if meta == nil {
 		meta = make(map[string]interface{})
 	}
 	apply(meta)
