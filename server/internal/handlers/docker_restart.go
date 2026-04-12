@@ -40,7 +40,7 @@ func replaceDockerRestartEntry(
 	}
 
 	var existing types.Entry
-	lookupErr := database.First(&existing, "id = ? AND node_name = ? AND source = ? AND event = ?", lookupID, nodeName, "docker", "stop").Error
+	lookupErr := database.First(&existing, "id = ? AND node_name = ? AND source = ? AND event IN ?", lookupID, nodeName, "docker", []string{"stop", "restart"}).Error
 	if lookupErr != nil {
 		if errors.Is(lookupErr, gorm.ErrRecordNotFound) {
 			return replaceDockerRestartResult{Found: false}
