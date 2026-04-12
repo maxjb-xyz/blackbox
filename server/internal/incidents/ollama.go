@@ -374,13 +374,15 @@ func (e *AIEnricher) correlate(dispatch aiDispatch) {
 				continue
 			}
 
+			// Skip entries that already have a deterministic link (the delete above
+			// removed only ai_cause rows, so any row found here has another role).
 			var existing models.IncidentEntry
 			err := tx.Where("incident_id = ? AND entry_id = ?", dispatch.incidentID, cause.EntryID).First(&existing).Error
-			if err == nil && existing.Role != "ai_cause" {
+			if err == nil {
 				log.Printf("incidents: correlate skipped existing deterministic link %s for incident %s", cause.EntryID, dispatch.incidentID)
 				continue
 			}
-			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
 				return fmt.Errorf("lookup link %s for incident %s: %w", cause.EntryID, dispatch.incidentID, err)
 			}
 
@@ -399,16 +401,8 @@ func (e *AIEnricher) correlate(dispatch aiDispatch) {
 				Score:      score,
 				Reason:     sanitizeExternalText(cause.Reason),
 			}
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				if err := tx.Create(&link).Error; err != nil {
-					return fmt.Errorf("write ai_cause link %s->%s: %w", dispatch.incidentID, cause.EntryID, err)
-				}
-				continue
-			}
-			if err := tx.Model(&models.IncidentEntry{}).
-				Where("incident_id = ? AND entry_id = ?", dispatch.incidentID, cause.EntryID).
-				Updates(map[string]interface{}{"role": link.Role, "score": link.Score, "reason": link.Reason}).Error; err != nil {
-				return fmt.Errorf("update ai_cause link %s->%s: %w", dispatch.incidentID, cause.EntryID, err)
+			if err := tx.Create(&link).Error; err != nil {
+				return fmt.Errorf("write ai_cause link %s->%s: %w", dispatch.incidentID, cause.EntryID, err)
 			}
 		}
 		return nil
