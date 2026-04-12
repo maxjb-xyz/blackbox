@@ -3,7 +3,7 @@
 # ─── Stage 1: Build React ────────────────────────────────────────────────────
 FROM --platform=$BUILDPLATFORM node:22-alpine AS web-builder
 WORKDIR /web
-COPY web/package*.json ./
+COPY web/package*.json web/.npmrc ./
 RUN --mount=type=cache,target=/root/.npm npm ci
 COPY web/ ./
 RUN npm run build
