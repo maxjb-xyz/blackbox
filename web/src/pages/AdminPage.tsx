@@ -14,7 +14,7 @@ import {
   listAdminUsers,
   revokeInvite,
   setOIDCPolicy,
-  updateOllamaSettings,
+  updateAISettings,
   updateFileWatcherSettings,
   updateAdminOIDCProvider,
   updateAdminUser,
@@ -1071,14 +1071,17 @@ function SettingsTab() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
-  const [ollamaURL, setOllamaURL] = useState('')
-  const [ollamaModel, setOllamaModel] = useState('')
-  const [ollamaMode, setOllamaMode] = useState<'analysis' | 'enhanced'>('analysis')
-  const [ollamaSaving, setOllamaSaving] = useState(false)
-  const [ollamaError, setOllamaError] = useState<string | null>(null)
-  const [ollamaSuccess, setOllamaSuccess] = useState(false)
+  const [aiProvider, setAIProvider] = useState<'ollama' | 'openai_compat'>('ollama')
+  const [aiURL, setAIURL] = useState('')
+  const [aiModel, setAIModel] = useState('')
+  const [aiAPIKey, setAIAPIKey] = useState('')
+  const [aiAPIKeySet, setAIAPIKeySet] = useState(false)
+  const [aiMode, setAIMode] = useState<'analysis' | 'enhanced'>('analysis')
+  const [aiSaving, setAISaving] = useState(false)
+  const [aiError, setAIError] = useState<string | null>(null)
+  const [aiSuccess, setAISuccess] = useState(false)
   const [initialLoaded, setInitialLoaded] = useState(false)
-  const ollamaSuccessTimerRef = useRef<number | null>(null)
+  const aiSuccessTimerRef = useRef<number | null>(null)
 
   const loadSettings = useCallback(async () => {
     setLoading(true)
@@ -1086,9 +1089,11 @@ function SettingsTab() {
     try {
       const config = await fetchAdminConfig()
       setRedactSecrets(config.file_watcher_redact_secrets)
-      setOllamaURL(config.ollama_url ?? '')
-      setOllamaModel(config.ollama_model ?? '')
-      setOllamaMode(config.ollama_mode ?? 'analysis')
+      setAIProvider(config.ai_provider ?? 'ollama')
+      setAIURL(config.ai_url ?? '')
+      setAIModel(config.ai_model ?? '')
+      setAIAPIKeySet(config.ai_api_key_set ?? false)
+      setAIMode(config.ai_mode ?? 'analysis')
       setInitialLoaded(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load settings')
@@ -1103,8 +1108,8 @@ function SettingsTab() {
 
   useEffect(() => {
     return () => {
-      if (ollamaSuccessTimerRef.current !== null) {
-        window.clearTimeout(ollamaSuccessTimerRef.current)
+      if (aiSuccessTimerRef.current !== null) {
+        window.clearTimeout(aiSuccessTimerRef.current)
       }
     }
   }, [])
@@ -1125,26 +1130,26 @@ function SettingsTab() {
     }
   }
 
-  async function saveOllamaSettings(e: React.FormEvent) {
+  async function saveAISettings(e: React.FormEvent) {
     e.preventDefault()
     if (!initialLoaded) return
-    setOllamaSaving(true)
-    setOllamaError(null)
-    setOllamaSuccess(false)
+    setAISaving(true)
+    setAIError(null)
+    setAISuccess(false)
     try {
-      await updateOllamaSettings(ollamaURL, ollamaModel, ollamaMode)
-      if (ollamaSuccessTimerRef.current !== null) {
-        window.clearTimeout(ollamaSuccessTimerRef.current)
+      await updateAISettings(aiProvider, aiURL, aiModel, aiAPIKey, aiMode)
+      if (aiSuccessTimerRef.current !== null) {
+        window.clearTimeout(aiSuccessTimerRef.current)
       }
-      setOllamaSuccess(true)
-      ollamaSuccessTimerRef.current = window.setTimeout(() => {
-        setOllamaSuccess(false)
-        ollamaSuccessTimerRef.current = null
+      setAISuccess(true)
+      aiSuccessTimerRef.current = window.setTimeout(() => {
+        setAISuccess(false)
+        aiSuccessTimerRef.current = null
       }, 2500)
     } catch (err) {
-      setOllamaError(err instanceof Error ? err.message : 'Save failed')
+      setAIError(err instanceof Error ? err.message : 'Save failed')
     } finally {
-      setOllamaSaving(false)
+      setAISaving(false)
     }
   }
 
@@ -1218,67 +1223,87 @@ function SettingsTab() {
 
       <section style={panelStyle}>
         <h3 style={{ fontSize: 11, color: 'var(--muted)', letterSpacing: '0.1em', margin: '0 0 12px 0' }}>
-          AI ENRICHMENT (OPTIONAL)
+          AI PROVIDER
         </h3>
         {!initialLoaded ? (
           <div style={{ color: loading ? 'var(--muted)' : 'var(--danger)', fontSize: 12 }}>
-            {loading ? 'loading...' : 'Load settings before editing Ollama configuration.'}
+            {loading ? 'loading...' : 'Load settings before editing AI provider configuration.'}
           </div>
         ) : (
-          <form onSubmit={saveOllamaSettings} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <label style={{ fontSize: 12, color: 'var(--muted)' }}>
-              OLLAMA URL
+          <form onSubmit={saveAISettings} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>PROVIDER</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+              {(['ollama', 'openai_compat'] as const).map(p => {
+                const selected = aiProvider === p
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => { setAIProvider(p); setAISuccess(false) }}
+                    disabled={aiSaving}
+                    style={{
+                      padding: '4px 12px',
+                      fontSize: 12,
+                      border: '1px solid',
+                      borderColor: selected ? OLLAMA_MODE_ACTIVE_COLOR : 'var(--border)',
+                      background: selected ? 'rgba(168, 85, 247, 0.1)' : 'transparent',
+                      color: selected ? OLLAMA_MODE_ACTIVE_COLOR : 'var(--muted)',
+                      cursor: aiSaving ? 'not-allowed' : 'pointer',
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    {p === 'ollama' ? 'OLLAMA' : 'OPENAI COMPATIBLE'}
+                  </button>
+                )
+              })}
+            </div>
+            <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 8 }}>
+              {aiProvider === 'openai_compat' ? 'BASE URL' : 'OLLAMA URL'}
               <input
                 type="url"
-                value={ollamaURL}
-                onChange={e => {
-                  setOllamaURL(e.target.value)
-                  setOllamaSuccess(false)
-                }}
-                placeholder="http://192.168.1.10:11434"
-                disabled={!initialLoaded || ollamaSaving}
+                value={aiURL}
+                onChange={e => { setAIURL(e.target.value); setAISuccess(false) }}
+                placeholder={aiProvider === 'openai_compat' ? 'https://api.openai.com' : 'http://192.168.1.10:11434'}
+                disabled={!initialLoaded || aiSaving}
                 style={{ display: 'block', width: '100%', marginTop: 4, ...FILTER_CONTROL_STYLE }}
               />
             </label>
-            <label style={{ fontSize: 12, color: 'var(--muted)' }}>
+            {aiProvider === 'openai_compat' && (
+              <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 8 }}>
+                API KEY
+                <input
+                  type="password"
+                  value={aiAPIKey}
+                  onChange={e => { setAIAPIKey(e.target.value); setAISuccess(false) }}
+                  placeholder={aiAPIKeySet ? '[key set — leave blank to keep]' : 'sk-...'}
+                  disabled={!initialLoaded || aiSaving}
+                  style={{ display: 'block', width: '100%', marginTop: 4, ...FILTER_CONTROL_STYLE }}
+                />
+              </label>
+            )}
+            <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 8 }}>
               MODEL
               <input
                 type="text"
-                value={ollamaModel}
-                onChange={e => {
-                  setOllamaModel(e.target.value)
-                  setOllamaSuccess(false)
-                }}
-                placeholder="llama3.2"
-                disabled={!initialLoaded || ollamaSaving}
+                value={aiModel}
+                onChange={e => { setAIModel(e.target.value); setAISuccess(false) }}
+                placeholder={aiProvider === 'openai_compat' ? 'gpt-4o-mini' : 'llama3.2'}
+                disabled={!initialLoaded || aiSaving}
                 style={{ display: 'block', width: '100%', marginTop: 4, ...FILTER_CONTROL_STYLE }}
               />
             </label>
-            {ollamaURL.trim() !== '' && ollamaModel.trim() !== '' && (
+            {aiURL.trim() !== '' && aiModel.trim() !== '' && (
               <div style={{ marginTop: 4 }}>
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: 'var(--muted)',
-                    marginBottom: 6,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                  }}
-                >
-                  AI Mode
-                </div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>MODE</div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   {(['analysis', 'enhanced'] as const).map(mode => {
-                    const selected = ollamaMode === mode
+                    const selected = aiMode === mode
                     return (
                       <button
                         key={mode}
                         type="button"
-                        onClick={() => {
-                          setOllamaMode(mode)
-                          setOllamaSuccess(false)
-                        }}
-                        disabled={ollamaSaving}
+                        onClick={() => { setAIMode(mode); setAISuccess(false) }}
+                        disabled={aiSaving}
                         style={{
                           padding: '4px 12px',
                           fontSize: 12,
@@ -1286,41 +1311,30 @@ function SettingsTab() {
                           borderColor: selected ? OLLAMA_MODE_ACTIVE_COLOR : 'var(--border)',
                           background: selected ? 'rgba(168, 85, 247, 0.1)' : 'transparent',
                           color: selected ? OLLAMA_MODE_ACTIVE_COLOR : 'var(--muted)',
-                          cursor: ollamaSaving ? 'not-allowed' : 'pointer',
+                          cursor: aiSaving ? 'not-allowed' : 'pointer',
                           fontFamily: 'inherit',
                         }}
                       >
-                        {mode === 'analysis' ? 'AI Analysis' : 'AI-Enhanced Engine'}
+                        {mode.toUpperCase()}
                       </button>
                     )
                   })}
                 </div>
-                {ollamaMode === 'enhanced' && (
-                  <div
-                    style={{
-                      marginTop: 8,
-                      fontSize: 11,
-                      color: 'var(--muted)',
-                      fontStyle: 'italic',
-                      maxWidth: 420,
-                      lineHeight: '1.5',
-                    }}
-                  >
-                    AI will analyze all recent events on the same node and suggest additional
-                    causes. Results stay separated from algorithmic correlation, and invalid
-                    entry references are discarded.
+                {aiMode === 'enhanced' && (
+                  <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)' }}>
+                    Enhanced mode: AI correlates timeline events after deterministic links settle.
                   </div>
                 )}
               </div>
             )}
-            {ollamaError && <div style={{ color: 'var(--danger)', fontSize: 11 }}>{ollamaError}</div>}
-            {ollamaSuccess && <div style={{ color: 'var(--success)', fontSize: 11 }}>saved</div>}
+            {aiError && <div style={{ color: 'var(--danger)', fontSize: 11 }}>{aiError}</div>}
+            {aiSuccess && <div style={{ color: 'var(--success)', fontSize: 11 }}>saved</div>}
             <button
               type="submit"
-              disabled={!initialLoaded || ollamaSaving}
+              disabled={!initialLoaded || aiSaving}
               style={{ alignSelf: 'flex-start', fontSize: 11, padding: '4px 12px', cursor: 'pointer', fontFamily: 'inherit' }}
             >
-              {ollamaSaving ? 'SAVING...' : 'SAVE'}
+              {aiSaving ? 'SAVING...' : 'SAVE'}
             </button>
           </form>
         )}
