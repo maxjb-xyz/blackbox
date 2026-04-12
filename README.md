@@ -660,10 +660,10 @@ The database is automatically migrated on startup — no manual schema managemen
 - [x] Incidents UI + header badge
 - [x] Optional AI-enhanced correlation engine
 - [x] Support tracking systemd services
+- [x] Mobile-friendly view
 - [ ] Timeline UI polish and interaction improvements
 - [ ] Grafana data source plugin
 - [ ] Dynamic notifications to Discord
-- [ ] Mobile-friendly view
 - [ ] Support OpenAI/Other AI Providers
 - [ ] Bi-directional agent analysis
 
