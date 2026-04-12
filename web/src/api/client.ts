@@ -260,9 +260,11 @@ export async function deleteAdminUser(id: string): Promise<void> {
 export interface AdminConfig {
   webhook_secret: string
   file_watcher_redact_secrets: boolean
-  ollama_url: string
-  ollama_model: string
-  ollama_mode: 'analysis' | 'enhanced'
+  ai_provider: 'ollama' | 'openai_compat'
+  ai_url: string
+  ai_model: string
+  ai_api_key_set: boolean
+  ai_mode: 'analysis' | 'enhanced'
 }
 
 export async function fetchAdminConfig(): Promise<AdminConfig> {
@@ -281,17 +283,20 @@ export async function updateFileWatcherSettings(redactSecrets: boolean): Promise
   return res.json()
 }
 
-export async function updateOllamaSettings(
-  ollamaUrl: string,
-  ollamaModel: string,
-  ollamaMode: 'analysis' | 'enhanced',
+export async function updateAISettings(
+  provider: 'ollama' | 'openai_compat',
+  url: string,
+  model: string,
+  apiKey: string,
+  clearAPIKey: boolean,
+  mode: 'analysis' | 'enhanced',
 ): Promise<void> {
-  const res = await apiFetch('/api/admin/settings/ollama', {
+  const res = await apiFetch('/api/admin/settings/ai', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ollama_url: ollamaUrl, ollama_model: ollamaModel, ollama_mode: ollamaMode }),
+    body: JSON.stringify({ ai_provider: provider, ai_url: url, ai_model: model, ai_api_key: apiKey, ai_clear_api_key: clearAPIKey, ai_mode: mode }),
   })
-  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to update Ollama settings'))
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to update AI settings'))
 }
 
 export async function fetchSystemdSettings(): Promise<Record<string, string[]>> {

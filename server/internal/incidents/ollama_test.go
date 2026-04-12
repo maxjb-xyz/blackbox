@@ -1,10 +1,11 @@
 package incidents
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"sync/atomic"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -19,16 +20,16 @@ func TestManager_SuspectedIncidentDispatchesAIAnalysisWithTriggerLogs(t *testing
 	database, err := db.Init(":memory:")
 	require.NoError(t, err)
 
-	require.NoError(t, database.Create(&models.AppSetting{Key: ollamaURLKey, Value: "http://ollama.local"}).Error)
-	require.NoError(t, database.Create(&models.AppSetting{Key: ollamaModelKey, Value: "llama3.2"}).Error)
+	require.NoError(t, database.Create(&models.AppSetting{Key: aiURLKey, Value: "http://ollama.local"}).Error)
+	require.NoError(t, database.Create(&models.AppSetting{Key: aiModelKey, Value: "llama3.2"}).Error)
 
 	promptSeen := make(chan string, 1)
-	originalCall := callOllamaFunc
-	callOllamaFunc = func(baseURL, model, prompt string) (string, error) {
+	originalCall := callGenerateFunc
+	callGenerateFunc = func(_ context.Context, provider LLMProvider, model, prompt string, timeout time.Duration) (string, error) {
 		promptSeen <- prompt
 		return "Crash caused by invalid config", nil
 	}
-	defer func() { callOllamaFunc = originalCall }()
+	defer func() { callGenerateFunc = originalCall }()
 
 	now := time.Now().UTC()
 	entry := types.Entry{
@@ -65,20 +66,20 @@ func TestManager_SuspectedIncidentDispatchesAIAnalysisWithTriggerLogs(t *testing
 	}
 }
 
-func TestOllamaEnricher_SetsAndClearsPendingState(t *testing.T) {
+func TestAIEnricher_SetsAndClearsPendingState(t *testing.T) {
 	database, err := db.Init(":memory:")
 	require.NoError(t, err)
 
 	release := make(chan struct{})
-	originalCall := callOllamaFunc
-	callOllamaFunc = func(baseURL, model, prompt string) (string, error) {
+	originalCall := callGenerateFunc
+	callGenerateFunc = func(_ context.Context, provider LLMProvider, model, prompt string, timeout time.Duration) (string, error) {
 		<-release
 		return "Root cause: bad config", nil
 	}
-	defer func() { callOllamaFunc = originalCall }()
+	defer func() { callGenerateFunc = originalCall }()
 
-	require.NoError(t, database.Create(&models.AppSetting{Key: ollamaURLKey, Value: "http://ollama.local"}).Error)
-	require.NoError(t, database.Create(&models.AppSetting{Key: ollamaModelKey, Value: "llama3.2"}).Error)
+	require.NoError(t, database.Create(&models.AppSetting{Key: aiURLKey, Value: "http://ollama.local"}).Error)
+	require.NoError(t, database.Create(&models.AppSetting{Key: aiModelKey, Value: "llama3.2"}).Error)
 
 	incidentID := ulid.Make().String()
 	require.NoError(t, database.Create(&models.Incident{
@@ -92,7 +93,7 @@ func TestOllamaEnricher_SetsAndClearsPendingState(t *testing.T) {
 		Metadata:   `{}`,
 	}).Error)
 
-	enricher := NewOllamaEnricher(database, nil)
+	enricher := NewAIEnricher(database, nil)
 	enricher.EnrichAsync(incidentID, []enrichEntry{{
 		Role:    "trigger",
 		Content: "Container stopped: nginx",
@@ -127,8 +128,8 @@ func TestCorrelateAsync_WritesAICauseLinks(t *testing.T) {
 	database, err := db.Init(":memory:")
 	require.NoError(t, err)
 
-	require.NoError(t, database.Create(&models.AppSetting{Key: ollamaURLKey, Value: "http://ollama.local"}).Error)
-	require.NoError(t, database.Create(&models.AppSetting{Key: ollamaModelKey, Value: "llama3.2"}).Error)
+	require.NoError(t, database.Create(&models.AppSetting{Key: aiURLKey, Value: "http://ollama.local"}).Error)
+	require.NoError(t, database.Create(&models.AppSetting{Key: aiModelKey, Value: "llama3.2"}).Error)
 
 	now := time.Now().UTC()
 	triggerID := ulid.Make().String()
@@ -174,18 +175,18 @@ func TestCorrelateAsync_WritesAICauseLinks(t *testing.T) {
 		Score:      0,
 	}).Error)
 
-	originalCall := callOllamaCorrelateFunc
+	originalCall := callCorrelateGenerateFunc
 	originalDelay := correlateDelay
-	callOllamaCorrelateFunc = func(baseURL, model, prompt string) (string, error) {
+	callCorrelateGenerateFunc = func(_ context.Context, provider LLMProvider, model, prompt string, timeout time.Duration) (string, error) {
 		return `analysis wrapper {"summary":"nginx crashed due to resource exhaustion","causes":[{"entry_id":"` + candidateID + `","confidence":0.85,"reason":"Container exited before the outage"}]} done`, nil
 	}
 	correlateDelay = 0
 	defer func() {
-		callOllamaCorrelateFunc = originalCall
+		callCorrelateGenerateFunc = originalCall
 		correlateDelay = originalDelay
 	}()
 
-	enricher := NewOllamaEnricher(database, nil)
+	enricher := NewAIEnricher(database, nil)
 	enricher.CorrelateAsync(incidentID, nil, "node-01")
 
 	require.Eventually(t, func() bool {
@@ -206,8 +207,8 @@ func TestCorrelateAsync_UsesScopedIncidentNodesAndSetsVerified(t *testing.T) {
 	database, err := db.Init(":memory:")
 	require.NoError(t, err)
 
-	require.NoError(t, database.Create(&models.AppSetting{Key: ollamaURLKey, Value: "http://ollama.local"}).Error)
-	require.NoError(t, database.Create(&models.AppSetting{Key: ollamaModelKey, Value: "llama3.2"}).Error)
+	require.NoError(t, database.Create(&models.AppSetting{Key: aiURLKey, Value: "http://ollama.local"}).Error)
+	require.NoError(t, database.Create(&models.AppSetting{Key: aiModelKey, Value: "llama3.2"}).Error)
 
 	now := time.Now().UTC()
 	triggerID := ulid.Make().String()
@@ -271,19 +272,19 @@ func TestCorrelateAsync_UsesScopedIncidentNodesAndSetsVerified(t *testing.T) {
 	}).Error)
 
 	promptSeen := make(chan string, 1)
-	originalCall := callOllamaCorrelateFunc
+	originalCall := callCorrelateGenerateFunc
 	originalDelay := correlateDelay
-	callOllamaCorrelateFunc = func(baseURL, model, prompt string) (string, error) {
+	callCorrelateGenerateFunc = func(_ context.Context, provider LLMProvider, model, prompt string, timeout time.Duration) (string, error) {
 		promptSeen <- prompt
 		return `{"summary":"radarr failed on media-node","verified":true,"causes":[]}`, nil
 	}
 	correlateDelay = 0
 	defer func() {
-		callOllamaCorrelateFunc = originalCall
+		callCorrelateGenerateFunc = originalCall
 		correlateDelay = originalDelay
 	}()
 
-	enricher := NewOllamaEnricher(database, nil)
+	enricher := NewAIEnricher(database, nil)
 	enricher.CorrelateAsync(incidentID, nil, "webhook")
 
 	var incident models.Incident
@@ -311,8 +312,8 @@ func TestCorrelateAsync_DropsHallucinatedEntryIDs(t *testing.T) {
 	database, err := db.Init(":memory:")
 	require.NoError(t, err)
 
-	require.NoError(t, database.Create(&models.AppSetting{Key: ollamaURLKey, Value: "http://ollama.local"}).Error)
-	require.NoError(t, database.Create(&models.AppSetting{Key: ollamaModelKey, Value: "llama3.2"}).Error)
+	require.NoError(t, database.Create(&models.AppSetting{Key: aiURLKey, Value: "http://ollama.local"}).Error)
+	require.NoError(t, database.Create(&models.AppSetting{Key: aiModelKey, Value: "llama3.2"}).Error)
 
 	now := time.Now().UTC()
 	incidentID := ulid.Make().String()
@@ -340,18 +341,18 @@ func TestCorrelateAsync_DropsHallucinatedEntryIDs(t *testing.T) {
 		Metadata:   `{}`,
 	}).Error)
 
-	originalCall := callOllamaCorrelateFunc
+	originalCall := callCorrelateGenerateFunc
 	originalDelay := correlateDelay
-	callOllamaCorrelateFunc = func(baseURL, model, prompt string) (string, error) {
+	callCorrelateGenerateFunc = func(_ context.Context, provider LLMProvider, model, prompt string, timeout time.Duration) (string, error) {
 		return `{"summary":"something","causes":[{"entry_id":"` + fakeID + `","confidence":0.9,"reason":"ghost"}]}`, nil
 	}
 	correlateDelay = 0
 	defer func() {
-		callOllamaCorrelateFunc = originalCall
+		callCorrelateGenerateFunc = originalCall
 		correlateDelay = originalDelay
 	}()
 
-	enricher := NewOllamaEnricher(database, nil)
+	enricher := NewAIEnricher(database, nil)
 	enricher.CorrelateAsync(incidentID, nil, "node-01")
 
 	require.Eventually(t, func() bool {
@@ -375,12 +376,31 @@ func TestCorrelationScopeNodes_DropsEmptyFallback(t *testing.T) {
 	require.Equal(t, []string{"node-01"}, correlationScopeNodes(`[""]`, nil, " node-01 "))
 }
 
-func TestCorrelateAsync_ExcludesPriorAICauseLinksFromDeterministicPrompt(t *testing.T) {
+func TestAIEnricher_LoadAIConfig_FallsBackToLegacyOllamaSettings(t *testing.T) {
 	database, err := db.Init(":memory:")
 	require.NoError(t, err)
 
 	require.NoError(t, database.Create(&models.AppSetting{Key: ollamaURLKey, Value: "http://ollama.local"}).Error)
 	require.NoError(t, database.Create(&models.AppSetting{Key: ollamaModelKey, Value: "llama3.2"}).Error)
+	require.NoError(t, database.Create(&models.AppSetting{Key: ollamaModeKey, Value: "enhanced"}).Error)
+
+	enricher := NewAIEnricher(database, nil)
+	cfg := enricher.loadAIConfig()
+
+	require.Equal(t, "llama3.2", cfg.model)
+	require.Equal(t, "enhanced", cfg.mode)
+
+	provider, ok := cfg.provider.(*ollamaProvider)
+	require.True(t, ok)
+	require.Equal(t, "http://ollama.local", provider.baseURL)
+}
+
+func TestCorrelateAsync_ExcludesPriorAICauseLinksFromDeterministicPrompt(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	require.NoError(t, database.Create(&models.AppSetting{Key: aiURLKey, Value: "http://ollama.local"}).Error)
+	require.NoError(t, database.Create(&models.AppSetting{Key: aiModelKey, Value: "llama3.2"}).Error)
 
 	now := time.Now().UTC()
 	triggerID := ulid.Make().String()
@@ -451,19 +471,19 @@ func TestCorrelateAsync_ExcludesPriorAICauseLinksFromDeterministicPrompt(t *test
 	}).Error)
 
 	promptSeen := make(chan string, 1)
-	originalCall := callOllamaCorrelateFunc
+	originalCall := callCorrelateGenerateFunc
 	originalDelay := correlateDelay
-	callOllamaCorrelateFunc = func(baseURL, model, prompt string) (string, error) {
+	callCorrelateGenerateFunc = func(_ context.Context, provider LLMProvider, model, prompt string, timeout time.Duration) (string, error) {
 		promptSeen <- prompt
 		return `{"summary":"nginx down","verified":true,"causes":[]}`, nil
 	}
 	correlateDelay = 0
 	defer func() {
-		callOllamaCorrelateFunc = originalCall
+		callCorrelateGenerateFunc = originalCall
 		correlateDelay = originalDelay
 	}()
 
-	enricher := NewOllamaEnricher(database, nil)
+	enricher := NewAIEnricher(database, nil)
 	enricher.CorrelateAsync(incidentID, nil, "node-01")
 
 	var prompt string
@@ -480,12 +500,12 @@ func TestCorrelateAsync_ExcludesPriorAICauseLinksFromDeterministicPrompt(t *test
 	require.Contains(t, prompt, "[cause score=90]")
 }
 
-func TestOllamaEnricher_QueuesDuplicateDispatchesWithoutConcurrentCalls(t *testing.T) {
+func TestAIEnricher_QueuesDuplicateDispatchesWithoutConcurrentCalls(t *testing.T) {
 	database, err := db.Init(":memory:")
 	require.NoError(t, err)
 
-	require.NoError(t, database.Create(&models.AppSetting{Key: ollamaURLKey, Value: "http://ollama.local"}).Error)
-	require.NoError(t, database.Create(&models.AppSetting{Key: ollamaModelKey, Value: "llama3.2"}).Error)
+	require.NoError(t, database.Create(&models.AppSetting{Key: aiURLKey, Value: "http://ollama.local"}).Error)
+	require.NoError(t, database.Create(&models.AppSetting{Key: aiModelKey, Value: "llama3.2"}).Error)
 
 	incidentID := ulid.Make().String()
 	require.NoError(t, database.Create(&models.Incident{
@@ -499,15 +519,15 @@ func TestOllamaEnricher_QueuesDuplicateDispatchesWithoutConcurrentCalls(t *testi
 		Metadata:   `{}`,
 	}).Error)
 
-	originalCall := callOllamaFunc
-	defer func() { callOllamaFunc = originalCall }()
+	originalCall := callGenerateFunc
+	defer func() { callGenerateFunc = originalCall }()
 
 	releaseFirst := make(chan struct{})
 	var calls atomic.Int32
 	var active atomic.Int32
 	var maxActive atomic.Int32
 
-	callOllamaFunc = func(baseURL, model, prompt string) (string, error) {
+	callGenerateFunc = func(_ context.Context, provider LLMProvider, model, prompt string, timeout time.Duration) (string, error) {
 		callNum := calls.Add(1)
 		currentActive := active.Add(1)
 		for {
@@ -524,7 +544,7 @@ func TestOllamaEnricher_QueuesDuplicateDispatchesWithoutConcurrentCalls(t *testi
 		return fmt.Sprintf("analysis %d", callNum), nil
 	}
 
-	enricher := NewOllamaEnricher(database, nil)
+	enricher := NewAIEnricher(database, nil)
 	enricher.EnrichAsync(incidentID, []enrichEntry{{Role: "trigger", Content: "first", Source: "docker", Event: "die"}})
 
 	require.Eventually(t, func() bool {
