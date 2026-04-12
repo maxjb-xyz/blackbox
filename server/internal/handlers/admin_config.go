@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"net/url"
@@ -12,9 +13,16 @@ import (
 	"gorm.io/gorm"
 )
 
-const ollamaURLKey = "ollama_url"
-const ollamaModelKey = "ollama_model"
-const ollamaModeKey = "ollama_mode"
+const aiProviderKey = "ai_provider"
+const aiURLKey = "ai_url"
+const aiModelKey = "ai_model"
+const aiAPIKeyKey = "ai_api_key"
+const aiModeKey = "ai_mode"
+
+// Legacy keys — read-only fallback for existing installs
+const legacyOllamaURLKey = "ollama_url"
+const legacyOllamaModelKey = "ollama_model"
+const legacyOllamaModeKey = "ollama_mode"
 
 func AdminConfig(db *gorm.DB, webhookSecret string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -23,7 +31,7 @@ func AdminConfig(db *gorm.DB, webhookSecret string) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "failed to load admin config")
 			return
 		}
-		ollamaURL, ollamaModel, ollamaMode, err := getOllamaSettings(db)
+		ai, err := getAISettings(db)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to load admin config")
 			return
@@ -36,48 +44,76 @@ func AdminConfig(db *gorm.DB, webhookSecret string) http.HandlerFunc {
 		if err := json.NewEncoder(w).Encode(map[string]any{
 			"webhook_secret":              webhookSecret,
 			"file_watcher_redact_secrets": redactSecrets,
-			"ollama_url":                  ollamaURL,
-			"ollama_model":                ollamaModel,
-			"ollama_mode":                 ollamaMode,
+			"ai_provider":                 ai.provider,
+			"ai_url":                      ai.url,
+			"ai_model":                    ai.model,
+			"ai_api_key_set":              ai.apiKeySet,
+			"ai_mode":                     ai.mode,
 		}); err != nil {
 			log.Printf("AdminConfig encode: %v", err)
 		}
 	}
 }
 
-func UpdateOllamaSettings(db *gorm.DB) http.HandlerFunc {
+func UpdateAISettings(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
-			OllamaURL   string `json:"ollama_url"`
-			OllamaModel string `json:"ollama_model"`
-			OllamaMode  string `json:"ollama_mode"`
+			Provider string `json:"ai_provider"`
+			URL      string `json:"ai_url"`
+			Model    string `json:"ai_model"`
+			APIKey   string `json:"ai_api_key"`
+			Mode     string `json:"ai_mode"`
 		}
 		if !decodeJSONBody(w, r, 1<<20, &req) {
 			return
 		}
 
-		ollamaURL := strings.TrimSpace(req.OllamaURL)
-		if ollamaURL != "" {
-			parsed, err := url.ParseRequestURI(ollamaURL)
+		provider := strings.TrimSpace(req.Provider)
+		if provider == "" {
+			provider = "ollama"
+		}
+		if provider != "ollama" && provider != "openai_compat" {
+			writeError(w, http.StatusBadRequest, "ai_provider must be 'ollama' or 'openai_compat'")
+			return
+		}
+
+		aiURL := strings.TrimSpace(req.URL)
+		if aiURL != "" {
+			parsed, err := url.ParseRequestURI(aiURL)
 			if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-				writeError(w, http.StatusBadRequest, "ollama_url must be a valid absolute URL")
+				writeError(w, http.StatusBadRequest, "ai_url must be a valid absolute URL")
 				return
 			}
 		}
-		ollamaMode := strings.TrimSpace(req.OllamaMode)
-		if ollamaMode != "" && ollamaMode != "analysis" && ollamaMode != "enhanced" {
-			writeError(w, http.StatusBadRequest, "ollama_mode must be 'analysis' or 'enhanced'")
+
+		mode := strings.TrimSpace(req.Mode)
+		if mode != "" && mode != "analysis" && mode != "enhanced" {
+			writeError(w, http.StatusBadRequest, "ai_mode must be 'analysis' or 'enhanced'")
 			return
 		}
-		if ollamaMode == "" {
-			ollamaMode = "analysis"
+		if mode == "" {
+			mode = "analysis"
+		}
+
+		// Preserve existing API key if blank submitted
+		apiKey := strings.TrimSpace(req.APIKey)
+		if apiKey == "" {
+			var existing models.AppSetting
+			if err := db.First(&existing, "key = ?", aiAPIKeyKey).Error; err == nil {
+				apiKey = existing.Value
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				writeError(w, http.StatusInternalServerError, "failed to load existing api key")
+				return
+			}
 		}
 
 		now := time.Now()
 		settings := []models.AppSetting{
-			{Key: ollamaURLKey, Value: ollamaURL, UpdatedAt: now},
-			{Key: ollamaModelKey, Value: strings.TrimSpace(req.OllamaModel), UpdatedAt: now},
-			{Key: ollamaModeKey, Value: ollamaMode, UpdatedAt: now},
+			{Key: aiProviderKey, Value: provider, UpdatedAt: now},
+			{Key: aiURLKey, Value: aiURL, UpdatedAt: now},
+			{Key: aiModelKey, Value: strings.TrimSpace(req.Model), UpdatedAt: now},
+			{Key: aiAPIKeyKey, Value: apiKey, UpdatedAt: now},
+			{Key: aiModeKey, Value: mode, UpdatedAt: now},
 		}
 		for _, s := range settings {
 			if err := db.Save(&s).Error; err != nil {
@@ -90,26 +126,50 @@ func UpdateOllamaSettings(db *gorm.DB) http.HandlerFunc {
 	}
 }
 
-func getOllamaSettings(db *gorm.DB) (string, string, string, error) {
+type aiSettingsResult struct {
+	provider  string
+	url       string
+	model     string
+	apiKeySet bool
+	mode      string
+}
+
+func getAISettings(db *gorm.DB) (aiSettingsResult, error) {
+	keys := []string{aiProviderKey, aiURLKey, aiModelKey, aiAPIKeyKey, aiModeKey, legacyOllamaURLKey, legacyOllamaModelKey, legacyOllamaModeKey}
 	var settings []models.AppSetting
-	if err := db.Where("key IN ?", []string{ollamaURLKey, ollamaModelKey, ollamaModeKey}).Find(&settings).Error; err != nil {
-		return "", "", "", err
+	if err := db.Where("key IN ?", keys).Find(&settings).Error; err != nil {
+		return aiSettingsResult{}, err
 	}
 
-	ollamaURL := ""
-	ollamaModel := ""
-	ollamaMode := "analysis"
+	m := make(map[string]string, len(settings))
 	for _, s := range settings {
-		switch s.Key {
-		case ollamaURLKey:
-			ollamaURL = strings.TrimSpace(s.Value)
-		case ollamaModelKey:
-			ollamaModel = strings.TrimSpace(s.Value)
-		case ollamaModeKey:
-			if v := strings.TrimSpace(s.Value); v != "" {
-				ollamaMode = v
-			}
-		}
+		m[s.Key] = strings.TrimSpace(s.Value)
 	}
-	return ollamaURL, ollamaModel, ollamaMode, nil
+
+	result := aiSettingsResult{mode: "analysis"}
+
+	result.provider = m[aiProviderKey]
+	if result.provider == "" {
+		result.provider = "ollama"
+	}
+
+	result.url = m[aiURLKey]
+	if result.url == "" {
+		result.url = m[legacyOllamaURLKey]
+	}
+
+	result.model = m[aiModelKey]
+	if result.model == "" {
+		result.model = m[legacyOllamaModelKey]
+	}
+
+	result.apiKeySet = m[aiAPIKeyKey] != ""
+
+	if v := m[aiModeKey]; v != "" {
+		result.mode = v
+	} else if v := m[legacyOllamaModeKey]; v != "" {
+		result.mode = v
+	}
+
+	return result, nil
 }

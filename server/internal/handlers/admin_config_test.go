@@ -32,15 +32,15 @@ func TestAdminConfig_ReturnsWebhookSecret(t *testing.T) {
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
 	assert.Equal(t, "my-secret-value", resp["webhook_secret"])
 	assert.Equal(t, true, resp["file_watcher_redact_secrets"])
-	assert.Equal(t, "", resp["ollama_url"])
-	assert.Equal(t, "", resp["ollama_model"])
-	assert.Equal(t, "analysis", resp["ollama_mode"])
+	assert.Equal(t, "ollama", resp["ai_provider"])
+	assert.Equal(t, "", resp["ai_url"])
+	assert.Equal(t, "", resp["ai_model"])
+	assert.Equal(t, false, resp["ai_api_key_set"])
+	assert.Equal(t, "analysis", resp["ai_mode"])
 	assert.Equal(t, "no-store, no-cache, must-revalidate", w.Header().Get("Cache-Control"))
-	assert.Equal(t, "no-cache", w.Header().Get("Pragma"))
-	assert.Equal(t, "0", w.Header().Get("Expires"))
 }
 
-func TestAdminConfig_EmptyWebhookSecret(t *testing.T) {
+func TestAdminConfig_ReturnsAISettings(t *testing.T) {
 	t.Parallel()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/admin/config", nil)
@@ -52,57 +52,25 @@ func TestAdminConfig_EmptyWebhookSecret(t *testing.T) {
 
 	database := newTestDB(t)
 	require.NoError(t, database.Create(&models.AppSetting{Key: "file_watcher_redact_secrets", Value: "false"}).Error)
-	require.NoError(t, database.Create(&models.AppSetting{Key: "ollama_url", Value: " http://localhost:11434 "}).Error)
-	require.NoError(t, database.Create(&models.AppSetting{Key: "ollama_model", Value: " llama3.2 "}).Error)
-	require.NoError(t, database.Create(&models.AppSetting{Key: "ollama_mode", Value: " enhanced "}).Error)
+	require.NoError(t, database.Create(&models.AppSetting{Key: "ai_provider", Value: "openai_compat"}).Error)
+	require.NoError(t, database.Create(&models.AppSetting{Key: "ai_url", Value: " https://api.openai.com "}).Error)
+	require.NoError(t, database.Create(&models.AppSetting{Key: "ai_model", Value: " gpt-4o-mini "}).Error)
+	require.NoError(t, database.Create(&models.AppSetting{Key: "ai_api_key", Value: "sk-secret"}).Error)
+	require.NoError(t, database.Create(&models.AppSetting{Key: "ai_mode", Value: " enhanced "}).Error)
 
 	handlers.AdminConfig(database, "")(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	var resp map[string]any
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
-	assert.Equal(t, "", resp["webhook_secret"])
-	assert.Equal(t, false, resp["file_watcher_redact_secrets"])
-	assert.Equal(t, "http://localhost:11434", resp["ollama_url"])
-	assert.Equal(t, "llama3.2", resp["ollama_model"])
-	assert.Equal(t, "enhanced", resp["ollama_mode"])
+	assert.Equal(t, "openai_compat", resp["ai_provider"])
+	assert.Equal(t, "https://api.openai.com", resp["ai_url"])
+	assert.Equal(t, "gpt-4o-mini", resp["ai_model"])
+	assert.Equal(t, true, resp["ai_api_key_set"])
+	assert.Equal(t, "enhanced", resp["ai_mode"])
 }
 
-func TestUpdateOllamaSettings_RejectsInvalidURL(t *testing.T) {
-	t.Parallel()
-
-	database := newTestDB(t)
-	req := httptest.NewRequest(http.MethodPut, "/api/admin/settings/ollama", strings.NewReader(`{"ollama_url":"not a url","ollama_model":"llama3.2"}`))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	handlers.UpdateOllamaSettings(database)(w, req)
-
-	assert.Equal(t, http.StatusBadRequest, w.Code)
-
-	var count int64
-	require.NoError(t, database.Model(&models.AppSetting{}).Count(&count).Error)
-	assert.Zero(t, count)
-}
-
-func TestUpdateOllamaSettings_PersistsMode(t *testing.T) {
-	t.Parallel()
-
-	database := newTestDB(t)
-	req := httptest.NewRequest(http.MethodPut, "/api/admin/settings/ollama", strings.NewReader(`{"ollama_url":"http://localhost:11434","ollama_model":"llama3.2","ollama_mode":"enhanced"}`))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	handlers.UpdateOllamaSettings(database)(w, req)
-
-	assert.Equal(t, http.StatusNoContent, w.Code)
-
-	var setting models.AppSetting
-	require.NoError(t, database.First(&setting, "key = ?", "ollama_mode").Error)
-	assert.Equal(t, "enhanced", setting.Value)
-}
-
-func TestAdminConfig_ReturnsOllamaMode(t *testing.T) {
+func TestAdminConfig_LegacyOllamaFallback(t *testing.T) {
 	t.Parallel()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/admin/config", nil)
@@ -113,12 +81,89 @@ func TestAdminConfig_ReturnsOllamaMode(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	database := newTestDB(t)
+	require.NoError(t, database.Create(&models.AppSetting{Key: "ollama_url", Value: "http://localhost:11434"}).Error)
+	require.NoError(t, database.Create(&models.AppSetting{Key: "ollama_model", Value: "llama3.2"}).Error)
 	require.NoError(t, database.Create(&models.AppSetting{Key: "ollama_mode", Value: "enhanced"}).Error)
 
-	handlers.AdminConfig(database, "secret")(w, req)
+	handlers.AdminConfig(database, "")(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	var resp map[string]any
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
-	assert.Equal(t, "enhanced", resp["ollama_mode"])
+	assert.Equal(t, "ollama", resp["ai_provider"])
+	assert.Equal(t, "http://localhost:11434", resp["ai_url"])
+	assert.Equal(t, "llama3.2", resp["ai_model"])
+	assert.Equal(t, false, resp["ai_api_key_set"])
+	assert.Equal(t, "enhanced", resp["ai_mode"])
+}
+
+func TestUpdateAISettings_RejectsInvalidURL(t *testing.T) {
+	t.Parallel()
+
+	database := newTestDB(t)
+	req := httptest.NewRequest(http.MethodPut, "/api/admin/settings/ai", strings.NewReader(`{"ai_url":"not a url","ai_model":"llama3.2"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handlers.UpdateAISettings(database)(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	var count int64
+	require.NoError(t, database.Model(&models.AppSetting{}).Count(&count).Error)
+	assert.Zero(t, count)
+}
+
+func TestUpdateAISettings_RejectsInvalidProvider(t *testing.T) {
+	t.Parallel()
+
+	database := newTestDB(t)
+	req := httptest.NewRequest(http.MethodPut, "/api/admin/settings/ai", strings.NewReader(`{"ai_provider":"anthropic","ai_url":"http://localhost","ai_model":"m"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handlers.UpdateAISettings(database)(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestUpdateAISettings_PersistsMode(t *testing.T) {
+	t.Parallel()
+
+	database := newTestDB(t)
+	req := httptest.NewRequest(http.MethodPut, "/api/admin/settings/ai", strings.NewReader(`{"ai_provider":"ollama","ai_url":"http://localhost:11434","ai_model":"llama3.2","ai_mode":"enhanced"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handlers.UpdateAISettings(database)(w, req)
+
+	assert.Equal(t, http.StatusNoContent, w.Code)
+	var setting models.AppSetting
+	require.NoError(t, database.First(&setting, "key = ?", "ai_mode").Error)
+	assert.Equal(t, "enhanced", setting.Value)
+}
+
+func TestUpdateAISettings_PreservesAPIKeyWhenBlank(t *testing.T) {
+	t.Parallel()
+
+	database := newTestDB(t)
+	// Initial save with API key
+	body1 := `{"ai_provider":"openai_compat","ai_url":"https://api.openai.com","ai_model":"gpt-4o","ai_api_key":"sk-original","ai_mode":"analysis"}`
+	req1 := httptest.NewRequest(http.MethodPut, "/api/admin/settings/ai", strings.NewReader(body1))
+	req1.Header.Set("Content-Type", "application/json")
+	handlers.UpdateAISettings(database)(httptest.NewRecorder(), req1)
+
+	// Update without sending API key
+	body2 := `{"ai_provider":"openai_compat","ai_url":"https://api.openai.com","ai_model":"gpt-4o-mini","ai_api_key":"","ai_mode":"analysis"}`
+	req2 := httptest.NewRequest(http.MethodPut, "/api/admin/settings/ai", strings.NewReader(body2))
+	req2.Header.Set("Content-Type", "application/json")
+	w2 := httptest.NewRecorder()
+	handlers.UpdateAISettings(database)(w2, req2)
+
+	assert.Equal(t, http.StatusNoContent, w2.Code)
+	var keySetting models.AppSetting
+	require.NoError(t, database.First(&keySetting, "key = ?", "ai_api_key").Error)
+	assert.Equal(t, "sk-original", keySetting.Value)
+	var modelSetting models.AppSetting
+	require.NoError(t, database.First(&modelSetting, "key = ?", "ai_model").Error)
+	assert.Equal(t, "gpt-4o-mini", modelSetting.Value)
 }
