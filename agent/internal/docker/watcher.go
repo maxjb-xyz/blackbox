@@ -271,7 +271,9 @@ func (c *eventCollapser) Handle(now time.Time, msg dockerevents.Message) []types
 		rawEvents := append(append([]dockerevents.Message{}, pending.rawEvents...), msg)
 		delete(c.pending, containerID)
 		restartEntry := buildCollapsedContainerEntry(c.nodeName, "restart", rawEvents, c.resolver)
-		restartEntry.ID = pending.emittedEntry.ID
+		// restartEntry keeps its own fresh ULID so the queue can store it
+		// alongside the stop entry without hitting INSERT OR IGNORE dedup.
+		// ReplaceID tells the server which stop entry to upgrade in-place.
 		restartEntry.ReplaceID = pending.emittedEntry.ID
 		return append(entries, restartEntry)
 	default:

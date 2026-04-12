@@ -54,40 +54,13 @@ func AgentPush(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry, shu
 		}
 		entry.Service = serviceName
 		if entry.Source == "docker" && entry.Event == "restart" {
-			var existing types.Entry
-			lookupErr := database.First(&existing, "id = ?", entry.ID).Error
-			if lookupErr != nil && !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
-				writeError(w, http.StatusInternalServerError, "failed to look up entry")
+			res := replaceDockerRestartEntry(database, entry, nodeName, h, incidentCh, shutdown)
+			if res.Err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to process restart entry")
 				return
 			}
-			if lookupErr == nil {
-				updates := map[string]interface{}{
-					"event":           entry.Event,
-					"content":         entry.Content,
-					"metadata":        entry.Metadata,
-					"timestamp":       entry.Timestamp,
-					"compose_service": entry.ComposeService,
-				}
-				if err := database.Model(&existing).Updates(updates).Error; err != nil {
-					writeError(w, http.StatusInternalServerError, "failed to update entry")
-					return
-				}
-				var updated types.Entry
-				if err := database.First(&updated, "id = ?", entry.ID).Error; err != nil {
-					writeError(w, http.StatusInternalServerError, "failed to fetch updated entry")
-					return
-				}
-				if h != nil {
-					type replacedPayload struct {
-						OldID string      `json:"old_id"`
-						Entry types.Entry `json:"entry"`
-					}
-					if msg := MarshalWSMessage("entry_replaced", replacedPayload{OldID: entry.ID, Entry: updated}); msg != nil {
-						h.Broadcast(msg)
-					}
-				}
-				dispatchToIncidentChannelWithShutdown(incidentCh, shutdown, updated)
-				if upsertNode(database, updated) {
+			if res.Found {
+				if upsertNode(database, res.Updated) {
 					broadcastNodeStatus(database, h)
 				}
 				w.WriteHeader(http.StatusOK)

@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -75,40 +74,13 @@ func AgentPushBatch(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry
 			entry.Service = serviceName
 
 			if entry.Source == "docker" && entry.Event == "restart" {
-				var existing types.Entry
-				lookupErr := database.First(&existing, "id = ?", entry.ID).Error
-				if lookupErr != nil && !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
-					resp.Failed = append(resp.Failed, batchPushError{ID: entry.ID, Reason: "failed to look up entry"})
+				res := replaceDockerRestartEntry(database, entry, nodeName, h, incidentCh, shutdown)
+				if res.Err != nil {
+					resp.Failed = append(resp.Failed, batchPushError{ID: entry.ID, Reason: "failed to process restart entry"})
 					continue
 				}
-				if lookupErr == nil {
-					updates := map[string]interface{}{
-						"event":           entry.Event,
-						"content":         entry.Content,
-						"metadata":        entry.Metadata,
-						"timestamp":       entry.Timestamp,
-						"compose_service": entry.ComposeService,
-					}
-					if err := database.Model(&existing).Updates(updates).Error; err != nil {
-						resp.Failed = append(resp.Failed, batchPushError{ID: entry.ID, Reason: "failed to update entry"})
-						continue
-					}
-					// Refresh existing to pick up any server-side defaults set during the update.
-					if err := database.Take(&existing, "id = ?", entry.ID).Error; err != nil {
-						resp.Failed = append(resp.Failed, batchPushError{ID: entry.ID, Reason: "failed to fetch updated entry"})
-						continue
-					}
-					if h != nil {
-						type replacedPayload struct {
-							OldID string      `json:"old_id"`
-							Entry types.Entry `json:"entry"`
-						}
-						if msg := MarshalWSMessage("entry_replaced", replacedPayload{OldID: entry.ID, Entry: existing}); msg != nil {
-							h.Broadcast(msg)
-						}
-					}
-					dispatchToIncidentChannelWithShutdown(incidentCh, shutdown, existing)
-					if upsertNode(database, existing) {
+				if res.Found {
+					if upsertNode(database, res.Updated) {
 						nodeUpdated = true
 					}
 					resp.Accepted = append(resp.Accepted, entry.ID)
