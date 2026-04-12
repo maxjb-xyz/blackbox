@@ -66,7 +66,7 @@ export default function BottomNav() {
                 background: 'var(--bg)',
               }}
             >
-              {openCount}
+              {openCount > 99 ? '99+' : openCount}
             </span>
           )}
         </span>

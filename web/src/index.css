@@ -525,10 +525,10 @@ body {
   }
 }
 
-/* Shell: pad content above bottom nav */
+/* Shell: pad content above bottom nav + device safe area */
 @media (max-width: 640px) {
   .shell-main {
-    padding-bottom: var(--bottom-nav-height);
+    padding-bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px));
   }
 }
 
@@ -538,12 +538,13 @@ body {
   bottom: 0;
   left: 0;
   right: 0;
-  height: var(--bottom-nav-height);
+  height: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px));
   z-index: 50;
   display: flex;
   align-items: stretch;
   background: #0D0D0D;
   border-top: 1px solid #242424;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 @media (min-width: 641px) {
