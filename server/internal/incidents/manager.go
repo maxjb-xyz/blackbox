@@ -31,7 +31,7 @@ type pendingRecovery struct {
 type Manager struct {
 	db       *gorm.DB
 	hub      *hub.Hub
-	enricher *OllamaEnricher
+	enricher *AIEnricher
 
 	mu                  sync.Mutex
 	openIncidents       map[string]string            // "service|node" -> incidentID
@@ -58,7 +58,7 @@ func NewManager(db *gorm.DB, h *hub.Hub) *Manager {
 		recentDies:          make(map[string][]time.Time),
 		recentSystemdEvents: make(map[string][]time.Time),
 	}
-	m.enricher = NewOllamaEnricher(db, m.broadcastUpdated)
+	m.enricher = NewAIEnricher(db, m.broadcastUpdated)
 	return m
 }
 

@@ -596,7 +596,7 @@ func (m *Manager) dispatchIncidentEnrichment(incidentID, nodeName string) {
 	if len(enrichEntries) == 0 {
 		return
 	}
-	m.DispatchOllamaAsync(incidentID, enrichEntries, nodeName)
+	m.DispatchAIAsync(incidentID, enrichEntries, nodeName)
 }
 
 func (m *Manager) enrichmentEntries(incidentID string) ([]enrichEntry, error) {

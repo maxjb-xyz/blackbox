@@ -2,6 +2,7 @@ package incidents
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,40 +18,49 @@ import (
 	"gorm.io/gorm"
 )
 
-const ollamaTimeout = 60 * time.Second
-const correlateOllamaTimeout = 90 * time.Second
+// New AI provider settings keys
+const aiProviderKey = "ai_provider"
+const aiURLKey = "ai_url"
+const aiModelKey = "ai_model"
+const aiAPIKeyKey = "ai_api_key"
+const aiModeKey = "ai_mode"
+
+// Legacy Ollama keys — read-only fallback for existing installs
 const ollamaURLKey = "ollama_url"
 const ollamaModelKey = "ollama_model"
 const ollamaModeKey = "ollama_mode"
 
+const aiTimeout = 60 * time.Second
+const aiCorrelateTimeout = 90 * time.Second
+
 var correlateDelay = 3 * time.Second
 
-var callOllamaFunc = func(baseURL, model, prompt string) (string, error) {
-	return callOllamaWithTimeout(baseURL, model, prompt, ollamaTimeout)
+var callGenerateFunc = func(provider LLMProvider, model, prompt string, timeout time.Duration) (string, error) {
+	return provider.Generate(context.Background(), model, prompt, timeout)
 }
 
-var callOllamaCorrelateFunc = func(baseURL, model, prompt string) (string, error) {
-	return callOllamaWithTimeout(baseURL, model, prompt, correlateOllamaTimeout)
+var callCorrelateGenerateFunc = func(provider LLMProvider, model, prompt string, timeout time.Duration) (string, error) {
+	return provider.Generate(context.Background(), model, prompt, timeout)
 }
 
-type OllamaEnricher struct {
+type AIEnricher struct {
 	db            *gorm.DB
 	onIncidentSet func(string)
 	dispatchMu    sync.Mutex
-	dispatches    map[string]ollamaDispatchState
+	dispatches    map[string]aiDispatchState
 }
 
-type ollamaDispatch struct {
+type aiDispatch struct {
 	incidentID    string
 	mode          string
 	linkedEntries []enrichEntry
 	nodeName      string
-	ollamaURL     string
-	ollamaModel   string
+	provider      LLMProvider
+	model         string
 }
 
-type ollamaDispatchState struct {
-	queued *ollamaDispatch
+type aiDispatchState struct {
+	queued *aiDispatch
 }
 
 type ollamaRequest struct {
@@ -81,15 +91,21 @@ type enrichEntry struct {
 	Log     string
 }
 
-func NewOllamaEnricher(db *gorm.DB, onIncidentSet func(string)) *OllamaEnricher {
-	return &OllamaEnricher{
+type aiConfig struct {
+	provider LLMProvider
+	model    string
+	mode     string
+}
+
+func NewAIEnricher(db *gorm.DB, onIncidentSet func(string)) *AIEnricher {
+	return &AIEnricher{
 		db:            db,
 		onIncidentSet: onIncidentSet,
-		dispatches:    make(map[string]ollamaDispatchState),
+		dispatches:    make(map[string]aiDispatchState),
 	}
 }
 
-// EnrichAsync spawns a goroutine to enrich the incident with Ollama.
+// EnrichAsync delegates to the AIEnricher.
 func (m *Manager) EnrichAsync(incidentID string, linkedEntries []enrichEntry) {
 	if m == nil || m.enricher == nil {
 		return
@@ -97,58 +113,58 @@ func (m *Manager) EnrichAsync(incidentID string, linkedEntries []enrichEntry) {
 	m.enricher.EnrichAsync(incidentID, linkedEntries)
 }
 
-// DispatchOllamaAsync routes the incident to the configured Ollama mode.
-func (m *Manager) DispatchOllamaAsync(incidentID string, linkedEntries []enrichEntry, nodeName string) {
+// DispatchAIAsync routes the incident to the configured AI mode.
+func (m *Manager) DispatchAIAsync(incidentID string, linkedEntries []enrichEntry, nodeName string) {
 	if m == nil || m.enricher == nil {
 		return
 	}
-	if m.enricher.loadOllamaMode() == "enhanced" {
+	if m.enricher.loadAIMode() == "enhanced" {
 		m.enricher.CorrelateAsync(incidentID, linkedEntries, nodeName)
 		return
 	}
 	m.enricher.EnrichAsync(incidentID, linkedEntries)
 }
 
-// EnrichAsync spawns a goroutine to enrich the incident with Ollama.
+// EnrichAsync spawns a goroutine to enrich the incident with AI analysis.
 // Safe to call with m.mu held — it immediately returns; the goroutine
 // acquires its own resources.
-func (e *OllamaEnricher) EnrichAsync(incidentID string, linkedEntries []enrichEntry) {
+func (e *AIEnricher) EnrichAsync(incidentID string, linkedEntries []enrichEntry) {
 	if e == nil {
 		return
 	}
-	ollamaURL, ollamaModel := e.loadOllamaConfig()
-	if ollamaURL == "" || ollamaModel == "" {
+	cfg := e.loadAIConfig()
+	if cfg.provider == nil || cfg.model == "" {
 		return
 	}
-	e.enqueueDispatch(ollamaDispatch{
+	e.enqueueDispatch(aiDispatch{
 		incidentID:    incidentID,
 		mode:          "analysis",
 		linkedEntries: linkedEntries,
-		ollamaURL:     ollamaURL,
-		ollamaModel:   ollamaModel,
+		provider:      cfg.provider,
+		model:         cfg.model,
 	})
 }
 
 // CorrelateAsync spawns a goroutine that waits for deterministic links to
-// settle, then queries Ollama for additional AI-derived causes.
-func (e *OllamaEnricher) CorrelateAsync(incidentID string, _ []enrichEntry, nodeName string) {
+// settle, then queries the configured AI provider for additional AI-derived causes.
+func (e *AIEnricher) CorrelateAsync(incidentID string, _ []enrichEntry, nodeName string) {
 	if e == nil {
 		return
 	}
-	ollamaURL, ollamaModel := e.loadOllamaConfig()
-	if ollamaURL == "" || ollamaModel == "" {
+	cfg := e.loadAIConfig()
+	if cfg.provider == nil || cfg.model == "" {
 		return
 	}
-	e.enqueueDispatch(ollamaDispatch{
-		incidentID:  incidentID,
-		mode:        "enhanced",
-		nodeName:    nodeName,
-		ollamaURL:   ollamaURL,
-		ollamaModel: ollamaModel,
+	e.enqueueDispatch(aiDispatch{
+		incidentID: incidentID,
+		mode:       "enhanced",
+		nodeName:   nodeName,
+		provider:   cfg.provider,
+		model:      cfg.model,
 	})
 }
 
-func (e *OllamaEnricher) enqueueDispatch(dispatch ollamaDispatch) {
+func (e *AIEnricher) enqueueDispatch(dispatch aiDispatch) {
 	if e == nil {
 		return
 	}
@@ -158,7 +174,7 @@ func (e *OllamaEnricher) enqueueDispatch(dispatch ollamaDispatch) {
 	go e.runDispatchLoop(dispatch)
 }
 
-func (e *OllamaEnricher) registerDispatch(dispatch ollamaDispatch) bool {
+func (e *AIEnricher) registerDispatch(dispatch aiDispatch) bool {
 	e.dispatchMu.Lock()
 	defer e.dispatchMu.Unlock()
 
@@ -169,21 +185,21 @@ func (e *OllamaEnricher) registerDispatch(dispatch ollamaDispatch) bool {
 		return false
 	}
 
-	e.dispatches[dispatch.incidentID] = ollamaDispatchState{}
+	e.dispatches[dispatch.incidentID] = aiDispatchState{}
 	return true
 }
 
-func (e *OllamaEnricher) nextQueuedDispatch(incidentID string) (ollamaDispatch, bool) {
+func (e *AIEnricher) nextQueuedDispatch(incidentID string) (aiDispatch, bool) {
 	e.dispatchMu.Lock()
 	defer e.dispatchMu.Unlock()
 
 	state, ok := e.dispatches[incidentID]
 	if !ok {
-		return ollamaDispatch{}, false
+		return aiDispatch{}, false
 	}
 	if state.queued == nil {
 		delete(e.dispatches, incidentID)
-		return ollamaDispatch{}, false
+		return aiDispatch{}, false
 	}
 
 	next := *state.queued
@@ -192,10 +208,10 @@ func (e *OllamaEnricher) nextQueuedDispatch(incidentID string) (ollamaDispatch, 
 	return next, true
 }
 
-func (e *OllamaEnricher) runDispatchLoop(dispatch ollamaDispatch) {
+func (e *AIEnricher) runDispatchLoop(dispatch aiDispatch) {
 	current := dispatch
 	for {
-		if !e.setPending(current.incidentID, current.ollamaModel) {
+		if !e.setPending(current.incidentID, current.model) {
 			if next, ok := e.nextQueuedDispatch(current.incidentID); ok {
 				current = next
 				continue
@@ -204,9 +220,9 @@ func (e *OllamaEnricher) runDispatchLoop(dispatch ollamaDispatch) {
 		}
 
 		if current.mode == "enhanced" {
-			e.correlate(current.incidentID, current.nodeName, current.ollamaURL, current.ollamaModel)
+			e.correlate(current)
 		} else {
-			e.enrich(current.incidentID, current.linkedEntries, current.ollamaURL, current.ollamaModel)
+			e.enrich(current)
 		}
 
 		next, ok := e.nextQueuedDispatch(current.incidentID)
@@ -217,42 +233,42 @@ func (e *OllamaEnricher) runDispatchLoop(dispatch ollamaDispatch) {
 	}
 }
 
-func (e *OllamaEnricher) enrich(incidentID string, entries []enrichEntry, ollamaURL, ollamaModel string) {
+func (e *AIEnricher) enrich(dispatch aiDispatch) {
 	var inc models.Incident
-	if err := e.db.First(&inc, "id = ?", incidentID).Error; err != nil {
-		e.clearPending(incidentID)
+	if err := e.db.First(&inc, "id = ?", dispatch.incidentID).Error; err != nil {
+		e.clearPending(dispatch.incidentID)
 		return
 	}
 
-	prompt := buildPrompt(inc, entries)
-	result, err := callOllamaFunc(ollamaURL, ollamaModel, prompt)
+	prompt := buildPrompt(inc, dispatch.linkedEntries)
+	result, err := callGenerateFunc(dispatch.provider, dispatch.model, prompt, aiTimeout)
 	if err != nil {
-		log.Printf("incidents: ollama enrichment failed for %s: %v", incidentID, err)
-		e.clearPending(incidentID)
+		log.Printf("incidents: ai enrichment failed for %s: %v", dispatch.incidentID, err)
+		e.clearPending(dispatch.incidentID)
 		return
 	}
 
-	e.updateIncidentMetadata(incidentID, func(meta map[string]interface{}) {
+	e.updateIncidentMetadata(dispatch.incidentID, func(meta map[string]interface{}) {
 		delete(meta, "ai_pending")
 		meta["ai_analysis"] = result
-		meta["ai_model"] = ollamaModel
+		meta["ai_model"] = dispatch.model
 		meta["ai_enriched_at"] = time.Now().UTC().Format(time.RFC3339)
 	})
 }
 
-func (e *OllamaEnricher) correlate(incidentID, nodeName, ollamaURL, ollamaModel string) {
+func (e *AIEnricher) correlate(dispatch aiDispatch) {
 	time.Sleep(correlateDelay)
 
 	var inc models.Incident
-	if err := e.db.First(&inc, "id = ?", incidentID).Error; err != nil {
-		e.clearPending(incidentID)
+	if err := e.db.First(&inc, "id = ?", dispatch.incidentID).Error; err != nil {
+		e.clearPending(dispatch.incidentID)
 		return
 	}
 
 	var detLinks []models.IncidentEntry
-	if err := e.db.Where("incident_id = ?", incidentID).Find(&detLinks).Error; err != nil {
-		log.Printf("incidents: correlate load links for %s: %v", incidentID, err)
-		e.clearPending(incidentID)
+	if err := e.db.Where("incident_id = ?", dispatch.incidentID).Find(&detLinks).Error; err != nil {
+		log.Printf("incidents: correlate load links for %s: %v", dispatch.incidentID, err)
+		e.clearPending(dispatch.incidentID)
 		return
 	}
 
@@ -276,13 +292,13 @@ func (e *OllamaEnricher) correlate(incidentID, nodeName, ollamaURL, ollamaModel 
 	var detEntries []types.Entry
 	if len(detEntryIDs) > 0 {
 		if err := e.db.Where("id IN ?", detEntryIDs).Order("timestamp ASC").Find(&detEntries).Error; err != nil {
-			log.Printf("incidents: correlate load deterministic entries for %s: %v", incidentID, err)
-			e.clearPending(incidentID)
+			log.Printf("incidents: correlate load deterministic entries for %s: %v", dispatch.incidentID, err)
+			e.clearPending(dispatch.incidentID)
 			return
 		}
 	}
 
-	scopeNodes := correlationScopeNodes(inc.NodeNames, detEntries, nodeName)
+	scopeNodes := correlationScopeNodes(inc.NodeNames, detEntries, dispatch.nodeName)
 	windowStart := inc.OpenedAt.Add(-5 * time.Minute)
 	windowEnd := inc.OpenedAt.Add(time.Minute)
 	query := e.db.Where(
@@ -298,8 +314,8 @@ func (e *OllamaEnricher) correlate(incidentID, nodeName, ollamaURL, ollamaModel 
 
 	var nodeEntries []types.Entry
 	if err := query.Order("timestamp DESC").Limit(100).Find(&nodeEntries).Error; err != nil {
-		log.Printf("incidents: correlate load node entries for %s: %v", incidentID, err)
-		e.clearPending(incidentID)
+		log.Printf("incidents: correlate load node entries for %s: %v", dispatch.incidentID, err)
+		e.clearPending(dispatch.incidentID)
 		return
 	}
 	if len(detEntryIDs) > 0 || len(excludedNodeEntryIDs) > 0 {
@@ -321,22 +337,22 @@ func (e *OllamaEnricher) correlate(incidentID, nodeName, ollamaURL, ollamaModel 
 	}
 
 	prompt := buildCorrelationPrompt(inc, detLinks, detEntries, nodeEntries)
-	result, err := callOllamaCorrelateFunc(ollamaURL, ollamaModel, prompt)
+	result, err := callCorrelateGenerateFunc(dispatch.provider, dispatch.model, prompt, aiCorrelateTimeout)
 	if err != nil {
-		log.Printf("incidents: ollama correlation failed for %s: %v", incidentID, err)
-		e.clearPending(incidentID)
+		log.Printf("incidents: ai correlation failed for %s: %v", dispatch.incidentID, err)
+		e.clearPending(dispatch.incidentID)
 		return
 	}
 
 	var response correlationResponse
 	if err := json.Unmarshal([]byte(extractJSON(result)), &response); err != nil {
-		log.Printf("incidents: correlate parse response for %s: %v", incidentID, err)
-		e.clearPending(incidentID)
+		log.Printf("incidents: correlate parse response for %s: %v", dispatch.incidentID, err)
+		e.clearPending(dispatch.incidentID)
 		return
 	}
 
-	if err := e.db.Where("incident_id = ? AND role = ?", incidentID, "ai_cause").Delete(&models.IncidentEntry{}).Error; err != nil {
-		log.Printf("incidents: correlate clear ai_cause links for %s: %v", incidentID, err)
+	if err := e.db.Where("incident_id = ? AND role = ?", dispatch.incidentID, "ai_cause").Delete(&models.IncidentEntry{}).Error; err != nil {
+		log.Printf("incidents: correlate clear ai_cause links for %s: %v", dispatch.incidentID, err)
 	}
 
 	validIDs := make(map[string]struct{}, len(detEntries)+len(nodeEntries))
@@ -353,18 +369,18 @@ func (e *OllamaEnricher) correlate(incidentID, nodeName, ollamaURL, ollamaModel 
 			continue
 		}
 		if _, ok := validIDs[cause.EntryID]; !ok {
-			log.Printf("incidents: correlate dropped hallucinated entry_id %s for incident %s", cause.EntryID, incidentID)
+			log.Printf("incidents: correlate dropped hallucinated entry_id %s for incident %s", cause.EntryID, dispatch.incidentID)
 			continue
 		}
 
 		var existing models.IncidentEntry
-		err := e.db.Where("incident_id = ? AND entry_id = ?", incidentID, cause.EntryID).First(&existing).Error
+		err := e.db.Where("incident_id = ? AND entry_id = ?", dispatch.incidentID, cause.EntryID).First(&existing).Error
 		if err == nil && existing.Role != "ai_cause" {
-			log.Printf("incidents: correlate skipped existing deterministic link %s for incident %s", cause.EntryID, incidentID)
+			log.Printf("incidents: correlate skipped existing deterministic link %s for incident %s", cause.EntryID, dispatch.incidentID)
 			continue
 		}
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			log.Printf("incidents: correlate lookup link %s for incident %s: %v", cause.EntryID, incidentID, err)
+			log.Printf("incidents: correlate lookup link %s for incident %s: %v", cause.EntryID, dispatch.incidentID, err)
 			continue
 		}
 
@@ -377,7 +393,7 @@ func (e *OllamaEnricher) correlate(incidentID, nodeName, ollamaURL, ollamaModel 
 		}
 
 		link := models.IncidentEntry{
-			IncidentID: incidentID,
+			IncidentID: dispatch.incidentID,
 			EntryID:    cause.EntryID,
 			Role:       "ai_cause",
 			Score:      score,
@@ -385,18 +401,18 @@ func (e *OllamaEnricher) correlate(incidentID, nodeName, ollamaURL, ollamaModel 
 		}
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			if err := e.db.Create(&link).Error; err != nil {
-				log.Printf("incidents: correlate write ai_cause link %s->%s: %v", incidentID, cause.EntryID, err)
+				log.Printf("incidents: correlate write ai_cause link %s->%s: %v", dispatch.incidentID, cause.EntryID, err)
 			}
 			continue
 		}
 		if err := e.db.Model(&models.IncidentEntry{}).
-			Where("incident_id = ? AND entry_id = ?", incidentID, cause.EntryID).
+			Where("incident_id = ? AND entry_id = ?", dispatch.incidentID, cause.EntryID).
 			Updates(map[string]interface{}{"role": link.Role, "score": link.Score, "reason": link.Reason}).Error; err != nil {
-			log.Printf("incidents: correlate update ai_cause link %s->%s: %v", incidentID, cause.EntryID, err)
+			log.Printf("incidents: correlate update ai_cause link %s->%s: %v", dispatch.incidentID, cause.EntryID, err)
 		}
 	}
 
-	e.updateIncidentMetadata(incidentID, func(meta map[string]interface{}) {
+	e.updateIncidentMetadata(dispatch.incidentID, func(meta map[string]interface{}) {
 		delete(meta, "ai_pending")
 		if summary := sanitizeExternalText(response.Summary); summary != "" {
 			meta["ai_analysis"] = summary
@@ -406,51 +422,78 @@ func (e *OllamaEnricher) correlate(incidentID, nodeName, ollamaURL, ollamaModel 
 		} else {
 			delete(meta, "ai_verified")
 		}
-		meta["ai_model"] = ollamaModel
+		meta["ai_model"] = dispatch.model
 		meta["ai_enriched_at"] = time.Now().UTC().Format(time.RFC3339)
 	})
 }
 
-func (e *OllamaEnricher) loadOllamaConfig() (url, model string) {
+func (e *AIEnricher) loadAIConfig() aiConfig {
+	keys := []string{aiProviderKey, aiURLKey, aiModelKey, aiAPIKeyKey, aiModeKey, ollamaURLKey, ollamaModelKey, ollamaModeKey}
 	var settings []models.AppSetting
-	e.db.Where("key IN ?", []string{ollamaURLKey, ollamaModelKey}).Find(&settings)
+	e.db.Where("key IN ?", keys).Find(&settings)
+
+	m := make(map[string]string, len(settings))
 	for _, s := range settings {
-		switch s.Key {
-		case ollamaURLKey:
-			url = strings.TrimSpace(s.Value)
-		case ollamaModelKey:
-			model = strings.TrimSpace(s.Value)
-		}
+		m[s.Key] = strings.TrimSpace(s.Value)
 	}
-	return
+
+	providerType := m[aiProviderKey]
+	if providerType == "" {
+		providerType = "ollama"
+	}
+
+	aiURL := m[aiURLKey]
+	if aiURL == "" {
+		aiURL = m[ollamaURLKey]
+	}
+
+	model := m[aiModelKey]
+	if model == "" {
+		model = m[ollamaModelKey]
+	}
+
+	mode := m[aiModeKey]
+	if mode == "" {
+		mode = m[ollamaModeKey]
+	}
+	if mode == "" {
+		mode = "analysis"
+	}
+
+	if aiURL == "" || model == "" {
+		return aiConfig{mode: mode}
+	}
+
+	var provider LLMProvider
+	switch providerType {
+	case "openai_compat":
+		provider = &openAICompatProvider{baseURL: aiURL, apiKey: m[aiAPIKeyKey]}
+	default:
+		provider = &ollamaProvider{baseURL: aiURL}
+	}
+
+	return aiConfig{provider: provider, model: model, mode: mode}
 }
 
-func (e *OllamaEnricher) loadOllamaMode() string {
-	var setting models.AppSetting
-	if err := e.db.First(&setting, "key = ?", ollamaModeKey).Error; err != nil {
-		return "analysis"
-	}
-	if strings.TrimSpace(setting.Value) == "enhanced" {
-		return "enhanced"
-	}
-	return "analysis"
+func (e *AIEnricher) loadAIMode() string {
+	return e.loadAIConfig().mode
 }
 
-func (e *OllamaEnricher) setPending(incidentID, ollamaModel string) bool {
+func (e *AIEnricher) setPending(incidentID, model string) bool {
 	return e.updateIncidentMetadata(incidentID, func(meta map[string]interface{}) {
 		meta["ai_pending"] = true
-		meta["ai_model"] = ollamaModel
+		meta["ai_model"] = model
 		delete(meta, "ai_verified")
 	})
 }
 
-func (e *OllamaEnricher) clearPending(incidentID string) {
+func (e *AIEnricher) clearPending(incidentID string) {
 	e.updateIncidentMetadata(incidentID, func(meta map[string]interface{}) {
 		delete(meta, "ai_pending")
 	})
 }
 
-func (e *OllamaEnricher) updateIncidentMetadata(incidentID string, apply func(map[string]interface{})) bool {
+func (e *AIEnricher) updateIncidentMetadata(incidentID string, apply func(map[string]interface{})) bool {
 	var inc models.Incident
 	if err := e.db.First(&inc, "id = ?", incidentID).Error; err != nil {
 		return false
