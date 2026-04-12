@@ -59,7 +59,7 @@ func replaceDockerRestartEntry(
 		return replaceDockerRestartResult{Err: err}
 	}
 	// Refresh to pick up server-side defaults written during the update.
-	if err := database.Take(&existing, "id = ? AND node_name = ? AND source = ? AND event = ?", lookupID, nodeName, "docker", "stop").Error; err != nil {
+	if err := database.Take(&existing, "id = ? AND node_name = ? AND source = ?", lookupID, nodeName, "docker").Error; err != nil {
 		return replaceDockerRestartResult{Err: err}
 	}
 
