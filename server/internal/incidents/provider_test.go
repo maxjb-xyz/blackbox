@@ -85,7 +85,7 @@ func TestOpenAICompatProvider_Generate_NoAPIKey(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Empty(t, r.Header.Get("Authorization"))
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(openAIResponse{
+		_ = json.NewEncoder(w).Encode(openAIResponse{
 			Choices: []openAIChoice{{Message: openAIMessage{Role: "assistant", Content: "no-auth result"}}},
 		})
 	}))

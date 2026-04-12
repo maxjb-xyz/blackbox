@@ -1076,6 +1076,7 @@ function SettingsTab() {
   const [aiModel, setAIModel] = useState('')
   const [aiAPIKey, setAIAPIKey] = useState('')
   const [aiAPIKeySet, setAIAPIKeySet] = useState(false)
+  const [aiClearAPIKey, setAIClearAPIKey] = useState(false)
   const [aiMode, setAIMode] = useState<'analysis' | 'enhanced'>('analysis')
   const [aiSaving, setAISaving] = useState(false)
   const [aiError, setAIError] = useState<string | null>(null)
@@ -1137,9 +1138,11 @@ function SettingsTab() {
     setAIError(null)
     setAISuccess(false)
     try {
-      await updateAISettings(aiProvider, aiURL, aiModel, aiAPIKey, aiMode)
+      await updateAISettings(aiProvider, aiURL, aiModel, aiAPIKey, aiClearAPIKey, aiMode)
       setAIAPIKey('')
-      setAIAPIKeySet(aiProvider === 'openai_compat' && (aiAPIKey !== '' || aiAPIKeySet))
+      setAIClearAPIKey(false)
+      const saved = await fetchAdminConfig()
+      setAIAPIKeySet(saved.ai_api_key_set ?? false)
       if (aiSuccessTimerRef.current !== null) {
         window.clearTimeout(aiSuccessTimerRef.current)
       }
@@ -1242,7 +1245,7 @@ function SettingsTab() {
                     key={p}
                     type="button"
                     onClick={() => {
-                      if (p !== 'openai_compat') { setAIAPIKey(''); setAIAPIKeySet(false) }
+                      if (p !== 'openai_compat') { setAIAPIKey(''); setAIClearAPIKey(false) }
                       setAIProvider(p)
                       setAISuccess(false)
                     }}
@@ -1276,12 +1279,34 @@ function SettingsTab() {
             </label>
             {aiProvider === 'openai_compat' && (
               <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 8 }}>
-                API KEY
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  API KEY
+                  {aiAPIKeySet && !aiClearAPIKey && (
+                    <button
+                      type="button"
+                      onClick={() => { setAIClearAPIKey(true); setAIAPIKey(''); setAISuccess(false) }}
+                      disabled={aiSaving}
+                      style={{ fontSize: 10, padding: '1px 6px', border: '1px solid var(--danger)', color: 'var(--danger)', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit' }}
+                    >
+                      CLEAR KEY
+                    </button>
+                  )}
+                  {aiClearAPIKey && (
+                    <button
+                      type="button"
+                      onClick={() => { setAIClearAPIKey(false); setAISuccess(false) }}
+                      disabled={aiSaving}
+                      style={{ fontSize: 10, padding: '1px 6px', border: '1px solid var(--muted)', color: 'var(--muted)', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit' }}
+                    >
+                      CANCEL
+                    </button>
+                  )}
+                </span>
                 <input
                   type="password"
                   value={aiAPIKey}
-                  onChange={e => { setAIAPIKey(e.target.value); setAISuccess(false) }}
-                  placeholder={aiAPIKeySet ? '[key set — leave blank to keep]' : 'sk-...'}
+                  onChange={e => { setAIAPIKey(e.target.value); if (aiClearAPIKey) setAIClearAPIKey(false); setAISuccess(false) }}
+                  placeholder={aiClearAPIKey ? '[key will be removed on save]' : aiAPIKeySet ? '[key set — leave blank to keep]' : 'sk-...'}
                   disabled={!initialLoaded || aiSaving}
                   style={{ display: 'block', width: '100%', marginTop: 4, ...FILTER_CONTROL_STYLE }}
                 />

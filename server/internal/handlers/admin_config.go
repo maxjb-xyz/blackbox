@@ -116,11 +116,16 @@ func UpdateAISettings(db *gorm.DB) http.HandlerFunc {
 			{Key: aiAPIKeyKey, Value: apiKey, UpdatedAt: now},
 			{Key: aiModeKey, Value: mode, UpdatedAt: now},
 		}
-		for _, s := range settings {
-			if err := db.Save(&s).Error; err != nil {
-				writeError(w, http.StatusInternalServerError, "failed to save setting")
-				return
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			for _, s := range settings {
+				if err := tx.Save(&s).Error; err != nil {
+					return err
+				}
 			}
+			return nil
+		}); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to save setting")
+			return
 		}
 
 		w.WriteHeader(http.StatusNoContent)
@@ -177,11 +182,16 @@ func UpdateOllamaSettingsLegacy(db *gorm.DB) http.HandlerFunc {
 			{Key: aiAPIKeyKey, Value: apiKey, UpdatedAt: now},
 			{Key: aiModeKey, Value: mode, UpdatedAt: now},
 		}
-		for _, s := range settings {
-			if err := db.Save(&s).Error; err != nil {
-				writeError(w, http.StatusInternalServerError, "failed to save setting")
-				return
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			for _, s := range settings {
+				if err := tx.Save(&s).Error; err != nil {
+					return err
+				}
 			}
+			return nil
+		}); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to save setting")
+			return
 		}
 
 		w.WriteHeader(http.StatusNoContent)
@@ -215,20 +225,24 @@ func getAISettings(db *gorm.DB) (aiSettingsResult, error) {
 		result.provider = "ollama"
 	}
 
-	result.url = m[aiURLKey]
-	if result.url == "" {
+	if url, ok := m[aiURLKey]; ok {
+		result.url = url
+	} else {
 		result.url = m[legacyOllamaURLKey]
 	}
 
-	result.model = m[aiModelKey]
-	if result.model == "" {
+	if model, ok := m[aiModelKey]; ok {
+		result.model = model
+	} else {
 		result.model = m[legacyOllamaModelKey]
 	}
 
 	result.apiKeySet = m[aiAPIKeyKey] != ""
 
-	if v := m[aiModeKey]; v != "" {
-		result.mode = v
+	if _, ok := m[aiModeKey]; ok {
+		if v := m[aiModeKey]; v != "" {
+			result.mode = v
+		}
 	} else if v := m[legacyOllamaModeKey]; v != "" {
 		result.mode = v
 	}

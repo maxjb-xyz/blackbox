@@ -288,12 +288,13 @@ export async function updateAISettings(
   url: string,
   model: string,
   apiKey: string,
+  clearAPIKey: boolean,
   mode: 'analysis' | 'enhanced',
 ): Promise<void> {
   const res = await apiFetch('/api/admin/settings/ai', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ai_provider: provider, ai_url: url, ai_model: model, ai_api_key: apiKey, ai_mode: mode }),
+    body: JSON.stringify({ ai_provider: provider, ai_url: url, ai_model: model, ai_api_key: apiKey, ai_clear_api_key: clearAPIKey, ai_mode: mode }),
   })
   if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to update AI settings'))
 }

@@ -445,18 +445,18 @@ func (e *AIEnricher) loadAIConfig() aiConfig {
 		providerType = "ollama"
 	}
 
-	aiURL := m[aiURLKey]
-	if aiURL == "" {
+	aiURL, aiURLSet := m[aiURLKey]
+	if !aiURLSet {
 		aiURL = m[ollamaURLKey]
 	}
 
-	model := m[aiModelKey]
-	if model == "" {
+	model, modelSet := m[aiModelKey]
+	if !modelSet {
 		model = m[ollamaModelKey]
 	}
 
-	mode := m[aiModeKey]
-	if mode == "" {
+	mode, modeSet := m[aiModeKey]
+	if !modeSet {
 		mode = m[ollamaModeKey]
 	}
 	if mode == "" {
