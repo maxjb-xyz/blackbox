@@ -310,6 +310,15 @@ func TestBuildEntry_UsesContainerLookupForImagePullService(t *testing.T) {
 	resolver := newServiceResolver(context.Background(), fakeDockerResolverClient{
 		containers: []dockercontainer.Summary{
 			{
+				Image:   "ghcr.io/example/other-tag:stable",
+				ImageID: "sha256:abc123",
+				Names:   []string{"/other-app-web-1"},
+				Labels: map[string]string{
+					"com.docker.compose.project": "other-app",
+					"com.docker.compose.service": "web",
+				},
+			},
+			{
 				Image:   "lscr.io/linuxserver/sonarr:latest",
 				ImageID: "sha256:abc123",
 				Names:   []string{"/generatedprefix_web"},
@@ -323,7 +332,7 @@ func TestBuildEntry_UsesContainerLookupForImagePullService(t *testing.T) {
 
 	entry := buildEntry(
 		"node-1",
-		testDockerMessage(time.Now().UTC(), "image", "pull", "sha256:abc123", "ghcr.io/example/not-the-service-name:latest", ""),
+		testDockerMessage(time.Now().UTC(), "image", "pull", "sha256:abc123", "lscr.io/linuxserver/sonarr:latest", ""),
 		resolver,
 	)
 
@@ -331,6 +340,82 @@ func TestBuildEntry_UsesContainerLookupForImagePullService(t *testing.T) {
 		t.Fatalf("expected service my-app, got %q", entry.Service)
 	}
 	if entry.Content != "Image pulled: my-app · web" {
+		t.Fatalf("unexpected content: %q", entry.Content)
+	}
+}
+
+func TestBuildEntry_ImagePullFallsBackWhenImageIsSharedAcrossProjects(t *testing.T) {
+	resolver := newServiceResolver(context.Background(), fakeDockerResolverClient{
+		containers: []dockercontainer.Summary{
+			{
+				Image:   "postgres:16",
+				ImageID: "sha256:pg123",
+				Names:   []string{"/outline-db-1"},
+				Labels: map[string]string{
+					"com.docker.compose.project": "outline",
+					"com.docker.compose.service": "db",
+				},
+			},
+			{
+				Image:   "postgres:16",
+				ImageID: "sha256:pg123",
+				Names:   []string{"/fairtrail-db-1"},
+				Labels: map[string]string{
+					"com.docker.compose.project": "fairtrail",
+					"com.docker.compose.service": "db",
+				},
+			},
+		},
+	})
+
+	entry := buildEntry(
+		"node-1",
+		testDockerMessage(time.Now().UTC(), "image", "pull", "sha256:pg123", "postgres:16", ""),
+		resolver,
+	)
+
+	if entry.Service != "postgres" {
+		t.Fatalf("expected shared image pull to fall back to postgres, got %q", entry.Service)
+	}
+	if entry.Content != "Image pulled: postgres" {
+		t.Fatalf("unexpected content: %q", entry.Content)
+	}
+}
+
+func TestBuildEntry_ImagePullUsesProjectDisplayWhenImageIsSharedWithinProject(t *testing.T) {
+	resolver := newServiceResolver(context.Background(), fakeDockerResolverClient{
+		containers: []dockercontainer.Summary{
+			{
+				Image:   "ghcr.io/example/app:latest",
+				ImageID: "sha256:app123",
+				Names:   []string{"/my-app-web-1"},
+				Labels: map[string]string{
+					"com.docker.compose.project": "my-app",
+					"com.docker.compose.service": "web",
+				},
+			},
+			{
+				Image:   "ghcr.io/example/app:latest",
+				ImageID: "sha256:app123",
+				Names:   []string{"/my-app-worker-1"},
+				Labels: map[string]string{
+					"com.docker.compose.project": "my-app",
+					"com.docker.compose.service": "worker",
+				},
+			},
+		},
+	})
+
+	entry := buildEntry(
+		"node-1",
+		testDockerMessage(time.Now().UTC(), "image", "pull", "sha256:app123", "ghcr.io/example/app:latest", ""),
+		resolver,
+	)
+
+	if entry.Service != "my-app" {
+		t.Fatalf("expected service my-app, got %q", entry.Service)
+	}
+	if entry.Content != "Image pulled: my-app" {
 		t.Fatalf("unexpected content: %q", entry.Content)
 	}
 }

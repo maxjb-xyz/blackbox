@@ -518,32 +518,77 @@ func (r *serviceResolver) findContainerIdentityForImage(imageID, ref string) con
 
 	normalizedRef := normalizeImageRef(ref)
 	shortRef := cleanImageService(ref)
-	var repositoryMatch containerIdentity
-	var shortNameMatch containerIdentity
+	exactMatches := []containerIdentity{}
+	digestMatches := []containerIdentity{}
+	repositoryMatches := []containerIdentity{}
+	shortNameMatches := []containerIdentity{}
 
 	for _, summary := range containers {
 		identity := cleanContainerIdentity(summary.Labels, summaryContainerName(summary.Names))
 		if identity.service == "" {
 			continue
 		}
-		if imageID != "" && summary.ImageID == imageID {
-			return identity
-		}
 		if ref != "" && summary.Image == ref {
-			return identity
+			exactMatches = append(exactMatches, identity)
+			continue
 		}
-		if repositoryMatch.service == "" && normalizedRef != "" && normalizeImageRef(summary.Image) == normalizedRef {
-			repositoryMatch = identity
+		if imageID != "" && summary.ImageID == imageID {
+			digestMatches = append(digestMatches, identity)
+			continue
 		}
-		if shortNameMatch.service == "" && shortRef != "" && cleanImageService(summary.Image) == shortRef {
-			shortNameMatch = identity
+		if normalizedRef != "" && normalizeImageRef(summary.Image) == normalizedRef {
+			repositoryMatches = append(repositoryMatches, identity)
+			continue
+		}
+		if shortRef != "" && cleanImageService(summary.Image) == shortRef {
+			shortNameMatches = append(shortNameMatches, identity)
 		}
 	}
 
-	if repositoryMatch.service != "" {
-		return repositoryMatch
+	if identity := resolveImageMatches(exactMatches); identity.service != "" || identity.displayName != "" {
+		return identity
 	}
-	return shortNameMatch
+	if identity := resolveImageMatches(repositoryMatches); identity.service != "" || identity.displayName != "" {
+		return identity
+	}
+	if identity := resolveImageMatches(digestMatches); identity.service != "" || identity.displayName != "" {
+		return identity
+	}
+	return resolveImageMatches(shortNameMatches)
+}
+
+func resolveImageMatches(matches []containerIdentity) containerIdentity {
+	if len(matches) == 0 {
+		return containerIdentity{}
+	}
+
+	services := make(map[string]struct{}, len(matches))
+	displayNames := make(map[string]struct{}, len(matches))
+	for _, match := range matches {
+		if match.service == "" {
+			continue
+		}
+		services[match.service] = struct{}{}
+		if match.displayName != "" {
+			displayNames[match.displayName] = struct{}{}
+		}
+	}
+
+	if len(services) != 1 {
+		return containerIdentity{}
+	}
+
+	service := matches[0].service
+	if len(displayNames) == 1 {
+		return containerIdentity{
+			service:     service,
+			displayName: matches[0].displayName,
+		}
+	}
+	return containerIdentity{
+		service:     service,
+		displayName: service,
+	}
 }
 
 func cleanContainerService(attrs map[string]string, rawName string) string {
