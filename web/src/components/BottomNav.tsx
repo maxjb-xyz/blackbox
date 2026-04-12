@@ -4,11 +4,23 @@ import { Activity, AlertTriangle, Server } from 'lucide-react'
 import { fetchIncidentSummary } from '../api/client'
 import { useWebSocketContext } from './WebSocketProvider'
 
+const MOBILE_MQ = '(max-width: 640px)'
+
 export default function BottomNav() {
   const { status, lastMessage } = useWebSocketContext()
   const [openCount, setOpenCount] = useState(0)
   const [hasConfirmed, setHasConfirmed] = useState(false)
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(MOBILE_MQ).matches
+  )
   const reqIdRef = useRef(0)
+
+  useEffect(() => {
+    const mq = window.matchMedia(MOBILE_MQ)
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
 
   const refreshCount = useCallback(() => {
     const id = ++reqIdRef.current
@@ -22,27 +34,30 @@ export default function BottomNav() {
   }, [])
 
   useEffect(() => {
+    if (!isMobile) return
     refreshCount()
-  }, [refreshCount])
+  }, [isMobile, refreshCount])
 
   useEffect(() => {
-    if (!lastMessage) return
+    if (!isMobile || !lastMessage) return
     const { type } = lastMessage
     if (type === 'incident_opened' || type === 'incident_updated' || type === 'incident_resolved') {
       refreshCount()
     }
-  }, [lastMessage, refreshCount])
+  }, [isMobile, lastMessage, refreshCount])
 
   const previousStatusRef = useRef(status)
   useEffect(() => {
     const previousStatus = previousStatusRef.current
-    if (status === 'connected' && previousStatus !== 'connected') {
+    if (isMobile && status === 'connected' && previousStatus !== 'connected') {
       refreshCount()
     }
     previousStatusRef.current = status
-  }, [refreshCount, status])
+  }, [isMobile, refreshCount, status])
 
   const badgeColor = hasConfirmed ? 'var(--danger)' : 'var(--warning)'
+
+  if (!isMobile) return null
 
   return (
     <nav className="bottom-nav" aria-label="Mobile navigation">
