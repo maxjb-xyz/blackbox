@@ -229,7 +229,10 @@ func validateNotificationDest(name, destType, destURL string, events []string) (
 
 	destURL = strings.TrimSpace(destURL)
 	parsed, err := url.Parse(destURL)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+	if err != nil || parsed.Host == "" {
+		return "", "", "", nil, errors.New("url must be a valid absolute URL")
+	}
+	if scheme := strings.ToLower(parsed.Scheme); scheme != "http" && scheme != "https" {
 		return "", "", "", nil, errors.New("url must be a valid absolute URL")
 	}
 

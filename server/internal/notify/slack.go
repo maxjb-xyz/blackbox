@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -93,7 +94,11 @@ func sendSlack(ctx context.Context, webhookURL string, inc models.Incident, test
 	if err != nil {
 		return fmt.Errorf("slack request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if errClose := resp.Body.Close(); errClose != nil {
+			log.Printf("notify: close slack response body: %v", errClose)
+		}
+	}()
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return fmt.Errorf("slack returned status %d", resp.StatusCode)

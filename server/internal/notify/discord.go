@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -107,7 +108,11 @@ func sendDiscord(ctx context.Context, webhookURL string, inc models.Incident, te
 	if err != nil {
 		return fmt.Errorf("discord request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if errClose := resp.Body.Close(); errClose != nil {
+			log.Printf("notify: close discord response body: %v", errClose)
+		}
+	}()
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return fmt.Errorf("discord returned status %d", resp.StatusCode)

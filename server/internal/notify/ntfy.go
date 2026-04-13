@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 
@@ -52,7 +53,11 @@ func sendNtfy(ctx context.Context, topicURL string, inc models.Incident, test bo
 	if err != nil {
 		return fmt.Errorf("ntfy request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if errClose := resp.Body.Close(); errClose != nil {
+			log.Printf("notify: close ntfy response body: %v", errClose)
+		}
+	}()
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return fmt.Errorf("ntfy returned status %d", resp.StatusCode)

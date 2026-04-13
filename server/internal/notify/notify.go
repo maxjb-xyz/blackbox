@@ -13,9 +13,13 @@ import (
 )
 
 const notifyTimeout = 10 * time.Second
+const maxConcurrentSends = 8
 
 // Shared HTTP client used by all provider send functions.
 var httpClient = &http.Client{Timeout: notifyTimeout}
+
+// sendSem limits the number of concurrent outbound notification requests.
+var sendSem = make(chan struct{}, maxConcurrentSends)
 
 const (
 	EventIncidentOpenedConfirmed = "incident_opened_confirmed"
@@ -61,6 +65,9 @@ func (d *Dispatcher) Send(ctx context.Context, event string, inc models.Incident
 
 		dest := dest
 		go func() {
+			sendSem <- struct{}{}
+			defer func() { <-sendSem }()
+
 			sendCtx, cancel := context.WithTimeout(context.Background(), notifyTimeout)
 			defer cancel()
 
@@ -88,6 +95,7 @@ func (d *Dispatcher) SendTest(ctx context.Context, dest models.NotificationDest)
 func destWantsEvent(dest models.NotificationDest, event string) bool {
 	var events []string
 	if err := json.Unmarshal([]byte(dest.Events), &events); err != nil {
+		log.Printf("notify: failed to parse events for destination %q (%s): %v", dest.Name, dest.ID, err)
 		return false
 	}
 

@@ -519,9 +519,19 @@ export async function fetchIncidentsForEntryIds(entryIds: string[]): Promise<Rec
 
 function normalizeNotificationDest(data: Record<string, unknown>): NotificationDest {
   const rawEvents = data.events
-  const events = Array.isArray(rawEvents)
-    ? rawEvents.map(event => String(event))
-    : []
+  let events: string[]
+  if (Array.isArray(rawEvents)) {
+    events = rawEvents.map(event => String(event))
+  } else if (typeof rawEvents === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(rawEvents)
+      events = Array.isArray(parsed) ? parsed.map(event => String(event)) : []
+    } catch {
+      events = []
+    }
+  } else {
+    events = []
+  }
 
   return {
     id: String(data.id ?? ''),
