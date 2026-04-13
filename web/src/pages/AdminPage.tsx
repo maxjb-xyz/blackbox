@@ -210,7 +210,18 @@ export default function AdminPage() {
     <div>
       <PageHeader
         title="ADMIN /"
-        titleActions={ADMIN_TABS.map(t => (
+        titleActions={ADMIN_TABS.flatMap((t, index) => [
+          ...(index > 0
+            ? [
+                <span
+                  key={`${t}-divider`}
+                  aria-hidden="true"
+                  style={{ color: 'var(--border)', fontSize: '16px', lineHeight: 1 }}
+                >
+                  /
+                </span>,
+              ]
+            : []),
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -228,8 +239,8 @@ export default function AdminPage() {
             }}
           >
             {t.toUpperCase()}
-          </button>
-        ))}
+          </button>,
+        ])}
       />
 
       <div style={{ padding: 24, maxWidth: 960, margin: '0 auto' }}>
