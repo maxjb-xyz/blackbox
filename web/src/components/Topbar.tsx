@@ -129,6 +129,7 @@ export default function Topbar() {
             border: 'none',
             background: 'transparent',
             fontSize: 11,
+            lineHeight: 1,
             letterSpacing: '0.1em',
             cursor: status === 'disconnected' ? 'pointer' : 'default',
             color: wsConnected ? 'var(--success)' : wsConnecting ? 'var(--warning)' : 'var(--danger)',
@@ -146,7 +147,9 @@ export default function Topbar() {
               flexShrink: 0,
             }}
           />
-          {wsConnected ? 'LIVE' : wsConnecting ? 'CONNECTING' : 'OFFLINE'}
+          <span style={{ display: 'flex', alignItems: 'center' }}>
+            {wsConnected ? 'LIVE' : wsConnecting ? 'CONNECTING' : 'OFFLINE'}
+          </span>
         </button>
 
         {/* User dropdown */}
