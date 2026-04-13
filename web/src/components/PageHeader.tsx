@@ -21,22 +21,28 @@ const subtitleStyle: CSSProperties = {
   fontSize: '12px',
   color: 'var(--muted)',
   letterSpacing: '0.08em',
-  marginLeft: 14,
 }
 
 export default function PageHeader({
   title,
   subtitle,
+  titleActions,
   actions,
 }: {
   title: ReactNode
   subtitle?: ReactNode
+  titleActions?: ReactNode
   actions?: ReactNode
 }) {
   return (
     <div style={barStyle}>
-      <div style={{ display: 'flex', alignItems: 'baseline' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, flexWrap: 'wrap' }}>
         <span style={titleStyle}>{title}</span>
+        {titleActions ? (
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, flexWrap: 'wrap' }}>
+            {titleActions}
+          </div>
+        ) : null}
         {subtitle && <span style={subtitleStyle}>{subtitle}</span>}
       </div>
       {actions ? (

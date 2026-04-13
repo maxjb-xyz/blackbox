@@ -69,6 +69,7 @@ const NOTIFICATION_EVENT_OPTIONS = [
   { value: 'incident_confirmed', label: 'INCIDENT UPGRADED TO CONFIRMED' },
   { value: 'incident_resolved', label: 'INCIDENT RESOLVED' },
 ] as const
+const ADMIN_TABS: Tab[] = ['invites', 'users', 'oidc', 'settings', 'systemd', 'notifications']
 
 function normalizeInvite(invite: Record<string, unknown>): InviteCode {
   return {
@@ -209,20 +210,21 @@ export default function AdminPage() {
     <div>
       <PageHeader
         title="ADMIN /"
-        actions={(['invites', 'users', 'oidc', 'settings', 'systemd', 'notifications'] as Tab[]).map(t => (
+        titleActions={ADMIN_TABS.map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
             style={{
               background: 'none',
               border: 'none',
-              borderBottom: tab === t ? '1px solid var(--accent)' : '1px solid transparent',
-              color: tab === t ? 'var(--accent)' : 'var(--muted)',
-              fontSize: '11px',
-              letterSpacing: '0.1em',
+              color: tab === t ? 'var(--accent)' : '#F0F0F0',
+              fontSize: '18px',
+              fontWeight: 700,
+              letterSpacing: '0.12em',
               cursor: 'pointer',
               fontFamily: 'inherit',
-              padding: '2px 0',
+              lineHeight: 1,
+              padding: 0,
             }}
           >
             {t.toUpperCase()}
