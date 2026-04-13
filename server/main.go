@@ -19,6 +19,7 @@ import (
 	"blackbox/server/internal/incidents"
 	"blackbox/server/internal/middleware"
 	"blackbox/server/internal/models"
+	"blackbox/server/internal/notify"
 	"blackbox/server/internal/static"
 	"blackbox/shared/timezone"
 	"github.com/go-chi/chi/v5"
@@ -66,9 +67,10 @@ func main() {
 	log.Printf("database initialized at %s", dbPath)
 	db.StartOIDCStateSweeper(rootCtx, database)
 	eventHub := hub.New()
+	notifier := notify.NewDispatcher(database)
 	handlers.StartNodeStatusMonitor(rootCtx, database, eventHub, 0)
 	incidentCh := incidents.NewChannel()
-	incidentMgr := incidents.NewManager(database, eventHub)
+	incidentMgr := incidents.NewManager(database, eventHub, notifier)
 	managerCtx, stopManager := context.WithCancel(context.Background())
 	defer stopManager()
 	managerDone := make(chan struct{})
@@ -207,6 +209,11 @@ func main() {
 		r.Delete("/api/admin/oidc/providers/{id}", handlers.DeleteOIDCProvider(database, registry))
 		r.Get("/api/admin/oidc/policy", handlers.GetOIDCPolicy(database))
 		r.Put("/api/admin/oidc/policy", handlers.SetOIDCPolicy(database))
+		r.Get("/api/admin/notifications", handlers.ListNotificationDests(database))
+		r.Post("/api/admin/notifications", handlers.CreateNotificationDest(database))
+		r.Put("/api/admin/notifications/{id}", handlers.UpdateNotificationDest(database))
+		r.Delete("/api/admin/notifications/{id}", handlers.DeleteNotificationDest(database))
+		r.Post("/api/admin/notifications/{id}/test", handlers.TestNotificationDest(database, notifier))
 	})
 
 	r.Group(func(r chi.Router) {

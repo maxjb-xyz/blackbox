@@ -7,6 +7,7 @@ import (
 
 	"blackbox/server/internal/hub"
 	"blackbox/server/internal/models"
+	"blackbox/server/internal/notify"
 	"blackbox/shared/types"
 	"gorm.io/gorm"
 )
@@ -31,6 +32,7 @@ type pendingRecovery struct {
 type Manager struct {
 	db       *gorm.DB
 	hub      *hub.Hub
+	notifier *notify.Dispatcher
 	enricher *AIEnricher
 
 	mu                  sync.Mutex
@@ -48,10 +50,11 @@ func incidentKey(svc, node string) string {
 }
 
 // NewManager creates a Manager. Call Run in a goroutine.
-func NewManager(db *gorm.DB, h *hub.Hub) *Manager {
+func NewManager(db *gorm.DB, h *hub.Hub, notifier *notify.Dispatcher) *Manager {
 	m := &Manager{
 		db:                  db,
 		hub:                 h,
+		notifier:            notifier,
 		openIncidents:       make(map[string]string),
 		pendingWT:           make(map[string]pendingWatchtower),
 		pendingRecover:      make(map[string]pendingRecovery),

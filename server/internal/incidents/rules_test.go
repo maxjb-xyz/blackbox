@@ -33,7 +33,7 @@ func TestConfirmedIncident_OpenOnDown(t *testing.T) {
 	database, err := db.Init(":memory:")
 	require.NoError(t, err)
 
-	mgr := NewManager(database, hub.New())
+	mgr := NewManager(database, hub.New(), nil)
 	ch := NewChannel()
 	go mgr.Run(t.Context(), ch)
 
@@ -60,7 +60,7 @@ func TestConfirmedIncident_OpenOnDown_UsesCorrelatedCauseNodeNames(t *testing.T)
 	causeEntry.NodeName = "media-node"
 	require.NoError(t, database.Create(&causeEntry).Error)
 
-	mgr := NewManager(database, hub.New())
+	mgr := NewManager(database, hub.New(), nil)
 	ch := NewChannel()
 	go mgr.Run(t.Context(), ch)
 
@@ -90,7 +90,7 @@ func TestConfirmedIncident_OpenOnDown_BindsFollowUpNodeEventsToScopedIncident(t 
 	causeEntry.NodeName = "media-node"
 	require.NoError(t, database.Create(&causeEntry).Error)
 
-	mgr := NewManager(database, hub.New())
+	mgr := NewManager(database, hub.New(), nil)
 	ch := NewChannel()
 	go mgr.Run(t.Context(), ch)
 
@@ -125,7 +125,7 @@ func TestConfirmedIncident_ResolveOnUp(t *testing.T) {
 	database, err := db.Init(":memory:")
 	require.NoError(t, err)
 
-	mgr := NewManager(database, hub.New())
+	mgr := NewManager(database, hub.New(), nil)
 	ch := NewChannel()
 	go mgr.Run(t.Context(), ch)
 
@@ -157,7 +157,7 @@ func TestConfirmedIncident_DockerStartAddsEvidenceButDoesNotResolve(t *testing.T
 	causeEntry.NodeName = "media-node"
 	require.NoError(t, database.Create(&causeEntry).Error)
 
-	mgr := NewManager(database, hub.New())
+	mgr := NewManager(database, hub.New(), nil)
 	ch := NewChannel()
 	go mgr.Run(t.Context(), ch)
 
@@ -200,7 +200,7 @@ func TestSuspectedIncident_DockerExitDuringRecoveryWindow_KeepsIncidentOpen(t *t
 	require.NoError(t, err)
 
 	now := time.Now().UTC()
-	mgr := NewManager(database, hub.New())
+	mgr := NewManager(database, hub.New(), nil)
 	ch := NewChannel()
 	go mgr.Run(t.Context(), ch)
 
@@ -253,7 +253,7 @@ func TestConfirmedIncident_ResolveOnUpAfterManagerRestart(t *testing.T) {
 	}
 	require.NoError(t, database.Create(&incident).Error)
 
-	mgr := NewManager(database, hub.New())
+	mgr := NewManager(database, hub.New(), nil)
 	ch := NewChannel()
 	go mgr.Run(t.Context(), ch)
 
@@ -274,7 +274,7 @@ func TestSuspectedIncident_OpensOnNumericExitCode(t *testing.T) {
 	database, err := db.Init(":memory:")
 	require.NoError(t, err)
 
-	mgr := NewManager(database, hub.New())
+	mgr := NewManager(database, hub.New(), nil)
 	ch := NewChannel()
 	go mgr.Run(t.Context(), ch)
 
@@ -303,7 +303,7 @@ func TestConfirmedIncident_UpgradeSkipsAlreadyLinkedCauseEntries(t *testing.T) {
 	database, err := db.Init(":memory:")
 	require.NoError(t, err)
 
-	mgr := NewManager(database, hub.New())
+	mgr := NewManager(database, hub.New(), nil)
 	ch := NewChannel()
 	go mgr.Run(t.Context(), ch)
 
@@ -344,7 +344,7 @@ func TestSystemdFailed_OpensSuspectedIncident(t *testing.T) {
 	database, err := db.Init(":memory:")
 	require.NoError(t, err)
 
-	mgr := NewManager(database, hub.New())
+	mgr := NewManager(database, hub.New(), nil)
 	ch := NewChannel()
 	go mgr.Run(t.Context(), ch)
 
@@ -366,7 +366,7 @@ func TestSystemdOOMKill_OpensSuspectedIncident(t *testing.T) {
 	database, err := db.Init(":memory:")
 	require.NoError(t, err)
 
-	mgr := NewManager(database, hub.New())
+	mgr := NewManager(database, hub.New(), nil)
 	ch := NewChannel()
 	go mgr.Run(t.Context(), ch)
 
@@ -388,7 +388,7 @@ func TestSystemdRestartLoop_OpensSuspectedIncident(t *testing.T) {
 	database, err := db.Init(":memory:")
 	require.NoError(t, err)
 
-	mgr := NewManager(database, hub.New())
+	mgr := NewManager(database, hub.New(), nil)
 	now := time.Now().UTC()
 
 	for i := 0; i < crashLoopThreshold; i++ {
@@ -406,7 +406,7 @@ func TestSystemdLoneRestart_DoesNotOpenIncident(t *testing.T) {
 	database, err := db.Init(":memory:")
 	require.NoError(t, err)
 
-	mgr := NewManager(database, hub.New())
+	mgr := NewManager(database, hub.New(), nil)
 	entry := makeEntry("nginx.service", "systemd", "restart", `{}`)
 	require.NoError(t, database.Create(&entry).Error)
 
@@ -421,7 +421,7 @@ func TestSystemdStarted_ResolvesAfterStabilityWindow(t *testing.T) {
 	database, err := db.Init(":memory:")
 	require.NoError(t, err)
 
-	mgr := NewManager(database, hub.New())
+	mgr := NewManager(database, hub.New(), nil)
 	base := time.Now().UTC()
 
 	failed := makeEntryAt("nginx.service", "systemd", "failed", `{}`, base)
@@ -453,7 +453,7 @@ func TestConfirmedSystemdStartedAddsEvidenceButDoesNotResolve(t *testing.T) {
 	causeEntry.NodeName = "node-01"
 	require.NoError(t, database.Create(&causeEntry).Error)
 
-	mgr := NewManager(database, hub.New())
+	mgr := NewManager(database, hub.New(), nil)
 	ch := NewChannel()
 	go mgr.Run(t.Context(), ch)
 
@@ -495,7 +495,7 @@ func TestSystemdFailureDuringRecoveryWindow_KeepsIncidentOpen(t *testing.T) {
 	database, err := db.Init(":memory:")
 	require.NoError(t, err)
 
-	mgr := NewManager(database, hub.New())
+	mgr := NewManager(database, hub.New(), nil)
 	base := time.Now().UTC()
 
 	failed := makeEntryAt("nginx.service", "systemd", "failed", `{}`, base)
@@ -522,7 +522,7 @@ func TestWatchtowerUpdateFollowedByRestart_OpensSuspectedIncident(t *testing.T) 
 	database, err := db.Init(":memory:")
 	require.NoError(t, err)
 
-	mgr := NewManager(database, hub.New())
+	mgr := NewManager(database, hub.New(), nil)
 	ch := NewChannel()
 	go mgr.Run(t.Context(), ch)
 
