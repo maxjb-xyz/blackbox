@@ -1,6 +1,7 @@
 package incidents
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -11,6 +12,7 @@ import (
 
 	"blackbox/server/internal/correlation"
 	"blackbox/server/internal/models"
+	"blackbox/server/internal/notify"
 	"blackbox/shared/types"
 	"github.com/oklog/ulid/v2"
 	"gorm.io/gorm"
@@ -381,6 +383,14 @@ func (m *Manager) upgradeToConfirmed(incidentID string, downEntry types.Entry) {
 	}
 
 	m.broadcastUpdated(incidentID)
+	if m.notifier != nil {
+		var updated models.Incident
+		if err := m.db.First(&updated, "id = ?", incidentID).Error; err != nil {
+			log.Printf("incidents: reload confirmed incident %s: %v", incidentID, err)
+		} else {
+			m.notifier.Send(context.Background(), notify.EventIncidentConfirmed, updated)
+		}
+	}
 	m.dispatchIncidentEnrichment(incidentID, downEntry.NodeName)
 }
 
@@ -651,11 +661,17 @@ func (m *Manager) enrichmentEntries(incidentID string) ([]enrichEntry, error) {
 }
 
 func (m *Manager) broadcastOpened(inc models.Incident) {
-	if m.hub == nil {
-		return
+	if m.hub != nil {
+		if msg := marshalWSMessage("incident_opened", inc); msg != nil {
+			m.hub.Broadcast(msg)
+		}
 	}
-	if msg := marshalWSMessage("incident_opened", inc); msg != nil {
-		m.hub.Broadcast(msg)
+	if m.notifier != nil {
+		event := notify.EventIncidentOpenedConfirmed
+		if inc.Confidence == "suspected" {
+			event = notify.EventIncidentOpenedSuspected
+		}
+		m.notifier.Send(context.Background(), event, inc)
 	}
 }
 
@@ -673,11 +689,13 @@ func (m *Manager) broadcastUpdated(incidentID string) {
 }
 
 func (m *Manager) broadcastResolved(inc models.Incident) {
-	if m.hub == nil {
-		return
+	if m.hub != nil {
+		if msg := marshalWSMessage("incident_resolved", inc); msg != nil {
+			m.hub.Broadcast(msg)
+		}
 	}
-	if msg := marshalWSMessage("incident_resolved", inc); msg != nil {
-		m.hub.Broadcast(msg)
+	if m.notifier != nil {
+		m.notifier.Send(context.Background(), notify.EventIncidentResolved, inc)
 	}
 }
 
