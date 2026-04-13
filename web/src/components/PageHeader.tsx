@@ -38,11 +38,7 @@ export default function PageHeader({
     <div style={barStyle}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, flexWrap: 'wrap' }}>
         <span style={titleStyle}>{title}</span>
-        {titleActions ? (
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, flexWrap: 'wrap' }}>
-            {titleActions}
-          </div>
-        ) : null}
+        {titleActions}
         {subtitle && <span style={subtitleStyle}>{subtitle}</span>}
       </div>
       {actions ? (
