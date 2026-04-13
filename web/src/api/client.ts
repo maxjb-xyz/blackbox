@@ -533,10 +533,20 @@ function normalizeNotificationDest(data: Record<string, unknown>): NotificationD
     events = []
   }
 
+  const allowedTypes = ['discord', 'slack', 'ntfy'] as const
+  const rawType = data.type
+  let destType: NotificationDest['type']
+  if (typeof rawType === 'string' && (allowedTypes as readonly string[]).includes(rawType)) {
+    destType = rawType as NotificationDest['type']
+  } else {
+    console.warn(`normalizeNotificationDest: unexpected type ${String(rawType)} for destination ${String(data.id)} (${String(data.name)}), falling back to 'discord'`)
+    destType = 'discord'
+  }
+
   return {
     id: String(data.id ?? ''),
     name: String(data.name ?? ''),
-    type: (data.type === 'slack' || data.type === 'ntfy' ? data.type : 'discord'),
+    type: destType,
     url: String(data.url ?? ''),
     events,
     enabled: data.enabled === true,
