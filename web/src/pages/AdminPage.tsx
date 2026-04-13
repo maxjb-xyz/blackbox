@@ -3,7 +3,9 @@ import type { CSSProperties } from 'react'
 import { Navigate } from 'react-router-dom'
 import {
   createAdminOIDCProvider,
+  createNotificationDest,
   deleteAdminOIDCProvider,
+  deleteNotificationDest,
   deleteAdminUser,
   fetchAdminConfig,
   fetchNodes,
@@ -12,15 +14,18 @@ import {
   getOIDCPolicy,
   listAdminOIDCProviders,
   listAdminUsers,
+  listNotificationDests,
   revokeInvite,
   setOIDCPolicy,
+  testNotificationDest,
   updateAISettings,
   updateFileWatcherSettings,
   updateAdminOIDCProvider,
   updateAdminUser,
+  updateNotificationDest,
   updateSystemdSettings,
 } from '../api/client'
-import type { AdminUser, Node, OIDCProviderConfig } from '../api/client'
+import type { AdminUser, Node, NotificationDest, NotificationDestInput, OIDCProviderConfig } from '../api/client'
 import { readErrorMessage } from '../api/errorUtils'
 import { useSession } from '../session'
 import PageHeader from '../components/PageHeader'
@@ -44,7 +49,7 @@ interface OIDCProviderFormState {
   enabled: boolean
 }
 
-type Tab = 'invites' | 'users' | 'oidc' | 'settings' | 'systemd'
+type Tab = 'invites' | 'users' | 'oidc' | 'settings' | 'systemd' | 'notifications'
 type OIDCPolicy = 'open' | 'existing_only' | 'invite_required'
 
 const UNIT_SUFFIXES = ['.service','.socket','.device','.mount','.automount',
@@ -57,6 +62,13 @@ const OIDC_POLICY_OPTIONS: Array<{ value: OIDCPolicy; description: string }> = [
   { value: 'existing_only', description: 'Only users with existing accounts can sign in via OIDC' },
   { value: 'invite_required', description: 'New OIDC users must have an invite code' },
 ]
+
+const NOTIFICATION_EVENT_OPTIONS = [
+  { value: 'incident_opened_confirmed', label: 'INCIDENT OPENED / CONFIRMED' },
+  { value: 'incident_opened_suspected', label: 'INCIDENT OPENED / SUSPECTED' },
+  { value: 'incident_confirmed', label: 'INCIDENT UPGRADED TO CONFIRMED' },
+  { value: 'incident_resolved', label: 'INCIDENT RESOLVED' },
+] as const
 
 function normalizeInvite(invite: Record<string, unknown>): InviteCode {
   return {
@@ -92,6 +104,16 @@ function emptyOIDCProviderForm(): OIDCProviderFormState {
   }
 }
 
+function emptyNotificationDestForm(): NotificationDestInput {
+  return {
+    name: '',
+    type: 'discord',
+    url: '',
+    events: [],
+    enabled: true,
+  }
+}
+
 function oidcCallbackURL(providerID: string): string {
   const trimmed = providerID.trim()
   if (!trimmed) return ''
@@ -109,6 +131,16 @@ export default function AdminPage() {
   const [systemdSaveError, setSystemdSaveError] = useState<Record<string, string | null>>({})
   const [nodesError, setNodesError] = useState<string | null>(null)
   const [systemdError, setSystemdError] = useState<string | null>(null)
+  const [notificationDests, setNotificationDests] = useState<NotificationDest[]>([])
+  const [notificationsLoading, setNotificationsLoading] = useState(false)
+  const [notificationsError, setNotificationsError] = useState<string | null>(null)
+  const [notificationForm, setNotificationForm] = useState<NotificationDestInput>(emptyNotificationDestForm)
+  const [notificationFormOpen, setNotificationFormOpen] = useState(false)
+  const [notificationEditingId, setNotificationEditingId] = useState<string | null>(null)
+  const [notificationSaving, setNotificationSaving] = useState(false)
+  const [notificationSaveError, setNotificationSaveError] = useState<string | null>(null)
+  const [notificationTestResults, setNotificationTestResults] = useState<Record<string, { ok: boolean; error?: string } | undefined>>({})
+  const notificationTestTimeoutsRef = useRef<Record<string, number>>({})
 
   const handleAddUnit = useCallback((nodeName: string) => {
     const units = systemdSettings[nodeName] ?? []
@@ -121,6 +153,18 @@ export default function AdminPage() {
     setSystemdInputs(prev => ({ ...prev, [nodeName]: '' }))
     setSystemdSaveError(prev => ({ ...prev, [nodeName]: null }))
   }, [systemdInputs, systemdSettings])
+
+  const loadNotificationDests = useCallback(async () => {
+    setNotificationsLoading(true)
+    setNotificationsError(null)
+    try {
+      setNotificationDests(await listNotificationDests())
+    } catch (err) {
+      setNotificationsError(err instanceof Error ? err.message : 'Failed to load notification destinations')
+    } finally {
+      setNotificationsLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
     if (tab !== 'systemd') return
@@ -146,13 +190,26 @@ export default function AdminPage() {
       })
   }, [tab])
 
+  useEffect(() => {
+    if (tab !== 'notifications') return
+    void loadNotificationDests()
+  }, [loadNotificationDests, tab])
+
+  useEffect(() => {
+    return () => {
+      Object.values(notificationTestTimeoutsRef.current).forEach(timeoutID => {
+        window.clearTimeout(timeoutID)
+      })
+    }
+  }, [])
+
   if (!isAdmin) return <Navigate to="/timeline" replace />
 
   return (
     <div>
       <PageHeader
         title="ADMIN /"
-        actions={(['invites', 'users', 'oidc', 'settings', 'systemd'] as Tab[]).map(t => (
+        actions={(['invites', 'users', 'oidc', 'settings', 'systemd', 'notifications'] as Tab[]).map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -330,6 +387,324 @@ export default function AdminPage() {
                 </div>
               )
             })}
+          </div>
+        )}
+        {tab === 'notifications' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <section style={panelStyle}>
+              <div style={panelHeaderStyle}>
+                <span style={panelLabelStyle}>DESTINATIONS</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNotificationForm(emptyNotificationDestForm())
+                    setNotificationFormOpen(true)
+                    setNotificationEditingId(null)
+                    setNotificationSaveError(null)
+                  }}
+                  style={actionBtnStyle}
+                >
+                  ADD DESTINATION
+                </button>
+              </div>
+
+              {notificationsError && <div style={{ color: 'var(--danger)', fontSize: '12px', marginBottom: 12 }}>{notificationsError}</div>}
+              {notificationSaveError && <div style={{ color: 'var(--danger)', fontSize: '12px', marginBottom: 12 }}>{notificationSaveError}</div>}
+
+              {notificationFormOpen && (
+                <form
+                  onSubmit={async e => {
+                    e.preventDefault()
+                    setNotificationSaving(true)
+                    setNotificationSaveError(null)
+                    try {
+                      if (notificationEditingId) {
+                        await updateNotificationDest(notificationEditingId, notificationForm)
+                      } else {
+                        await createNotificationDest(notificationForm)
+                      }
+                      setNotificationForm(emptyNotificationDestForm())
+                      setNotificationFormOpen(false)
+                      setNotificationEditingId(null)
+                      await loadNotificationDests()
+                    } catch (err) {
+                      setNotificationSaveError(err instanceof Error ? err.message : 'Failed to save notification destination')
+                    } finally {
+                      setNotificationSaving(false)
+                    }
+                  }}
+                  style={{ border: '1px solid var(--border)', padding: 16, marginBottom: 16 }}
+                >
+                  <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+                    <label style={fieldWrapperStyle}>
+                      <span style={fieldLabelStyle}>NAME</span>
+                      <input
+                        type="text"
+                        value={notificationForm.name}
+                        onChange={e => setNotificationForm(prev => ({ ...prev, name: e.target.value }))}
+                        required
+                        style={inputStyle}
+                      />
+                    </label>
+
+                    <label style={fieldWrapperStyle}>
+                      <span style={fieldLabelStyle}>TYPE</span>
+                      <select
+                        value={notificationForm.type}
+                        onChange={e =>
+                          setNotificationForm(prev => ({
+                            ...prev,
+                            type: e.target.value as NotificationDestInput['type'],
+                          }))
+                        }
+                        style={inputStyle}
+                      >
+                        <option value="discord">Discord</option>
+                        <option value="slack">Slack</option>
+                        <option value="ntfy">Ntfy</option>
+                      </select>
+                    </label>
+
+                    <label style={{ ...fieldWrapperStyle, gridColumn: '1 / -1' }}>
+                      <span style={fieldLabelStyle}>
+                        {notificationForm.type === 'ntfy' ? 'TOPIC URL' : 'WEBHOOK URL'}
+                      </span>
+                      <input
+                        type="url"
+                        value={notificationForm.url}
+                        onChange={e => setNotificationForm(prev => ({ ...prev, url: e.target.value }))}
+                        required
+                        placeholder={
+                          notificationForm.type === 'ntfy'
+                            ? 'https://ntfy.sh/my-topic'
+                            : notificationForm.type === 'slack'
+                              ? 'https://hooks.slack.com/services/...'
+                              : 'https://discord.com/api/webhooks/...'
+                        }
+                        style={inputStyle}
+                      />
+                    </label>
+
+                    <div style={{ ...fieldWrapperStyle, gridColumn: '1 / -1' }}>
+                      <span style={fieldLabelStyle}>EVENTS</span>
+                      <div style={{ display: 'grid', gap: 8 }}>
+                        {NOTIFICATION_EVENT_OPTIONS.map(option => (
+                          <label
+                            key={option.value}
+                            style={{
+                              display: 'flex',
+                              gap: 10,
+                              alignItems: 'center',
+                              border: '1px solid var(--border)',
+                              padding: '10px 12px',
+                              color: 'var(--muted)',
+                              cursor: 'pointer',
+                              background: notificationForm.events.includes(option.value) ? 'var(--surface)' : 'transparent',
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={notificationForm.events.includes(option.value)}
+                              onChange={e =>
+                                setNotificationForm(prev => ({
+                                  ...prev,
+                                  events: e.target.checked
+                                    ? [...prev.events, option.value]
+                                    : prev.events.filter(event => event !== option.value),
+                                }))
+                              }
+                            />
+                            <span style={{ fontSize: '11px', letterSpacing: '0.05em' }}>{option.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    <label style={{ ...fieldWrapperStyle, gridColumn: '1 / -1', flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <input
+                        type="checkbox"
+                        checked={notificationForm.enabled}
+                        onChange={e => setNotificationForm(prev => ({ ...prev, enabled: e.target.checked }))}
+                      />
+                      <span style={{ color: 'var(--muted)', fontSize: '11px', letterSpacing: '0.05em' }}>ENABLED</span>
+                    </label>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
+                    <button
+                      type="submit"
+                      disabled={notificationSaving}
+                      style={{
+                        background: notificationSaving ? 'var(--border)' : 'var(--accent)',
+                        color: '#000',
+                        border: 'none',
+                        padding: '8px 16px',
+                        fontFamily: 'inherit',
+                        fontSize: '12px',
+                        fontWeight: 'bold',
+                        letterSpacing: '0.1em',
+                        cursor: notificationSaving ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      {notificationSaving ? 'SAVING...' : notificationEditingId ? 'SAVE CHANGES' : 'CREATE DESTINATION'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNotificationForm(emptyNotificationDestForm())
+                        setNotificationFormOpen(false)
+                        setNotificationEditingId(null)
+                        setNotificationSaveError(null)
+                      }}
+                      style={actionBtnStyle}
+                    >
+                      CANCEL
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {notificationsLoading ? (
+                <div style={{ color: 'var(--muted)', fontSize: '12px' }}>loading...</div>
+              ) : notificationDests.length === 0 ? (
+                <div style={{ color: 'var(--muted)', fontSize: '12px' }}>no notification destinations configured</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {notificationDests.map(dest => (
+                    <div key={dest.id} style={{ border: '1px solid var(--border)', padding: 12 }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'flex-start',
+                          gap: 12,
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
+                            <span style={{ color: 'var(--text)', fontSize: '12px', fontWeight: 'bold' }}>{dest.name}</span>
+                            <span style={{ color: 'var(--muted)', fontSize: '10px', letterSpacing: '0.1em' }}>
+                              {dest.type.toUpperCase()}
+                            </span>
+                            <span style={{ color: dest.enabled ? 'var(--success)' : 'var(--muted)', fontSize: '10px', letterSpacing: '0.1em' }}>
+                              {dest.enabled ? 'ENABLED' : 'DISABLED'}
+                            </span>
+                          </div>
+                          <div style={{ color: 'var(--muted)', fontSize: '11px', wordBreak: 'break-all', marginBottom: 6 }}>
+                            {dest.url}
+                          </div>
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                            {dest.events.map(event => (
+                              <span
+                                key={event}
+                                style={{
+                                  border: '1px solid var(--border)',
+                                  padding: '2px 6px',
+                                  color: 'var(--muted)',
+                                  fontSize: '10px',
+                                  letterSpacing: '0.05em',
+                                }}
+                              >
+                                {event.toUpperCase()}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                          {notificationTestResults[dest.id] && (
+                            <span
+                              style={{
+                                color: notificationTestResults[dest.id]?.ok ? 'var(--success)' : 'var(--danger)',
+                                fontSize: '11px',
+                              }}
+                            >
+                              {notificationTestResults[dest.id]?.ok
+                                ? 'TEST SENT'
+                                : notificationTestResults[dest.id]?.error ?? 'TEST FAILED'}
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const existingTimeout = notificationTestTimeoutsRef.current[dest.id]
+                              if (existingTimeout) {
+                                window.clearTimeout(existingTimeout)
+                              }
+                              setNotificationTestResults(prev => ({ ...prev, [dest.id]: undefined }))
+                              try {
+                                const result = await testNotificationDest(dest.id)
+                                setNotificationTestResults(prev => ({ ...prev, [dest.id]: result }))
+                              } catch (err) {
+                                setNotificationTestResults(prev => ({
+                                  ...prev,
+                                  [dest.id]: {
+                                    ok: false,
+                                    error: err instanceof Error ? err.message : 'Failed to test notification destination',
+                                  },
+                                }))
+                              }
+                              notificationTestTimeoutsRef.current[dest.id] = window.setTimeout(() => {
+                                setNotificationTestResults(prev => {
+                                  const next = { ...prev }
+                                  delete next[dest.id]
+                                  return next
+                                })
+                                delete notificationTestTimeoutsRef.current[dest.id]
+                              }, 5000)
+                            }}
+                            style={actionBtnStyle}
+                          >
+                            TEST
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setNotificationForm({
+                                name: dest.name,
+                                type: dest.type,
+                                url: dest.url,
+                                events: [...dest.events],
+                                enabled: dest.enabled,
+                              })
+                              setNotificationFormOpen(true)
+                              setNotificationEditingId(dest.id)
+                              setNotificationSaveError(null)
+                            }}
+                            style={actionBtnStyle}
+                          >
+                            EDIT
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!window.confirm(`Delete notification destination "${dest.name}"?`)) return
+                              setNotificationsError(null)
+                              try {
+                                await deleteNotificationDest(dest.id)
+                                if (notificationEditingId === dest.id) {
+                                  setNotificationForm(emptyNotificationDestForm())
+                                  setNotificationFormOpen(false)
+                                  setNotificationEditingId(null)
+                                  setNotificationSaveError(null)
+                                }
+                                await loadNotificationDests()
+                              } catch (err) {
+                                setNotificationsError(err instanceof Error ? err.message : 'Failed to delete notification destination')
+                              }
+                            }}
+                            style={{ ...actionBtnStyle, color: 'var(--danger)', borderColor: 'var(--danger)' }}
+                          >
+                            DELETE
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
           </div>
         )}
       </div>

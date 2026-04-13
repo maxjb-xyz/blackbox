@@ -44,7 +44,7 @@ func TestManager_SuspectedIncidentDispatchesAIAnalysisWithTriggerLogs(t *testing
 	}
 	require.NoError(t, database.Create(&entry).Error)
 
-	manager := NewManager(database, nil)
+	manager := NewManager(database, nil, nil)
 	manager.processEntry(entry)
 
 	var incident models.Incident

@@ -441,6 +441,25 @@ export interface IncidentSummary {
   hasConfirmedOpen: boolean
 }
 
+export interface NotificationDest {
+  id: string
+  name: string
+  type: 'discord' | 'slack' | 'ntfy'
+  url: string
+  events: string[]
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface NotificationDestInput {
+  name: string
+  type: 'discord' | 'slack' | 'ntfy'
+  url: string
+  events: string[]
+  enabled: boolean
+}
+
 export function parseIncidentServices(inc: Incident): string[] {
   try { return JSON.parse(inc.services) as string[] } catch { return [] }
 }
@@ -496,4 +515,66 @@ export async function fetchIncidentsForEntryIds(entryIds: string[]): Promise<Rec
   if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to fetch incident membership'))
   const data = await res.json() as { memberships?: Record<string, IncidentMembership> }
   return data.memberships ?? {}
+}
+
+function normalizeNotificationDest(data: Record<string, unknown>): NotificationDest {
+  const rawEvents = data.events
+  const events = Array.isArray(rawEvents)
+    ? rawEvents.map(event => String(event))
+    : []
+
+  return {
+    id: String(data.id ?? ''),
+    name: String(data.name ?? ''),
+    type: (data.type === 'slack' || data.type === 'ntfy' ? data.type : 'discord'),
+    url: String(data.url ?? ''),
+    events,
+    enabled: data.enabled === true,
+    created_at: String(data.created_at ?? ''),
+    updated_at: String(data.updated_at ?? ''),
+  }
+}
+
+export async function listNotificationDests(): Promise<NotificationDest[]> {
+  const res = await apiFetch('/api/admin/notifications')
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to list notification destinations'))
+  const data = await res.json() as Record<string, unknown>[]
+  return data.map(normalizeNotificationDest)
+}
+
+export async function createNotificationDest(data: NotificationDestInput): Promise<NotificationDest> {
+  const res = await apiFetch('/api/admin/notifications', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to create notification destination'))
+  const created = await res.json() as Record<string, unknown>
+  return normalizeNotificationDest(created)
+}
+
+export async function updateNotificationDest(id: string, data: NotificationDestInput): Promise<NotificationDest> {
+  const res = await apiFetch(`/api/admin/notifications/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to update notification destination'))
+  const updated = await res.json() as Record<string, unknown>
+  return normalizeNotificationDest(updated)
+}
+
+export async function deleteNotificationDest(id: string): Promise<void> {
+  const res = await apiFetch(`/api/admin/notifications/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to delete notification destination'))
+}
+
+export async function testNotificationDest(id: string): Promise<{ ok: boolean; error?: string }> {
+  const res = await apiFetch(`/api/admin/notifications/${encodeURIComponent(id)}/test`, {
+    method: 'POST',
+  })
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to test notification destination'))
+  return res.json() as Promise<{ ok: boolean; error?: string }>
 }
