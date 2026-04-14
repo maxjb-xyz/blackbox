@@ -4,7 +4,7 @@
 
 <h1 align="center">Blackbox</h1>
 <p align="center">
-  A self-hosted forensic event timeline for homelabs and home servers.<br/>
+  An intelligent self-hosted forensic event timeline for homelabs and home servers.<br/>
   Know <em>what</em> changed, <em>when</em> it changed, and <em>why</em> things broke.
 </p>
 
