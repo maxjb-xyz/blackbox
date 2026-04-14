@@ -134,8 +134,8 @@ docker compose up -d
 - **Incident lifecycle** — Blackbox opens confirmed incidents from monitor-down events and suspected incidents from crash loops, unexpected container exits, watched systemd failures/OOM kills/restart loops, and update-triggered restarts.
 - **Weighted cause scoring** — Likely causes are ranked from recent Docker, file, systemd, and update entries using event-specific lookback windows, same-node bonuses, and log-snippet bonuses.
 - **Event chain view** — The Incidents page shows open and resolved incidents, duration, linked trigger/cause/evidence/recovery events, AI-derived causes when enabled, and the chosen root-cause entry.
-- **Optional Ollama modes** — If Ollama is configured, Blackbox can run either plain AI analysis or an AI-enhanced correlation mode from the same Admin settings page.
-- **AI across suspected incidents too** — Suspected incidents get the same log-backed AI treatment as confirmed incidents, including crash-log context and the selected Ollama mode.
+- **Optional AI modes** — If Ollama or other AI provider is configured, Blackbox can run either plain AI analysis or an AI-enhanced correlation mode from the same Admin settings page.
+- **AI across suspected incidents too** — Suspected incidents get the same log-backed AI treatment as confirmed incidents, including crash-log context and the selected AI mode.
 
 ### Timeline
 - Chronological, paginated event feed across all nodes
