@@ -119,7 +119,7 @@ docker compose up -d
 ## Features
 
 ### Event Ingestion
-- **Docker events** — Automatic detection of container start, stop, die, create, pull, and delete events. Per-node, with a 3-second debounce to collapse rapid restarts into a single restart/stop entry.
+- **Docker events** — Automatic detection of container start, stop, die, create, pull, and delete events. Per-node, with logic for collapsing events like restarts.
 - **Smarter service inference** — Docker and file events resolve service names from Compose labels, Swarm metadata, image/container lookups, and common homelab path layouts so correlation works with cleaner service names.
 - **Crash log capture** — Collapsed Docker stop/restart events include a best-effort tail of recent container logs, which Blackbox can surface directly inside incidents.
 - **Config file watching** — inotify-based watching of `.yaml`, `.yml`, `.conf`, `.env`, `.json`, and `.ini` files via configurable `WATCH_PATHS`.
