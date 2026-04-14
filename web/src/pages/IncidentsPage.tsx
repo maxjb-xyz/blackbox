@@ -589,7 +589,7 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
                   >
                     {meta.ai_analysis}
                   </div>
-                  {aiMode === 'enhanced' && aiCauseEntries.length === 0 && meta.ai_verified === true && (
+                  {aiMode === 'enhanced' && aiCauseEntries.length === 0 && isVerified && (
                     <div
                       style={{
                         marginTop: 8,
