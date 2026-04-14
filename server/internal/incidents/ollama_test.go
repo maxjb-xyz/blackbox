@@ -58,8 +58,10 @@ func TestManager_SuspectedIncidentDispatchesAIAnalysisWithTriggerLogs(t *testing
 
 	select {
 	case prompt := <-promptSeen:
+		require.Contains(t, prompt, "concise but detailed root cause analysis")
 		require.Contains(t, prompt, "[trigger] docker/die")
 		require.Contains(t, prompt, "Log: fatal: invalid nginx.conf")
+		require.Contains(t, prompt, "Root cause summary in 2-4 sentences")
 		require.True(t, strings.Contains(prompt, "Confidence: suspected"), prompt)
 	default:
 		t.Fatal("expected Ollama prompt for suspected incident")
@@ -108,7 +110,7 @@ func TestAIEnricher_SetsAndClearsPendingState(t *testing.T) {
 		}
 		meta := parseIncidentTestMetadata(t, inc.Metadata)
 		pending, _ := meta["ai_pending"].(bool)
-		return pending && meta["ai_model"] == "llama3.2"
+		return pending && meta["ai_model"] == "llama3.2" && meta["ai_mode"] == "analysis"
 	}, time.Second, 10*time.Millisecond)
 
 	close(release)
@@ -120,7 +122,7 @@ func TestAIEnricher_SetsAndClearsPendingState(t *testing.T) {
 		}
 		meta := parseIncidentTestMetadata(t, inc.Metadata)
 		_, pending := meta["ai_pending"]
-		return !pending && meta["ai_analysis"] == "Root cause: bad config"
+		return !pending && meta["ai_analysis"] == "Root cause: bad config" && meta["ai_mode"] == "analysis"
 	}, time.Second, 10*time.Millisecond)
 }
 
@@ -201,6 +203,7 @@ func TestCorrelateAsync_WritesAICauseLinks(t *testing.T) {
 	require.NoError(t, database.First(&inc, "id = ?", incidentID).Error)
 	meta := parseIncidentTestMetadata(t, inc.Metadata)
 	require.Equal(t, "nginx crashed due to resource exhaustion", meta["ai_analysis"])
+	require.Equal(t, "enhanced", meta["ai_mode"])
 }
 
 func TestCorrelateAsync_UsesScopedIncidentNodesAndSetsVerified(t *testing.T) {
@@ -299,6 +302,7 @@ func TestCorrelateAsync_UsesScopedIncidentNodesAndSetsVerified(t *testing.T) {
 	select {
 	case prompt := <-promptSeen:
 		require.Contains(t, prompt, "Recent events from the scoped incident timeline")
+		require.Contains(t, prompt, "\"summary\": \"<concise but detailed 2-4 sentence root cause summary>\"")
 		require.Contains(t, prompt, "node=media-node")
 		require.Contains(t, prompt, "Log: rss sync panic")
 		require.Contains(t, prompt, "Log: unit entered failed state")

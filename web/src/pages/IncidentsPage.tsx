@@ -288,6 +288,7 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
   const incidentMeta = parseIncidentMetadata(incident)
   const meta = parseIncidentMetadata(detailIncident)
   const aiPending = isIncidentAIPending(incidentMeta) || isIncidentAIPending(meta)
+  const aiMode = meta.ai_mode === 'enhanced' || incidentMeta.ai_mode === 'enhanced' ? 'enhanced' : 'analysis'
 
   const toggle = useCallback(async () => {
     if (!expanded && !detail) {
@@ -307,6 +308,10 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
   const borderColor = incidentBorderColor(incident)
   const deterministicEntries = detail?.entries.filter(({ link }) => link.role !== 'ai_cause') ?? []
   const aiCauseEntries = detail?.entries.filter(({ link }) => link.role === 'ai_cause') ?? []
+  const isVerified =
+    aiCauseEntries.length === 0 &&
+    (meta.ai_verified === true || (meta.ai_verified === undefined && incidentMeta.ai_verified === true))
+  const hasEnhancedEvidence = isVerified || aiCauseEntries.length > 0
 
   return (
     <div
@@ -349,6 +354,11 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
         {aiPending && (
           <span style={{ color: 'var(--accent)', fontSize: 11, marginLeft: 12, whiteSpace: 'nowrap', letterSpacing: '0.1em', border: '1px solid var(--accent)', padding: '2px 6px', lineHeight: 1.4 }}>
             AI THINKING
+          </span>
+        )}
+        {!aiPending && aiMode === 'enhanced' && hasEnhancedEvidence && (
+          <span style={{ color: '#a855f7', fontSize: 11, marginLeft: 12, whiteSpace: 'nowrap', letterSpacing: '0.1em', border: '1px solid #a855f7', padding: '2px 6px', lineHeight: 1.4 }}>
+            {isVerified ? 'AI VERIFIED' : 'AI ENHANCED'}
           </span>
         )}
         <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 12, whiteSpace: 'nowrap' }}>
@@ -542,7 +552,7 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
                     AI ANALYSIS
                     {typeof meta.ai_model === 'string' && (
                       <span style={{ color: 'var(--accent)', marginLeft: 8 }}>
-                        [AI {'\u00B7'} {meta.ai_model}]
+                        [AI {'\u00B7'} {aiMode.toUpperCase()} {'\u00B7'} {meta.ai_model}]
                       </span>
                     )}
                   </div>
@@ -565,7 +575,7 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
                     AI ANALYSIS
                     {typeof meta.ai_model === 'string' && (
                       <span style={{ color: 'var(--accent)', marginLeft: 8 }}>
-                        [AI {'\u00B7'} {meta.ai_model}]
+                        [AI {'\u00B7'} {aiMode.toUpperCase()} {'\u00B7'} {meta.ai_model}]
                       </span>
                     )}
                   </div>
@@ -579,6 +589,17 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
                   >
                     {meta.ai_analysis}
                   </div>
+                  {aiMode === 'enhanced' && aiCauseEntries.length === 0 && isVerified && (
+                    <div
+                      style={{
+                        marginTop: 8,
+                        color: '#a855f7',
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      Enhanced correlation verified the existing event chain and did not find any additional AI-only causes.
+                    </div>
+                  )}
                 </div>
               )}
             </>

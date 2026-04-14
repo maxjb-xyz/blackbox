@@ -211,7 +211,7 @@ func (e *AIEnricher) nextQueuedDispatch(incidentID string) (aiDispatch, bool) {
 func (e *AIEnricher) runDispatchLoop(dispatch aiDispatch) {
 	current := dispatch
 	for {
-		if !e.setPending(current.incidentID, current.model) {
+		if !e.setPending(current.incidentID, current.model, current.mode) {
 			if next, ok := e.nextQueuedDispatch(current.incidentID); ok {
 				current = next
 				continue
@@ -252,6 +252,7 @@ func (e *AIEnricher) enrich(dispatch aiDispatch) {
 		delete(meta, "ai_pending")
 		meta["ai_analysis"] = result
 		meta["ai_model"] = dispatch.model
+		meta["ai_mode"] = dispatch.mode
 		meta["ai_enriched_at"] = time.Now().UTC().Format(time.RFC3339)
 	}) {
 		return
@@ -425,6 +426,7 @@ func (e *AIEnricher) correlate(dispatch aiDispatch) {
 			delete(meta, "ai_verified")
 		}
 		meta["ai_model"] = dispatch.model
+		meta["ai_mode"] = dispatch.mode
 		meta["ai_enriched_at"] = time.Now().UTC().Format(time.RFC3339)
 	}) {
 		return
@@ -489,10 +491,11 @@ func (e *AIEnricher) loadAIMode() string {
 	return e.loadAIConfig().mode
 }
 
-func (e *AIEnricher) setPending(incidentID, model string) bool {
+func (e *AIEnricher) setPending(incidentID, model, mode string) bool {
 	return e.updateIncidentMetadata(incidentID, func(meta map[string]interface{}) {
 		meta["ai_pending"] = true
 		meta["ai_model"] = model
+		meta["ai_mode"] = mode
 		delete(meta, "ai_verified")
 	})
 }
@@ -588,7 +591,7 @@ func uniqueStrings(values []string) []string {
 
 func buildPrompt(inc models.Incident, entries []enrichEntry) string {
 	var b strings.Builder
-	b.WriteString("You are analyzing a server incident. Provide a concise root cause analysis.\n\n")
+	b.WriteString("You are analyzing a server incident. Provide a concise but detailed root cause analysis.\n\n")
 	fmt.Fprintf(&b, "Incident: %s\n", sanitizeExternalText(inc.Title))
 	fmt.Fprintf(&b, "Status: %s | Confidence: %s\n\n", inc.Status, inc.Confidence)
 	b.WriteString("Events (chronological):\n")
@@ -598,7 +601,7 @@ func buildPrompt(inc models.Incident, entries []enrichEntry) string {
 			fmt.Fprintf(&b, "  Log: %s\n", sanitizeExternalText(truncate(e.Log, 300)))
 		}
 	}
-	b.WriteString("\nProvide: 1) Root cause in one sentence. 2) Why you think so. 3) A better incident title if applicable.\n")
+	b.WriteString("\nProvide: 1) Root cause summary in 2-4 sentences. 2) The key timeline or log evidence that supports it. 3) A better incident title if applicable.\n")
 	return b.String()
 }
 
@@ -651,12 +654,13 @@ func buildCorrelationPrompt(inc models.Incident, detLinks []models.IncidentEntry
 	b.WriteString(`
 Return JSON exactly matching this schema:
 {
-  "summary": "<one sentence root cause summary>",
+  "summary": "<concise but detailed 2-4 sentence root cause summary>",
   "verified": true,
   "causes": [
     {"entry_id": "<verbatim id from the events above>", "confidence": 0.0, "reason": "<why this event caused the incident>"}
   ]
 }
+Keep "summary" compact, but include the main failure and the strongest supporting evidence.
 Set "verified" to true when the deterministic links already explain the incident and no extra AI-only causes are needed.
 If no additional causes are found beyond the deterministic links, return an empty causes array.`)
 
