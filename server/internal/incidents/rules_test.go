@@ -1,6 +1,7 @@
 package incidents
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -12,6 +13,40 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestManager_ReplayCutoff_SkipsOldEntries(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+	defer func() {
+		sqlDB, _ := database.DB()
+		sqlDB.Close()
+	}()
+
+	t.Setenv("INCIDENT_REPLAY_CUTOFF", "5m")
+
+	mgr := NewManager(database, nil, nil)
+	ch := NewChannel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go mgr.Run(ctx, ch)
+
+	old := types.Entry{
+		ID:        "01OLDENTRY0000000",
+		NodeName:  "node1",
+		Source:    "webhook",
+		Event:     "down",
+		Service:   "myapp",
+		Timestamp: time.Now().Add(-10 * time.Minute),
+	}
+	ch <- old
+
+	time.Sleep(100 * time.Millisecond)
+
+	var count int64
+	require.NoError(t, database.Model(&models.Incident{}).Count(&count).Error)
+	assert.Equal(t, int64(0), count, "old replayed entry should not create an incident")
+}
 
 func makeEntry(service, source, event, metadata string) types.Entry {
 	return makeEntryAt(service, source, event, metadata, time.Now().UTC())

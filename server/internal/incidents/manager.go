@@ -2,6 +2,7 @@ package incidents
 
 import (
 	"context"
+	"os"
 	"sync"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 )
 
 const managerChannelSize = 256
+const defaultReplayCutoff = 10 * time.Minute
 
 // pendingWatchtower tracks a Watchtower update entry waiting to be linked
 // to a subsequent container restart.
@@ -30,10 +32,11 @@ type pendingRecovery struct {
 
 // Manager evaluates incoming entries and manages the incident lifecycle.
 type Manager struct {
-	db       *gorm.DB
-	hub      *hub.Hub
-	notifier *notify.Dispatcher
-	enricher *AIEnricher
+	db           *gorm.DB
+	hub          *hub.Hub
+	notifier     *notify.Dispatcher
+	enricher     *AIEnricher
+	replayCutoff time.Duration
 
 	mu                  sync.Mutex
 	openIncidents       map[string]string            // "service|node" -> incidentID
@@ -51,10 +54,17 @@ func incidentKey(svc, node string) string {
 
 // NewManager creates a Manager. Call Run in a goroutine.
 func NewManager(db *gorm.DB, h *hub.Hub, notifier *notify.Dispatcher) *Manager {
+	cutoff := defaultReplayCutoff
+	if v := os.Getenv("INCIDENT_REPLAY_CUTOFF"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			cutoff = d
+		}
+	}
 	m := &Manager{
 		db:                  db,
 		hub:                 h,
 		notifier:            notifier,
+		replayCutoff:        cutoff,
 		openIncidents:       make(map[string]string),
 		pendingWT:           make(map[string]pendingWatchtower),
 		pendingRecover:      make(map[string]pendingRecovery),
@@ -87,6 +97,9 @@ func (m *Manager) Run(ctx context.Context, ch <-chan types.Entry) {
 		case entry, ok := <-ch:
 			if !ok {
 				return
+			}
+			if m.replayCutoff > 0 && time.Since(entry.Timestamp) > m.replayCutoff {
+				continue
 			}
 			m.processEntry(entry)
 		case <-ticker.C:
