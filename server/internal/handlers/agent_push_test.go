@@ -90,3 +90,55 @@ func TestAgentPush_RestartFallsBackToEntryID(t *testing.T) {
 	require.NoError(t, database.First(&saved, "id = ?", existing.ID).Error)
 	assert.Equal(t, "restart", saved.Event)
 }
+
+func TestAgentPush_TreatsExactDuplicateAsSuccess(t *testing.T) {
+	database := newTestDB(t)
+
+	entry := types.Entry{
+		ID:        ulid.Make().String(),
+		Timestamp: time.Now().UTC(),
+		NodeName:  "homelab-01",
+		Source:    "docker",
+		Service:   "nginx",
+		Event:     "start",
+		Content:   "Container nginx started",
+		Metadata:  `{"raw_events":[]}`,
+	}
+	require.NoError(t, database.Create(&entry).Error)
+
+	req, w, authMiddleware := authenticatedAgentRequest(t, entry, "homelab-01")
+	authMiddleware(handlers.AgentPush(database, nil, testIncidentChannel(t), nil)).ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	var count int64
+	require.NoError(t, database.Model(&types.Entry{}).Count(&count).Error)
+	assert.Equal(t, int64(1), count)
+}
+
+func TestAgentPush_RejectsConflictingDuplicate(t *testing.T) {
+	database := newTestDB(t)
+
+	entry := types.Entry{
+		ID:        ulid.Make().String(),
+		Timestamp: time.Now().UTC(),
+		NodeName:  "homelab-01",
+		Source:    "docker",
+		Service:   "nginx",
+		Event:     "start",
+		Content:   "Container nginx started",
+	}
+	require.NoError(t, database.Create(&entry).Error)
+
+	conflict := entry
+	conflict.Content = "Container nginx restarted"
+
+	req, w, authMiddleware := authenticatedAgentRequest(t, conflict, "homelab-01")
+	authMiddleware(handlers.AgentPush(database, nil, testIncidentChannel(t), nil)).ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusConflict, w.Code, w.Body.String())
+
+	var saved types.Entry
+	require.NoError(t, database.First(&saved, "id = ?", entry.ID).Error)
+	assert.Equal(t, entry.Content, saved.Content)
+}

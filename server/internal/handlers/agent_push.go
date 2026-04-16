@@ -67,20 +67,31 @@ func AgentPush(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry, shu
 				return
 			}
 		}
-		if err := database.Create(&entry).Error; err != nil {
+		created, err := createEntryIdempotent(database, entry, "agent-push")
+		if errors.Is(err, errEntryIDConflict) {
+			writeError(w, http.StatusConflict, "entry id already exists")
+			return
+		}
+		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to save entry")
 			return
 		}
-		dispatchToIncidentChannelWithShutdown(incidentCh, shutdown, entry)
-		if h != nil {
-			if msg := MarshalWSMessage("entry", entry); msg != nil {
-				h.Broadcast(msg)
+		if created {
+			dispatchToIncidentChannelWithShutdown(incidentCh, shutdown, entry)
+			if h != nil {
+				if msg := MarshalWSMessage("entry", entry); msg != nil {
+					h.Broadcast(msg)
+				}
 			}
 		}
 		if upsertNode(database, entry) {
 			broadcastNodeStatus(database, h)
 		}
-		w.WriteHeader(http.StatusCreated)
+		if created {
+			w.WriteHeader(http.StatusCreated)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
 	}
 }
 

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -88,14 +89,21 @@ func AgentPushBatch(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry
 				}
 			}
 
-			if err := database.Create(&entry).Error; err != nil {
+			created, err := createEntryIdempotent(database, entry, "agent-push-batch")
+			if errors.Is(err, errEntryIDConflict) {
+				resp.Failed = append(resp.Failed, batchPushError{ID: entry.ID, Reason: "entry id already exists", Permanent: true})
+				continue
+			}
+			if err != nil {
 				resp.Failed = append(resp.Failed, batchPushError{ID: entry.ID, Reason: "failed to save entry"})
 				continue
 			}
-			dispatchToIncidentChannelWithShutdown(incidentCh, shutdown, entry)
-			if h != nil {
-				if msg := MarshalWSMessage("entry", entry); msg != nil {
-					h.Broadcast(msg)
+			if created {
+				dispatchToIncidentChannelWithShutdown(incidentCh, shutdown, entry)
+				if h != nil {
+					if msg := MarshalWSMessage("entry", entry); msg != nil {
+						h.Broadcast(msg)
+					}
 				}
 			}
 			if upsertNode(database, entry) {

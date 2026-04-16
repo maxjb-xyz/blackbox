@@ -223,3 +223,64 @@ func TestAgentPushBatch_RestartUpsertWithinBatch(t *testing.T) {
 	require.NoError(t, database.First(&saved, "id = ?", existing.ID).Error)
 	assert.Equal(t, "restart", saved.Event)
 }
+
+func TestAgentPushBatch_TreatsExactDuplicateAsAccepted(t *testing.T) {
+	database := newTestDB(t)
+
+	entry := types.Entry{
+		ID:        ulid.Make().String(),
+		Timestamp: time.Now().UTC(),
+		NodeName:  "homelab-01",
+		Source:    "docker",
+		Service:   "nginx",
+		Event:     "start",
+		Content:   "Container nginx started",
+		Metadata:  `{"raw_events":[]}`,
+	}
+	require.NoError(t, database.Create(&entry).Error)
+
+	req, w, authMiddleware := authenticatedBatchRequest(t, []types.Entry{entry}, "homelab-01")
+	authMiddleware(handlers.AgentPushBatch(database, nil, testIncidentChannel(t), nil)).ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	var resp batchResponse
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	assert.Equal(t, []string{entry.ID}, resp.Accepted)
+	assert.Empty(t, resp.Failed)
+
+	var count int64
+	require.NoError(t, database.Model(&types.Entry{}).Count(&count).Error)
+	assert.Equal(t, int64(1), count)
+}
+
+func TestAgentPushBatch_RejectsConflictingDuplicateAsPermanent(t *testing.T) {
+	database := newTestDB(t)
+
+	entry := types.Entry{
+		ID:        ulid.Make().String(),
+		Timestamp: time.Now().UTC(),
+		NodeName:  "homelab-01",
+		Source:    "docker",
+		Service:   "nginx",
+		Event:     "start",
+		Content:   "Container nginx started",
+	}
+	require.NoError(t, database.Create(&entry).Error)
+
+	conflict := entry
+	conflict.Content = "Container nginx restarted"
+
+	req, w, authMiddleware := authenticatedBatchRequest(t, []types.Entry{conflict}, "homelab-01")
+	authMiddleware(handlers.AgentPushBatch(database, nil, testIncidentChannel(t), nil)).ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	var resp batchResponse
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	assert.Empty(t, resp.Accepted)
+	require.Len(t, resp.Failed, 1)
+	assert.Equal(t, entry.ID, resp.Failed[0].ID)
+	assert.Equal(t, "entry id already exists", resp.Failed[0].Reason)
+	assert.True(t, resp.Failed[0].Permanent)
+}
