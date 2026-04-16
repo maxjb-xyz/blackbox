@@ -55,6 +55,8 @@ const FILTER_CONTROL_STYLE = {
 } as const
 
 const ROW_GRID_TEMPLATE = '20px 130px 110px 80px 140px 90px minmax(0, 1fr)'
+const TIMELINE_FILTER_BREAKPOINT_QUERY = '(min-width: 641px)'
+const TIMELINE_FILTER_PANEL_ID = 'timeline-filters'
 
 
 function formatTimestamp(ts?: string | null) {
@@ -562,7 +564,7 @@ export default function TimelinePage() {
   const { nodes } = useNodePulse()
   const [viewMode, setViewMode] = useState<ViewMode>(getStoredViewMode)
   const [hideHeartbeat, setHideHeartbeat] = useState<boolean>(getStoredHideHeartbeat)
-  const [filtersOpen, setFiltersOpen] = useState(() => (typeof window === 'undefined' ? true : window.innerWidth > 640))
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [serviceOptions, setServiceOptions] = useState<string[]>([])
   const [timeRange, setTimeRange] = useState<TimeRange>(() => {
     const fromParam = searchParams.get('from')
@@ -645,9 +647,9 @@ export default function TimelinePage() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const media = window.matchMedia('(min-width: 641px)')
+    const media = window.matchMedia(TIMELINE_FILTER_BREAKPOINT_QUERY)
     const sync = () => {
-      if (media.matches) setFiltersOpen(true)
+      setFiltersOpen(media.matches)
     }
     sync()
     media.addEventListener('change', sync)
@@ -692,6 +694,7 @@ export default function TimelinePage() {
           <button
             type="button"
             className="timeline-filter-toggle"
+            aria-controls={TIMELINE_FILTER_PANEL_ID}
             aria-expanded={filtersOpen}
             onClick={() => setFiltersOpen(prev => !prev)}
           >
@@ -699,7 +702,7 @@ export default function TimelinePage() {
           </button>
 
           <div className="timeline-controls-meta">
-            <span style={{ fontSize: 11, color: '#555', letterSpacing: '0.08em' }}>
+            <span style={{ fontSize: 11, color: 'var(--muted)', letterSpacing: '0.08em' }}>
               {visibleCount} {visibleCount === 1 ? 'ENTRY' : 'ENTRIES'}
             </span>
 
@@ -727,7 +730,10 @@ export default function TimelinePage() {
           </div>
         </div>
 
-        <div className={filtersOpen ? 'timeline-filter-panel is-open' : 'timeline-filter-panel'}>
+        <div
+          id={TIMELINE_FILTER_PANEL_ID}
+          className={filtersOpen ? 'timeline-filter-panel is-open' : 'timeline-filter-panel'}
+        >
           <span className="timeline-filter-field" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <span style={{ color: '#555', fontSize: 10, letterSpacing: '0.12em' }}>SOURCE</span>
             <select
