@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"blackbox/server/internal/auth"
+	"blackbox/server/internal/db"
 	"blackbox/server/internal/handlers"
 	"blackbox/server/internal/models"
 	"github.com/stretchr/testify/assert"
@@ -76,6 +77,24 @@ func TestHealthCheck_OIDCEnabledButNotReady(t *testing.T) {
 	var resp map[string]interface{}
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
 	assert.Equal(t, "unavailable", resp["oidc"])
+}
+
+func TestHealthCheck_DBError_Returns503(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+	sqlDB, err := database.DB()
+	require.NoError(t, err)
+	require.NoError(t, sqlDB.Close())
+
+	req := httptest.NewRequest(http.MethodGet, "/api/setup/health", nil)
+	w := httptest.NewRecorder()
+
+	handlers.HealthCheck(database, nil)(w, req)
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	var resp map[string]interface{}
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	assert.Equal(t, "error", resp["database"])
 }
 
 func setRegistryProvider(t *testing.T, registry *auth.OIDCRegistry, id string, provider *auth.OIDCProvider) {

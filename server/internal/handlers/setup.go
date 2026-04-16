@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 
 	"blackbox/server/internal/auth"
@@ -35,8 +36,9 @@ func HealthCheck(database *gorm.DB, registry *auth.OIDCRegistry) http.HandlerFun
 		oidcEnabled := false
 		var providers []models.OIDCProviderConfig
 		if err := database.Where("enabled = ?", true).Find(&providers).Error; err != nil {
+			log.Printf("health: OIDC provider query failed: %v", err)
 			oidcEnabled = true
-			oidcStatus = fmt.Sprintf("error: %v", err)
+			oidcStatus = "error"
 		} else if len(providers) > 0 {
 			oidcEnabled = true
 			oidcStatus = "unavailable"
@@ -48,6 +50,17 @@ func HealthCheck(database *gorm.DB, registry *auth.OIDCRegistry) http.HandlerFun
 					}
 				}
 			}
+		}
+
+		if dbStatus != "ok" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"database":     dbStatus,
+				"oidc":         oidcStatus,
+				"oidc_enabled": oidcEnabled,
+			})
+			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")

@@ -65,6 +65,9 @@ func NewManager(db *gorm.DB, h *hub.Hub, notifier *notify.Dispatcher) *Manager {
 			log.Printf("incidents: negative INCIDENT_REPLAY_CUTOFF %v ignored; using default %v", d, cutoff)
 		} else {
 			cutoff = d
+			if d == 0 {
+				log.Printf("incidents: INCIDENT_REPLAY_CUTOFF=0, replay filter disabled")
+			}
 		}
 	}
 	m := &Manager{
@@ -105,6 +108,10 @@ func (m *Manager) Run(ctx context.Context, ch <-chan types.Entry) {
 			if !ok {
 				return
 			}
+			// replayCutoff gates processEntry for newly arriving entries.
+			// Incidents already open in the DB are loaded by rebuildOpenIncidentsLocked
+			// above, so resolution signals ("up" events) still close them even if
+			// their original trigger is older than the cutoff.
 			if m.replayCutoff > 0 && time.Since(entry.Timestamp) > m.replayCutoff {
 				m.filteredReplays.Add(1)
 				continue

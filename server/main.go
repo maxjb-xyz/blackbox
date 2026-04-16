@@ -42,6 +42,8 @@ func main() {
 		if strings.HasPrefix(addr, ":") {
 			addr = "localhost" + addr
 		}
+		// Plain HTTP is intentional: TLS termination is expected at the ingress layer.
+		// This check targets the container's loopback interface only.
 		client := &http.Client{Timeout: 4 * time.Second}
 		resp, err := client.Get("http://" + addr + "/api/setup/health")
 		if err != nil {

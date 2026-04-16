@@ -33,6 +33,7 @@ func TestManager_ReplayCutoff_SkipsOldEntries(t *testing.T) {
 
 	old := makeEntryAt("myapp", "webhook", "down", "", time.Now().Add(-10*time.Minute))
 	old.NodeName = "node1"
+	require.NoError(t, database.Create(&old).Error)
 	ch <- old
 
 	require.Never(t, func() bool {
