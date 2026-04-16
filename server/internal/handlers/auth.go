@@ -138,8 +138,12 @@ func Login(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 
 		var user models.User
 		if err := database.First(&user, "username = ?", req.Username).Error; err != nil {
-			events.LogSystem(database, "auth", "user.login.failed", "failed login attempt for username "+req.Username)
-			writeError(w, http.StatusUnauthorized, "invalid credentials")
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				events.LogSystem(database, "auth", "user.login.failed", "failed login attempt for username "+req.Username)
+				writeError(w, http.StatusUnauthorized, "invalid credentials")
+				return
+			}
+			writeError(w, http.StatusServiceUnavailable, "service unavailable")
 			return
 		}
 
@@ -251,7 +255,17 @@ func OIDCProviderCallback(database *gorm.DB, registry *auth.OIDCRegistry, jwtSec
 		}
 
 		var oidcState models.OIDCState
-		if err := database.First(&oidcState, "state = ?", cookie.Value).Error; err != nil || oidcState.ExpiresAt.Before(time.Now()) {
+		if err := database.First(&oidcState, "state = ?", cookie.Value).Error; err != nil {
+			clearOIDCStateCookie(w, r, providerID)
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				events.LogSystem(database, "auth", "user.login.oidc.failed", "OIDC callback error: invalid or expired state")
+				writeError(w, http.StatusBadRequest, "invalid or expired state")
+				return
+			}
+			writeError(w, http.StatusServiceUnavailable, "service unavailable")
+			return
+		}
+		if oidcState.ExpiresAt.Before(time.Now()) {
 			clearOIDCStateCookie(w, r, providerID)
 			events.LogSystem(database, "auth", "user.login.oidc.failed", "OIDC callback error: invalid or expired state")
 			writeError(w, http.StatusBadRequest, "invalid or expired state")

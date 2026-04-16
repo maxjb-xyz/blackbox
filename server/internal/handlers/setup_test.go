@@ -95,6 +95,21 @@ func TestSetupStatus_Bootstrapped(t *testing.T) {
 	assert.True(t, resp["bootstrapped"])
 }
 
+func TestSetupStatus_DBError_Returns503(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+	sqlDB, err := database.DB()
+	require.NoError(t, err)
+	require.NoError(t, sqlDB.Close())
+
+	req := httptest.NewRequest(http.MethodGet, "/api/setup/status", nil)
+	w := httptest.NewRecorder()
+
+	handlers.SetupStatus(database)(w, req)
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+}
+
 func authenticatedBatchRequest(t *testing.T, entries []types.Entry, nodeName string) (*http.Request, *httptest.ResponseRecorder, func(http.Handler) http.Handler) {
 	t.Helper()
 
