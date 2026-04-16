@@ -2,8 +2,10 @@ package incidents
 
 import (
 	"context"
+	"log"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"blackbox/server/internal/hub"
@@ -32,11 +34,12 @@ type pendingRecovery struct {
 
 // Manager evaluates incoming entries and manages the incident lifecycle.
 type Manager struct {
-	db           *gorm.DB
-	hub          *hub.Hub
-	notifier     *notify.Dispatcher
-	enricher     *AIEnricher
-	replayCutoff time.Duration
+	db              *gorm.DB
+	hub             *hub.Hub
+	notifier        *notify.Dispatcher
+	enricher        *AIEnricher
+	replayCutoff    time.Duration
+	filteredReplays atomic.Int64
 
 	mu                  sync.Mutex
 	openIncidents       map[string]string            // "service|node" -> incidentID
@@ -56,7 +59,11 @@ func incidentKey(svc, node string) string {
 func NewManager(db *gorm.DB, h *hub.Hub, notifier *notify.Dispatcher) *Manager {
 	cutoff := defaultReplayCutoff
 	if v := os.Getenv("INCIDENT_REPLAY_CUTOFF"); v != "" {
-		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+		if d, err := time.ParseDuration(v); err != nil {
+			log.Printf("incidents: invalid INCIDENT_REPLAY_CUTOFF %q: %v; using default %v", v, err, cutoff)
+		} else if d < 0 {
+			log.Printf("incidents: negative INCIDENT_REPLAY_CUTOFF %v ignored; using default %v", d, cutoff)
+		} else {
 			cutoff = d
 		}
 	}
@@ -99,6 +106,7 @@ func (m *Manager) Run(ctx context.Context, ch <-chan types.Entry) {
 				return
 			}
 			if m.replayCutoff > 0 && time.Since(entry.Timestamp) > m.replayCutoff {
+				m.filteredReplays.Add(1)
 				continue
 			}
 			m.processEntry(entry)

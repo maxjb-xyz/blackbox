@@ -14,7 +14,9 @@ func SetupStatus(database *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var count int64
 		if err := database.Model(&models.User{}).Count(&count).Error; err != nil {
-			http.Error(w, "{\"error\":\"service unavailable\"}", http.StatusServiceUnavailable)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = fmt.Fprint(w, "{\"error\":\"service unavailable\"}")
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")

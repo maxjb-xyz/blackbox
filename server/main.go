@@ -44,7 +44,11 @@ func main() {
 		}
 		client := &http.Client{Timeout: 4 * time.Second}
 		resp, err := client.Get("http://" + addr + "/api/setup/health")
-		if err != nil || resp.StatusCode >= 400 {
+		if err != nil {
+			os.Exit(1)
+		}
+		resp.Body.Close()
+		if resp.StatusCode >= 400 {
 			os.Exit(1)
 		}
 		os.Exit(0)

@@ -31,21 +31,48 @@ func TestManager_ReplayCutoff_SkipsOldEntries(t *testing.T) {
 	defer cancel()
 	go mgr.Run(ctx, ch)
 
-	old := types.Entry{
-		ID:        "01OLDENTRY0000000",
-		NodeName:  "node1",
-		Source:    "webhook",
-		Event:     "down",
-		Service:   "myapp",
-		Timestamp: time.Now().Add(-10 * time.Minute),
-	}
+	old := makeEntryAt("myapp", "webhook", "down", "", time.Now().Add(-10*time.Minute))
+	old.NodeName = "node1"
 	ch <- old
 
-	time.Sleep(100 * time.Millisecond)
+	require.Never(t, func() bool {
+		var c int64
+		if err := database.Model(&models.Incident{}).Count(&c).Error; err != nil {
+			return false
+		}
+		return c > 0
+	}, 200*time.Millisecond, 10*time.Millisecond, "old replayed entry should not create an incident")
+}
 
-	var count int64
-	require.NoError(t, database.Model(&models.Incident{}).Count(&count).Error)
-	assert.Equal(t, int64(0), count, "old replayed entry should not create an incident")
+func TestManager_ReplayCutoff_AllowsRecentEntries(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+	defer func() {
+		sqlDB, _ := database.DB()
+		sqlDB.Close()
+	}()
+
+	t.Setenv("INCIDENT_REPLAY_CUTOFF", "5m")
+
+	mgr := NewManager(database, hub.New(), nil)
+	ch := NewChannel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go mgr.Run(ctx, ch)
+
+	recent := makeEntryAt("myapp", "webhook", "down", "", time.Now().Add(-2*time.Minute))
+	recent.NodeName = "node1"
+	require.NoError(t, database.Create(&recent).Error)
+	ch <- recent
+
+	require.Eventually(t, func() bool {
+		var c int64
+		if err := database.Model(&models.Incident{}).Count(&c).Error; err != nil {
+			return false
+		}
+		return c > 0
+	}, time.Second, 10*time.Millisecond, "recent entry should create an incident")
 }
 
 func makeEntry(service, source, event, metadata string) types.Entry {

@@ -257,7 +257,7 @@ func TestInit_FileDB_WALModeEnabled(t *testing.T) {
 	tmp, err := os.CreateTemp("", "blackbox-wal-test-*.db")
 	require.NoError(t, err)
 	require.NoError(t, tmp.Close())
-	t.Cleanup(func() { os.Remove(tmp.Name()) })
+	t.Cleanup(func() { require.NoError(t, os.Remove(tmp.Name())) })
 
 	database, err := db.Init(tmp.Name())
 	require.NoError(t, err)
@@ -272,7 +272,7 @@ func TestInit_FileDB_BusyTimeoutSet(t *testing.T) {
 	tmp, err := os.CreateTemp("", "blackbox-busy-test-*.db")
 	require.NoError(t, err)
 	require.NoError(t, tmp.Close())
-	t.Cleanup(func() { os.Remove(tmp.Name()) })
+	t.Cleanup(func() { require.NoError(t, os.Remove(tmp.Name())) })
 
 	database, err := db.Init(tmp.Name())
 	require.NoError(t, err)
@@ -287,7 +287,7 @@ func TestInit_FileDB_SingleOpenConnection(t *testing.T) {
 	tmp, err := os.CreateTemp("", "blackbox-conn-test-*.db")
 	require.NoError(t, err)
 	require.NoError(t, tmp.Close())
-	t.Cleanup(func() { os.Remove(tmp.Name()) })
+	t.Cleanup(func() { require.NoError(t, os.Remove(tmp.Name())) })
 
 	database, err := db.Init(tmp.Name())
 	require.NoError(t, err)

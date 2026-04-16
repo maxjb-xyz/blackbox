@@ -150,7 +150,8 @@ func TestLogin_DBError_Returns503(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, sqlDB.Close())
 
-	body, _ := json.Marshal(map[string]string{"username": "admin", "password": "pass"})
+	body, err := json.Marshal(map[string]string{"username": "admin", "password": "pass"})
+	require.NoError(t, err)
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
