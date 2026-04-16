@@ -115,6 +115,7 @@ export default function Topbar() {
       </nav>
 
       {/* Right side */}
+      {/* Keep `margin-left: auto` as a fallback when the primary nav is hidden on mobile. */}
       <div className="topbar-right flex items-center gap-[18px]" style={{ marginLeft: 'auto' }}>
         {/* WS status */}
         <button

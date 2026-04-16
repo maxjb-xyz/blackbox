@@ -1,3 +1,5 @@
+import type { CSSProperties } from 'react'
+
 interface StatTileProps {
   value: string | number
   label: string
@@ -6,43 +8,16 @@ interface StatTileProps {
 }
 
 function StatTile({ value, label, accentColor, valueColor }: StatTileProps) {
+  const tileVars = {
+    '--stat-accent': accentColor,
+    '--stat-value-color': valueColor,
+  } as CSSProperties
+
   return (
-    <div
-      className="stat-tile"
-      style={{
-        background: '#0F0F0F',
-        border: '1px solid #1E1E1E',
-        padding: '16px 18px',
-        position: 'relative',
-        overflow: 'hidden',
-      }}
-    >
-      <div
-        style={{
-          position: 'absolute',
-          left: 0,
-          top: 0,
-          bottom: 0,
-          width: 3,
-          background: accentColor,
-        }}
-      />
-      <div
-        className="stat-tile-value"
-        style={{
-          fontSize: 30,
-          fontWeight: 700,
-          lineHeight: 1,
-          marginBottom: 6,
-          color: valueColor,
-          letterSpacing: '-0.02em',
-        }}
-      >
-        {value}
-      </div>
-      <div className="stat-tile-label" style={{ fontSize: 10, color: '#666', letterSpacing: '0.12em' }}>
-        {label}
-      </div>
+    <div className="stat-tile" style={tileVars}>
+      <div className="stat-tile-accent" />
+      <div className="stat-tile-value">{value}</div>
+      <div className="stat-tile-label">{label}</div>
     </div>
   )
 }
@@ -65,15 +40,7 @@ export default function StatRow({
   const nodesValue = nodesTotal > 0 ? `${nodesOnline}/${nodesTotal}` : '—'
 
   return (
-    <div
-      className="stat-row"
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(4, 1fr)',
-        gap: 10,
-        marginBottom: 28,
-      }}
-    >
+    <div className="stat-row">
       <StatTile
         value={confirmed}
         label="CONFIRMED"

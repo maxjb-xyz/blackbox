@@ -142,6 +142,7 @@ export default function AdminPage() {
   const [notificationSaveError, setNotificationSaveError] = useState<string | null>(null)
   const [notificationTestResults, setNotificationTestResults] = useState<Record<string, { ok: boolean; error?: string } | undefined>>({})
   const notificationTestTimeoutsRef = useRef<Record<string, number>>({})
+  const adminTabRefs = useRef<Array<HTMLButtonElement | null>>([])
 
   const handleAddUnit = useCallback((nodeName: string) => {
     const units = systemdSettings[nodeName] ?? []
@@ -206,17 +207,50 @@ export default function AdminPage() {
 
   if (!isAdmin) return <Navigate to="/timeline" replace />
 
+  function selectAdminTabAt(index: number) {
+    const normalizedIndex = (index + ADMIN_TABS.length) % ADMIN_TABS.length
+    setTab(ADMIN_TABS[normalizedIndex])
+    adminTabRefs.current[normalizedIndex]?.focus()
+  }
+
   return (
     <div>
       <PageHeader
         title="ADMIN"
         titleActions={(
-          <div className="admin-tab-list">
-            {ADMIN_TABS.map(t => (
+          <div className="admin-tab-list" role="tablist" aria-label="Admin sections">
+            {ADMIN_TABS.map((t, index) => (
               <button
                 key={t}
+                ref={element => { adminTabRefs.current[index] = element }}
                 className="admin-tab-button"
+                id={`admin-tab-${t}`}
+                role="tab"
+                aria-selected={tab === t}
+                aria-controls={`admin-panel-${t}`}
+                tabIndex={tab === t ? 0 : -1}
                 onClick={() => setTab(t)}
+                onKeyDown={event => {
+                  if (event.key === 'ArrowRight') {
+                    event.preventDefault()
+                    selectAdminTabAt(index + 1)
+                    return
+                  }
+                  if (event.key === 'ArrowLeft') {
+                    event.preventDefault()
+                    selectAdminTabAt(index - 1)
+                    return
+                  }
+                  if (event.key === 'Home') {
+                    event.preventDefault()
+                    selectAdminTabAt(0)
+                    return
+                  }
+                  if (event.key === 'End') {
+                    event.preventDefault()
+                    selectAdminTabAt(ADMIN_TABS.length - 1)
+                  }
+                }}
                 style={{
                   background: 'none',
                   border: 'none',
@@ -237,7 +271,13 @@ export default function AdminPage() {
         )}
       />
 
-      <div className="admin-page-body" style={{ padding: 24, maxWidth: 960, margin: '0 auto' }}>
+      <div
+        className="admin-page-body"
+        id={`admin-panel-${tab}`}
+        role="tabpanel"
+        aria-labelledby={`admin-tab-${tab}`}
+        style={{ padding: 24, maxWidth: 960, margin: '0 auto' }}
+      >
         {tab === 'invites' && <InvitesTab />}
         {tab === 'users' && <UsersTab currentUserId={user?.user_id ?? ''} />}
         {tab === 'oidc' && <OIDCTab />}
