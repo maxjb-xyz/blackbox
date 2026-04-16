@@ -34,12 +34,19 @@ func Init(path string) (*gorm.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	if path == ":memory:" {
-		sqlDB, err := database.DB()
-		if err != nil {
-			return nil, err
+	sqlDB, err := database.DB()
+	if err != nil {
+		return nil, err
+	}
+	sqlDB.SetMaxOpenConns(1)
+
+	if path != ":memory:" {
+		if err := database.Exec("PRAGMA journal_mode=WAL").Error; err != nil {
+			return nil, fmt.Errorf("set WAL mode: %w", err)
 		}
-		sqlDB.SetMaxOpenConns(1)
+		if err := database.Exec("PRAGMA busy_timeout=5000").Error; err != nil {
+			return nil, fmt.Errorf("set busy timeout: %w", err)
+		}
 	}
 	if err := database.AutoMigrate(
 		&models.SetupState{},

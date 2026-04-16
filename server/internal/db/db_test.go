@@ -252,3 +252,49 @@ func TestStartOIDCStateSweeper_DeletesExpiredStatesImmediately(t *testing.T) {
 	require.NoError(t, database.Model(&models.OIDCState{}).Where("id = ?", fresh.ID).Count(&freshCount).Error)
 	assert.Equal(t, int64(1), freshCount)
 }
+
+func TestInit_FileDB_WALModeEnabled(t *testing.T) {
+	tmp, err := os.CreateTemp("", "blackbox-wal-test-*.db")
+	require.NoError(t, err)
+	require.NoError(t, tmp.Close())
+	t.Cleanup(func() { os.Remove(tmp.Name()) })
+
+	database, err := db.Init(tmp.Name())
+	require.NoError(t, err)
+	closeDBOnCleanup(t, database)
+
+	var mode string
+	require.NoError(t, database.Raw("PRAGMA journal_mode").Scan(&mode).Error)
+	assert.Equal(t, "wal", mode)
+}
+
+func TestInit_FileDB_BusyTimeoutSet(t *testing.T) {
+	tmp, err := os.CreateTemp("", "blackbox-busy-test-*.db")
+	require.NoError(t, err)
+	require.NoError(t, tmp.Close())
+	t.Cleanup(func() { os.Remove(tmp.Name()) })
+
+	database, err := db.Init(tmp.Name())
+	require.NoError(t, err)
+	closeDBOnCleanup(t, database)
+
+	var timeout int
+	require.NoError(t, database.Raw("PRAGMA busy_timeout").Scan(&timeout).Error)
+	assert.Equal(t, 5000, timeout)
+}
+
+func TestInit_FileDB_SingleOpenConnection(t *testing.T) {
+	tmp, err := os.CreateTemp("", "blackbox-conn-test-*.db")
+	require.NoError(t, err)
+	require.NoError(t, tmp.Close())
+	t.Cleanup(func() { os.Remove(tmp.Name()) })
+
+	database, err := db.Init(tmp.Name())
+	require.NoError(t, err)
+	closeDBOnCleanup(t, database)
+
+	sqlDB, err := database.DB()
+	require.NoError(t, err)
+	stats := sqlDB.Stats()
+	assert.Equal(t, 1, stats.MaxOpenConnections)
+}
