@@ -55,6 +55,8 @@ const FILTER_CONTROL_STYLE = {
 } as const
 
 const ROW_GRID_TEMPLATE = '20px 130px 110px 80px 140px 90px minmax(0, 1fr)'
+const TIMELINE_FILTER_BREAKPOINT_QUERY = '(min-width: 641px)'
+const TIMELINE_FILTER_PANEL_ID = 'timeline-filters'
 
 
 function formatTimestamp(ts?: string | null) {
@@ -397,7 +399,7 @@ function SearchableSelect({ value, options, placeholder, onChange }: SearchableS
   }
 
   return (
-    <div ref={rootRef} style={{ position: 'relative', width: 140 }}>
+    <div ref={rootRef} className="timeline-searchable-select" style={{ position: 'relative', width: 140 }}>
       <button
         type="button"
         aria-haspopup="listbox"
@@ -562,6 +564,7 @@ export default function TimelinePage() {
   const { nodes } = useNodePulse()
   const [viewMode, setViewMode] = useState<ViewMode>(getStoredViewMode)
   const [hideHeartbeat, setHideHeartbeat] = useState<boolean>(getStoredHideHeartbeat)
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [serviceOptions, setServiceOptions] = useState<string[]>([])
   const [timeRange, setTimeRange] = useState<TimeRange>(() => {
     const fromParam = searchParams.get('from')
@@ -642,6 +645,17 @@ export default function TimelinePage() {
     }
   }, [refreshServices])
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const media = window.matchMedia(TIMELINE_FILTER_BREAKPOINT_QUERY)
+    const sync = () => {
+      setFiltersOpen(media.matches)
+    }
+    sync()
+    media.addEventListener('change', sync)
+    return () => media.removeEventListener('change', sync)
+  }, [])
+
   function setFilter(key: string, value: string) {
     setSearchParams(prev => {
       const next = new URLSearchParams(prev)
@@ -668,100 +682,107 @@ export default function TimelinePage() {
     <div style={{ height: 'calc(100vh - var(--topbar-height))', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <TimeFilter initialRange={timeRange} onChange={setTimeRange} />
       <div
+        className="timeline-controls"
         style={{
-          display: 'flex',
-          gap: 16,
           padding: '8px 24px',
           borderBottom: '1px solid var(--border)',
           background: 'var(--surface)',
-          alignItems: 'center',
           flexShrink: 0,
-          flexWrap: 'wrap',
         }}
       >
-        {/* SOURCE */}
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ color: '#555', fontSize: 10, letterSpacing: '0.12em' }}>SOURCE</span>
-          <select
-            value={sourceFilter}
-            onChange={e => setFilter('source', e.target.value)}
-            style={{ ...FILTER_CONTROL_STYLE, color: sourceFilter ? 'var(--text)' : 'var(--muted)' }}
-          >
-            {SOURCE_OPTIONS.map(source => (
-              <option key={source} value={source}>
-                {source ? source.toUpperCase() : 'ALL'}
-              </option>
-            ))}
-          </select>
-        </span>
-
-        {/* SERVICE */}
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ color: '#555', fontSize: 10, letterSpacing: '0.12em' }}>SERVICE</span>
-          <SearchableSelect
-            value={serviceFilter}
-            options={serviceOptions}
-            placeholder="ALL"
-            onChange={value => setFilter('service', value)}
-          />
-        </span>
-
-        {/* NODE */}
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ color: '#555', fontSize: 10, letterSpacing: '0.12em' }}>NODE</span>
-          <select
-            value={nodeFilter}
-            onChange={e => setFilter('node', e.target.value)}
-            style={{ ...FILTER_CONTROL_STYLE, color: nodeFilter ? 'var(--text)' : 'var(--muted)' }}
-          >
-            <option value="">ALL</option>
-            {nodes.map(node => (
-              <option key={node.id} value={node.name}>{node.name}</option>
-            ))}
-          </select>
-        </span>
-
-        {/* SEARCH */}
-        <input
-          type="text"
-          placeholder="SEARCH..."
-          value={qFilter}
-          onChange={e => setFilter('q', e.target.value)}
-          style={{ ...FILTER_CONTROL_STYLE, color: 'var(--text)', padding: '2px 8px', width: 160 }}
-        />
-
-        {(nodeFilter || sourceFilter || serviceFilter || qFilter) && (
+        <div className="timeline-controls-header">
           <button
             type="button"
-            onClick={() => {
-              setSearchParams(prev => {
-                const next = new URLSearchParams(prev)
-                next.delete('node')
-                next.delete('source')
-                next.delete('service')
-                next.delete('q')
-                return next
-              })
-            }}
-            style={{
-              background: 'none',
-              border: 'none',
-              padding: 0,
-              color: '#555',
-              fontSize: '11px',
-              cursor: 'pointer',
-              letterSpacing: '0.08em',
-              fontFamily: 'inherit',
-            }}
+            className="timeline-filter-toggle"
+            aria-controls={TIMELINE_FILTER_PANEL_ID}
+            aria-expanded={filtersOpen}
+            onClick={() => setFiltersOpen(prev => !prev)}
           >
-            CLEAR
+            {filtersOpen ? 'HIDE FILTERS' : 'SHOW FILTERS'}
           </button>
-        )}
 
-        {/* Right side */}
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 16 }}>
-          {/* Heartbeat checkbox */}
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', userSelect: 'none' }}>
+          <div className="timeline-controls-meta">
+            <span style={{ fontSize: 11, color: 'var(--muted)', letterSpacing: '0.08em' }}>
+              {visibleCount} {visibleCount === 1 ? 'ENTRY' : 'ENTRIES'}
+            </span>
+
+            <div style={{ display: 'flex' }}>
+              {(['cards', 'rows'] as ViewMode[]).map((mode, i) => (
+                <button
+                  key={mode}
+                  onClick={() => selectViewMode(mode)}
+                  style={{
+                    background: viewMode === mode ? 'rgba(255,51,51,0.08)' : 'none',
+                    border: '1px solid var(--border)',
+                    borderLeft: i === 1 ? 'none' : '1px solid var(--border)',
+                    color: viewMode === mode ? 'var(--accent)' : 'var(--muted)',
+                    fontSize: '12px',
+                    padding: '2px 10px',
+                    fontFamily: 'inherit',
+                    cursor: 'pointer',
+                    letterSpacing: '0.08em',
+                  }}
+                >
+                  {mode.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div
+          id={TIMELINE_FILTER_PANEL_ID}
+          className={filtersOpen ? 'timeline-filter-panel is-open' : 'timeline-filter-panel'}
+        >
+          <span className="timeline-filter-field" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ color: '#555', fontSize: 10, letterSpacing: '0.12em' }}>SOURCE</span>
+            <select
+              value={sourceFilter}
+              onChange={e => setFilter('source', e.target.value)}
+              style={{ ...FILTER_CONTROL_STYLE, color: sourceFilter ? 'var(--text)' : 'var(--muted)' }}
+            >
+              {SOURCE_OPTIONS.map(source => (
+                <option key={source} value={source}>
+                  {source ? source.toUpperCase() : 'ALL'}
+                </option>
+              ))}
+            </select>
+          </span>
+
+          <span className="timeline-filter-field" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ color: '#555', fontSize: 10, letterSpacing: '0.12em' }}>SERVICE</span>
+            <SearchableSelect
+              value={serviceFilter}
+              options={serviceOptions}
+              placeholder="ALL"
+              onChange={value => setFilter('service', value)}
+            />
+          </span>
+
+          <span className="timeline-filter-field" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ color: '#555', fontSize: 10, letterSpacing: '0.12em' }}>NODE</span>
+            <select
+              value={nodeFilter}
+              onChange={e => setFilter('node', e.target.value)}
+              style={{ ...FILTER_CONTROL_STYLE, color: nodeFilter ? 'var(--text)' : 'var(--muted)' }}
+            >
+              <option value="">ALL</option>
+              {nodes.map(node => (
+                <option key={node.id} value={node.name}>{node.name}</option>
+              ))}
+            </select>
+          </span>
+
+          <input
+            className="timeline-filter-search"
+            type="text"
+            placeholder="SEARCH..."
+            value={qFilter}
+            onChange={e => setFilter('q', e.target.value)}
+            style={{ ...FILTER_CONTROL_STYLE, color: 'var(--text)', padding: '2px 8px', width: 160 }}
+          />
+
+          <label className="timeline-filter-field" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', userSelect: 'none' }}>
             <input
               type="checkbox"
               checked={hideHeartbeat}
@@ -771,33 +792,34 @@ export default function TimelinePage() {
             <span style={{ fontSize: 11, letterSpacing: '0.08em', color: 'var(--muted)' }}>HIDE HEARTBEATS</span>
           </label>
 
-          {/* Entry count */}
-          <span style={{ fontSize: 11, color: '#555', letterSpacing: '0.08em' }}>
-            {visibleCount} {visibleCount === 1 ? 'ENTRY' : 'ENTRIES'}
-          </span>
-
-          {/* CARDS / ROWS */}
-          <div style={{ display: 'flex' }}>
-            {(['cards', 'rows'] as ViewMode[]).map((mode, i) => (
-              <button
-                key={mode}
-                onClick={() => selectViewMode(mode)}
-                style={{
-                  background: viewMode === mode ? 'rgba(255,51,51,0.08)' : 'none',
-                  border: '1px solid var(--border)',
-                  borderLeft: i === 1 ? 'none' : '1px solid var(--border)',
-                  color: viewMode === mode ? 'var(--accent)' : 'var(--muted)',
-                  fontSize: '12px',
-                  padding: '2px 10px',
-                  fontFamily: 'inherit',
-                  cursor: 'pointer',
-                  letterSpacing: '0.08em',
-                }}
-              >
-                {mode.toUpperCase()}
-              </button>
-            ))}
-          </div>
+          {(nodeFilter || sourceFilter || serviceFilter || qFilter) && (
+            <button
+              type="button"
+              className="timeline-filter-clear"
+              onClick={() => {
+                setSearchParams(prev => {
+                  const next = new URLSearchParams(prev)
+                  next.delete('node')
+                  next.delete('source')
+                  next.delete('service')
+                  next.delete('q')
+                  return next
+                })
+              }}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                color: '#555',
+                fontSize: '11px',
+                cursor: 'pointer',
+                letterSpacing: '0.08em',
+                fontFamily: 'inherit',
+              }}
+            >
+              CLEAR
+            </button>
+          )}
         </div>
       </div>
 
@@ -1481,6 +1503,7 @@ function DiffModal({ entry, diff, open, onClose }: { entry: Entry; diff: FileDif
       }}
     >
       <div
+        className="diff-modal-panel"
         onClick={e => e.stopPropagation()}
         style={{
           width: 'min(1200px, 100%)',
@@ -1516,14 +1539,14 @@ function DiffModal({ entry, diff, open, onClose }: { entry: Entry; diff: FileDif
           </button>
         </div>
 
-        <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 16, flexWrap: 'wrap', color: 'var(--muted)', fontSize: '11px' }}>
+        <div className="diff-modal-meta" style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 16, flexWrap: 'wrap', color: 'var(--muted)', fontSize: '11px' }}>
           <span>{diff.path}</span>
           <span>op: {diff.op}</span>
           <span>{diff.diffRedacted ? 'redaction: on' : 'redaction: off'}</span>
         </div>
 
-        <div style={{ overflow: 'auto', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', fontSize: '12px' }}>
-          <div className="diff-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, background: 'var(--surface)', zIndex: 1 }}>
+        <div className="diff-modal-scroll" style={{ overflow: 'auto', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', fontSize: '12px' }}>
+          <div className="diff-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 1fr) minmax(320px, 1fr)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, background: 'var(--surface)', zIndex: 1 }}>
             <div className="diff-cell-before" style={{ padding: '8px 12px', borderRight: '1px solid var(--border)', color: 'var(--danger)' }}>BEFORE</div>
             <div style={{ padding: '8px 12px', color: 'var(--success)' }}>AFTER</div>
           </div>
@@ -1549,11 +1572,11 @@ function DiffModal({ entry, diff, open, onClose }: { entry: Entry; diff: FileDif
                 : 'rgba(255,255,255,0.02)'
 
             return (
-              <div className="diff-grid" key={`row-${index}`} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                <pre className="diff-cell-before" style={{ margin: 0, padding: '6px 12px', whiteSpace: 'pre-wrap', wordBreak: 'break-word', borderRight: '1px solid var(--border)', background: leftBackground, color: row.leftType === 'remove' ? '#ff9b9b' : 'var(--text)', minHeight: 32 }}>
+              <div className="diff-grid" key={`row-${index}`} style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 1fr) minmax(320px, 1fr)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                <pre className="diff-cell-before" style={{ margin: 0, padding: '6px 12px', whiteSpace: 'pre', wordBreak: 'normal', overflowWrap: 'normal', borderRight: '1px solid var(--border)', background: leftBackground, color: row.leftType === 'remove' ? '#ff9b9b' : 'var(--text)', minHeight: 32 }}>
                   {row.left}
                 </pre>
-                <pre style={{ margin: 0, padding: '6px 12px', whiteSpace: 'pre-wrap', wordBreak: 'break-word', background: rightBackground, color: row.rightType === 'add' ? '#9cffb4' : 'var(--text)', minHeight: 32 }}>
+                <pre style={{ margin: 0, padding: '6px 12px', whiteSpace: 'pre', wordBreak: 'normal', overflowWrap: 'normal', background: rightBackground, color: row.rightType === 'add' ? '#9cffb4' : 'var(--text)', minHeight: 32 }}>
                   {row.right}
                 </pre>
               </div>

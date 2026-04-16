@@ -69,12 +69,12 @@ export default function Topbar() {
 
   return (
     <header
-      className="sticky top-0 z-50 flex flex-shrink-0 items-center border-b border-[#242424] bg-[#0D0D0D] px-6"
+      className="topbar-root sticky top-0 z-50 flex flex-shrink-0 items-center border-b border-[#242424] bg-[#0D0D0D] px-6"
       style={{ height: 'var(--topbar-height)' }}
     >
       {/* Logo */}
       <span
-        className="mr-9 text-[14px] font-bold tracking-[0.18em]"
+        className="topbar-brand mr-9 text-[14px] font-bold tracking-[0.18em]"
         style={{ color: 'var(--accent)' }}
       >
         BLACKBOX<span className="cursor-blink" aria-hidden="true">|</span>
@@ -115,10 +115,12 @@ export default function Topbar() {
       </nav>
 
       {/* Right side */}
-      <div className="flex items-center gap-[18px]">
+      {/* Keep `margin-left: auto` as a fallback when the primary nav is hidden on mobile. */}
+      <div className="topbar-right flex items-center gap-[18px]" style={{ marginLeft: 'auto' }}>
         {/* WS status */}
         <button
           type="button"
+          className="topbar-status"
           title={wsTitle}
           aria-label={wsTitle}
           onClick={status === 'disconnected' ? reconnect : undefined}
@@ -147,7 +149,7 @@ export default function Topbar() {
               flexShrink: 0,
             }}
           />
-          <span style={{ display: 'flex', alignItems: 'center' }}>
+          <span className="topbar-status-text" style={{ display: 'flex', alignItems: 'center' }}>
             {wsConnected ? 'LIVE' : wsConnecting ? 'CONNECTING' : 'OFFLINE'}
           </span>
         </button>
@@ -176,7 +178,7 @@ export default function Topbar() {
               fontFamily: 'inherit',
             }}
           >
-            {user?.username ?? 'USER'}
+            <span className="topbar-user-name">{user?.username ?? 'USER'}</span>
             <ChevronDown size={14} className="text-[#555]" />
           </button>
           {dropdownOpen && <UserDropdown id={dropdownId} onClose={() => setDropdownOpen(false)} triggerRef={triggerRef} />}

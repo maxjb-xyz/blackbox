@@ -142,6 +142,7 @@ export default function AdminPage() {
   const [notificationSaveError, setNotificationSaveError] = useState<string | null>(null)
   const [notificationTestResults, setNotificationTestResults] = useState<Record<string, { ok: boolean; error?: string } | undefined>>({})
   const notificationTestTimeoutsRef = useRef<Record<string, number>>({})
+  const adminTabRefs = useRef<Array<HTMLButtonElement | null>>([])
 
   const handleAddUnit = useCallback((nodeName: string) => {
     const units = systemdSettings[nodeName] ?? []
@@ -206,44 +207,77 @@ export default function AdminPage() {
 
   if (!isAdmin) return <Navigate to="/timeline" replace />
 
+  function selectAdminTabAt(index: number) {
+    const normalizedIndex = (index + ADMIN_TABS.length) % ADMIN_TABS.length
+    setTab(ADMIN_TABS[normalizedIndex])
+    adminTabRefs.current[normalizedIndex]?.focus()
+  }
+
   return (
     <div>
       <PageHeader
-        title="ADMIN /"
-        titleActions={ADMIN_TABS.flatMap((t, index) => [
-          ...(index > 0
-            ? [
-                <span
-                  key={`${t}-divider`}
-                  aria-hidden="true"
-                  style={{ color: 'var(--border)', fontSize: '16px', lineHeight: 1 }}
-                >
-                  /
-                </span>,
-              ]
-            : []),
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: tab === t ? 'var(--accent)' : '#F0F0F0',
-              fontSize: '18px',
-              fontWeight: 700,
-              letterSpacing: '0.12em',
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-              lineHeight: 1,
-              padding: 0,
-            }}
-          >
-            {t.toUpperCase()}
-          </button>,
-        ])}
+        title="ADMIN"
+        titleActions={(
+          <div className="admin-tab-list" role="tablist" aria-label="Admin sections">
+            {ADMIN_TABS.map((t, index) => (
+              <button
+                key={t}
+                ref={element => { adminTabRefs.current[index] = element }}
+                className="admin-tab-button"
+                id={`admin-tab-${t}`}
+                role="tab"
+                aria-selected={tab === t}
+                aria-controls={`admin-panel-${t}`}
+                tabIndex={tab === t ? 0 : -1}
+                onClick={() => setTab(t)}
+                onKeyDown={event => {
+                  if (event.key === 'ArrowRight') {
+                    event.preventDefault()
+                    selectAdminTabAt(index + 1)
+                    return
+                  }
+                  if (event.key === 'ArrowLeft') {
+                    event.preventDefault()
+                    selectAdminTabAt(index - 1)
+                    return
+                  }
+                  if (event.key === 'Home') {
+                    event.preventDefault()
+                    selectAdminTabAt(0)
+                    return
+                  }
+                  if (event.key === 'End') {
+                    event.preventDefault()
+                    selectAdminTabAt(ADMIN_TABS.length - 1)
+                  }
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: tab === t ? 'var(--accent)' : '#F0F0F0',
+                  fontSize: '18px',
+                  fontWeight: 700,
+                  letterSpacing: '0.12em',
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  lineHeight: 1,
+                  padding: 0,
+                }}
+              >
+                {t.toUpperCase()}
+              </button>
+            ))}
+          </div>
+        )}
       />
 
-      <div style={{ padding: 24, maxWidth: 960, margin: '0 auto' }}>
+      <div
+        className="admin-page-body"
+        id={`admin-panel-${tab}`}
+        role="tabpanel"
+        aria-labelledby={`admin-tab-${tab}`}
+        style={{ padding: 24, maxWidth: 960, margin: '0 auto' }}
+      >
         {tab === 'invites' && <InvitesTab />}
         {tab === 'users' && <UsersTab currentUserId={user?.user_id ?? ''} />}
         {tab === 'oidc' && <OIDCTab />}
@@ -1335,52 +1369,95 @@ function OIDCTab() {
         ) : providers.length === 0 ? (
           <div style={{ color: 'var(--muted)', fontSize: '12px' }}>no oidc providers configured</div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-            <thead>
-              <tr style={{ color: 'var(--muted)', fontSize: '10px', letterSpacing: '0.1em' }}>
-                <th style={{ textAlign: 'left', padding: '4px 8px 4px 0', borderBottom: '1px solid var(--border)' }}>NAME</th>
-                <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid var(--border)' }}>ID</th>
-                <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid var(--border)' }}>ISSUER</th>
-                <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid var(--border)' }}>STATUS</th>
-                <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid var(--border)' }}>CREATED</th>
-                <th style={{ textAlign: 'left', padding: '4px 0 4px 8px', borderBottom: '1px solid var(--border)' }}>ACTIONS</th>
-              </tr>
-            </thead>
-            <tbody>
+          <>
+            <div className="oidc-provider-table-wrap">
+              <table className="oidc-provider-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                <thead>
+                  <tr style={{ color: 'var(--muted)', fontSize: '10px', letterSpacing: '0.1em' }}>
+                    <th style={{ textAlign: 'left', padding: '4px 8px 4px 0', borderBottom: '1px solid var(--border)' }}>NAME</th>
+                    <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid var(--border)' }}>ID</th>
+                    <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid var(--border)' }}>ISSUER</th>
+                    <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid var(--border)' }}>STATUS</th>
+                    <th style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid var(--border)' }}>CREATED</th>
+                    <th style={{ textAlign: 'left', padding: '4px 0 4px 8px', borderBottom: '1px solid var(--border)' }}>ACTIONS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {providers.map(provider => (
+                    <tr key={provider.id}>
+                      <td style={{ padding: '8px 8px 8px 0', color: 'var(--text)' }}>{provider.name}</td>
+                      <td style={{ padding: '8px', color: 'var(--muted)' }}>{provider.id}</td>
+                      <td style={{ padding: '8px', color: 'var(--muted)', maxWidth: 320 }}>
+                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={provider.issuer}>
+                          {provider.issuer}
+                        </div>
+                      </td>
+                      <td style={{ padding: '8px', color: provider.enabled ? 'var(--success)' : 'var(--muted)' }}>
+                        {provider.enabled ? 'ENABLED' : 'DISABLED'}
+                      </td>
+                      <td style={{ padding: '8px', color: 'var(--muted)' }}>
+                        {formatInviteTimestamp(provider.created_at)}
+                      </td>
+                      <td style={{ padding: '8px 0 8px 8px' }}>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <button type="button" onClick={() => openEditForm(provider)} style={actionBtnStyle}>
+                            EDIT
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteProvider(provider)}
+                            disabled={providerDeletingId === provider.id}
+                            style={{ ...actionBtnStyle, color: 'var(--danger)', borderColor: 'var(--danger)', cursor: providerDeletingId === provider.id ? 'not-allowed' : 'pointer' }}
+                          >
+                            {providerDeletingId === provider.id ? 'DELETING...' : 'DELETE'}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="oidc-provider-mobile-list">
               {providers.map(provider => (
-                <tr key={provider.id}>
-                  <td style={{ padding: '8px 8px 8px 0', color: 'var(--text)' }}>{provider.name}</td>
-                  <td style={{ padding: '8px', color: 'var(--muted)' }}>{provider.id}</td>
-                  <td style={{ padding: '8px', color: 'var(--muted)', maxWidth: 320 }}>
-                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={provider.issuer}>
-                      {provider.issuer}
+                <div key={`${provider.id}-mobile`} className="oidc-provider-card">
+                  <div className="oidc-provider-card-head">
+                    <div>
+                      <div className="oidc-provider-card-name">{provider.name}</div>
+                      <div className="oidc-provider-card-id">{provider.id}</div>
                     </div>
-                  </td>
-                  <td style={{ padding: '8px', color: provider.enabled ? 'var(--success)' : 'var(--muted)' }}>
-                    {provider.enabled ? 'ENABLED' : 'DISABLED'}
-                  </td>
-                  <td style={{ padding: '8px', color: 'var(--muted)' }}>
-                    {formatInviteTimestamp(provider.created_at)}
-                  </td>
-                  <td style={{ padding: '8px 0 8px 8px' }}>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                      <button type="button" onClick={() => openEditForm(provider)} style={actionBtnStyle}>
-                        EDIT
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleDeleteProvider(provider)}
-                        disabled={providerDeletingId === provider.id}
-                        style={{ ...actionBtnStyle, color: 'var(--danger)', borderColor: 'var(--danger)', cursor: providerDeletingId === provider.id ? 'not-allowed' : 'pointer' }}
-                      >
-                        {providerDeletingId === provider.id ? 'DELETING...' : 'DELETE'}
-                      </button>
+                    <div style={{ color: provider.enabled ? 'var(--success)' : 'var(--muted)', fontSize: '11px', letterSpacing: '0.08em' }}>
+                      {provider.enabled ? 'ENABLED' : 'DISABLED'}
                     </div>
-                  </td>
-                </tr>
+                  </div>
+
+                  <div className="oidc-provider-card-field">
+                    <span className="oidc-provider-card-label">ISSUER</span>
+                    <span className="oidc-provider-card-value">{provider.issuer}</span>
+                  </div>
+                  <div className="oidc-provider-card-field">
+                    <span className="oidc-provider-card-label">CREATED</span>
+                    <span className="oidc-provider-card-value">{formatInviteTimestamp(provider.created_at)}</span>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <button type="button" onClick={() => openEditForm(provider)} style={actionBtnStyle}>
+                      EDIT
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteProvider(provider)}
+                      disabled={providerDeletingId === provider.id}
+                      style={{ ...actionBtnStyle, color: 'var(--danger)', borderColor: 'var(--danger)', cursor: providerDeletingId === provider.id ? 'not-allowed' : 'pointer' }}
+                    >
+                      {providerDeletingId === provider.id ? 'DELETING...' : 'DELETE'}
+                    </button>
+                  </div>
+                </div>
               ))}
-            </tbody>
-          </table>
+            </div>
+          </>
         )}
       </section>
 

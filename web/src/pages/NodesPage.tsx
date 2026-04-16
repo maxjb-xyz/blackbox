@@ -3,6 +3,16 @@ import { useNodePulse } from '../components/NodePulse'
 import PageHeader from '../components/PageHeader'
 import { formatLocalTimestamp } from '../utils/time'
 
+interface NodeViewModel {
+  id: string
+  name: string
+  status: string
+  lastSeen: string
+  agentVersion: string
+  ipAddress: string
+  osInfo: string | null | undefined
+}
+
 function formatTimestamp(ts?: string | null | Date) {
   if (!ts) return '-'
   const date = new Date(ts as string)
@@ -47,8 +57,108 @@ function OsCell({ osInfo }: { osInfo: string | null | undefined }) {
   )
 }
 
+function getNodeStatusPresentation(status: string) {
+  const isOnline = status === 'online'
+  return {
+    color: isOnline ? 'var(--success)' : 'var(--danger)',
+    background: isOnline ? undefined : 'var(--danger-bg)',
+    label: status.toUpperCase(),
+    isOnline,
+  }
+}
+
+function toNodeViewModel(node: ReturnType<typeof useNodePulse>['nodes'][number]): NodeViewModel {
+  return {
+    id: node.id,
+    name: node.name,
+    status: node.status,
+    lastSeen: formatTimestamp(node.last_seen),
+    agentVersion: node.agent_version || '-',
+    ipAddress: node.ip_address || '-',
+    osInfo: node.os_info,
+  }
+}
+
+function NodeItem({ node, variant }: { node: NodeViewModel; variant: 'desktop' | 'mobile' }) {
+  const status = getNodeStatusPresentation(node.status)
+
+  if (variant === 'mobile') {
+    return (
+      <div
+        className="nodes-mobile-card"
+        style={{
+          borderLeft: `3px solid ${status.color}`,
+          background: status.isOnline ? 'var(--surface)' : 'var(--danger-bg)',
+        }}
+      >
+        <div className="nodes-mobile-head">
+          <div className="nodes-mobile-name">{node.name}</div>
+          <div className="nodes-mobile-status" style={{ color: status.color }}>
+            <span
+              className="nodes-status-dot"
+              aria-hidden="true"
+              style={{ background: status.color }}
+            />
+            {status.label}
+          </div>
+        </div>
+
+        <div className="nodes-mobile-grid">
+          <div className="nodes-mobile-field">
+            <span className="nodes-mobile-label">LAST SEEN</span>
+            <span className="nodes-mobile-value">{node.lastSeen}</span>
+          </div>
+          <div className="nodes-mobile-field">
+            <span className="nodes-mobile-label">VERSION</span>
+            <span className="nodes-mobile-value">{node.agentVersion}</span>
+          </div>
+          <div className="nodes-mobile-field">
+            <span className="nodes-mobile-label">OS</span>
+            <span className="nodes-mobile-value"><OsCell osInfo={node.osInfo} /></span>
+          </div>
+          <div className="nodes-mobile-field">
+            <span className="nodes-mobile-label">IP</span>
+            <span className="nodes-mobile-value">{node.ipAddress}</span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <tr style={status.background ? { background: status.background } : undefined}>
+      <td className="nodes-cell-truncate" style={{ color: 'var(--text)' }}>
+        {node.name}
+      </td>
+      <td style={{ fontSize: 11, letterSpacing: '0.1em', color: status.color }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          <span
+            className="nodes-status-dot"
+            aria-hidden="true"
+            style={{ background: status.color }}
+          />
+          <span>{status.label}</span>
+        </span>
+      </td>
+      <td style={{ color: 'var(--muted)', fontSize: 12 }}>
+        {node.lastSeen}
+      </td>
+      <td>
+        <OsCell osInfo={node.osInfo} />
+      </td>
+      <td style={{ color: 'var(--muted)', fontSize: 11 }}>
+        {node.agentVersion}
+      </td>
+      <td style={{ color: 'var(--muted)', fontSize: 12 }}>
+        {node.ipAddress}
+      </td>
+    </tr>
+  )
+}
+
 export default function NodesPage() {
   const { nodes, loading, error, lastUpdated } = useNodePulse()
+  const nodeItems = nodes.map(toNodeViewModel)
 
   const statusLine = (() => {
     if (loading && !lastUpdated) return 'checking agent registry...'
@@ -62,9 +172,10 @@ export default function NodesPage() {
     <div>
       <PageHeader title="NODES" subtitle="agent registry" />
 
-      <div style={{ padding: '0 24px 48px' }}>
+      <div className="nodes-page-body" style={{ padding: '0 24px 48px' }}>
         {statusLine && (
           <div
+            className="nodes-status-line"
             style={{
               padding: '10px 0 16px',
               fontSize: 11,
@@ -95,56 +206,33 @@ export default function NodesPage() {
                 : 'no agents registered'}
           </div>
         ) : (
-          <div className="nodes-table-scroll">
-            <table className="nodes-table">
-              <thead>
-                <tr>
-                  <th scope="col">NAME</th>
-                  <th scope="col">STATUS</th>
-                  <th scope="col">LAST SEEN</th>
-                  <th scope="col">OS</th>
-                  <th scope="col">VERSION</th>
-                  <th scope="col">IP</th>
-                </tr>
-              </thead>
-              <tbody>
-                {nodes.map(node => {
-                  const isOnline = node.status === 'online'
-                  return (
-                    <tr key={node.id} style={isOnline ? undefined : { background: 'var(--danger-bg)' }}>
-                      <td className="nodes-cell-truncate" style={{ color: 'var(--text)' }}>
-                        {node.name}
-                      </td>
-                      <td style={{ fontSize: 11, letterSpacing: '0.1em', color: isOnline ? 'var(--success)' : 'var(--danger)' }}>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                          <span
-                            className="nodes-status-dot"
-                            aria-hidden="true"
-                            style={{
-                              background: isOnline ? 'var(--success)' : 'var(--danger)',
-                            }}
-                          />
-                          <span>{node.status.toUpperCase()}</span>
-                        </span>
-                      </td>
-                      <td style={{ color: 'var(--muted)', fontSize: 12 }}>
-                        {formatTimestamp(node.last_seen)}
-                      </td>
-                      <td>
-                        <OsCell osInfo={node.os_info} />
-                      </td>
-                      <td style={{ color: 'var(--muted)', fontSize: 11 }}>
-                        {node.agent_version || '-'}
-                      </td>
-                      <td style={{ color: 'var(--muted)', fontSize: 12 }}>
-                        {node.ip_address || '-'}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <div className="nodes-table-scroll nodes-desktop-table">
+              <table className="nodes-table">
+                <thead>
+                  <tr>
+                    <th scope="col">NAME</th>
+                    <th scope="col">STATUS</th>
+                    <th scope="col">LAST SEEN</th>
+                    <th scope="col">OS</th>
+                    <th scope="col">VERSION</th>
+                    <th scope="col">IP</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {nodeItems.map(node => (
+                    <NodeItem key={node.id} node={node} variant="desktop" />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="nodes-mobile-list">
+              {nodeItems.map(node => (
+                <NodeItem key={`${node.id}-mobile`} node={node} variant="mobile" />
+              ))}
+            </div>
+          </>
         )}
       </div>
     </div>
