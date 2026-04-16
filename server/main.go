@@ -126,7 +126,7 @@ func main() {
 	}
 
 	go func() {
-		const retryInterval = 10 * time.Second
+		const retryInterval = 60 * time.Second
 		lastOIDCRegistryStatus := oidcRegistryStatusUnknown
 		for attempt := 1; ; attempt++ {
 			if err := rootCtx.Err(); err != nil {
