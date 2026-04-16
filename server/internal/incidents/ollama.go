@@ -30,8 +30,8 @@ const ollamaURLKey = "ollama_url"
 const ollamaModelKey = "ollama_model"
 const ollamaModeKey = "ollama_mode"
 
-const aiTimeout = 60 * time.Second
-const aiCorrelateTimeout = 90 * time.Second
+const aiTimeout = 120 * time.Second
+const aiCorrelateTimeout = 180 * time.Second
 
 var correlateDelay = 3 * time.Second
 
