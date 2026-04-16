@@ -290,6 +290,7 @@ func TestSuspectedIncident_OpensOnNumericExitCode(t *testing.T) {
 		return incident.TriggerID == entry.ID
 	}, time.Second, 10*time.Millisecond)
 	assert.Equal(t, "suspected", incident.Confidence)
+	assert.Equal(t, "nginx — container exited (exit 137)", incident.Title)
 
 	var links []models.IncidentEntry
 	require.NoError(t, database.Where("incident_id = ?", incident.ID).Find(&links).Error)
@@ -297,6 +298,24 @@ func TestSuspectedIncident_OpensOnNumericExitCode(t *testing.T) {
 	assert.Equal(t, entry.ID, links[0].EntryID)
 	assert.Equal(t, "trigger", links[0].Role)
 	assert.Empty(t, incident.RootCauseID)
+}
+
+func TestSuspectedIncident_CrashLoopWithZeroExit_UsesRepeatedExitWording(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	mgr := NewManager(database, hub.New(), nil)
+	now := time.Now().UTC()
+
+	for i := 0; i < crashLoopThreshold; i++ {
+		entry := makeEntryAt("nginx", "docker", "die", `{"exitCode":0}`, now.Add(time.Duration(i)*time.Second))
+		require.NoError(t, database.Create(&entry).Error)
+		mgr.processEntry(entry)
+	}
+
+	var incident models.Incident
+	require.NoError(t, database.Where("confidence = ?", "suspected").First(&incident).Error)
+	assert.Equal(t, "nginx — container exited repeatedly", incident.Title)
 }
 
 func TestConfirmedIncident_UpgradeSkipsAlreadyLinkedCauseEntries(t *testing.T) {

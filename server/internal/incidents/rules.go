@@ -170,7 +170,7 @@ func (m *Manager) handleContainerExit(entry types.Entry) {
 		}
 	}
 
-	m.openSuspectedIncident(entry, "container crash (exit "+exitCode+")")
+	m.openSuspectedIncident(entry, containerExitIncidentReason(exitCode, isCrashLoop))
 }
 
 func (m *Manager) handleContainerStart(entry types.Entry) {
@@ -772,6 +772,17 @@ func systemdIncidentReason(event string, instabilityCount int) string {
 	default:
 		return ""
 	}
+}
+
+func containerExitIncidentReason(exitCode string, isCrashLoop bool) string {
+	exitCode = strings.TrimSpace(exitCode)
+	if exitCode != "" && exitCode != "0" {
+		return "container exited (exit " + exitCode + ")"
+	}
+	if isCrashLoop {
+		return "container exited repeatedly"
+	}
+	return "container exited"
 }
 
 func extractExitCodeFromEntry(e types.Entry) string {
