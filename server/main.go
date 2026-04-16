@@ -37,6 +37,19 @@ var (
 const defaultDBPath = "/data/blackbox.db"
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "--health-check" {
+		addr := getEnv("LISTEN_ADDR", ":8080")
+		if strings.HasPrefix(addr, ":") {
+			addr = "localhost" + addr
+		}
+		client := &http.Client{Timeout: 4 * time.Second}
+		resp, err := client.Get("http://" + addr + "/api/setup/health")
+		if err != nil || resp.StatusCode >= 400 {
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
 	if tz, err := timezone.ConfigureLocal(); err != nil {
 		log.Printf("timezone: invalid TZ %q: %v; using container default timezone", tz, err)
 	}
