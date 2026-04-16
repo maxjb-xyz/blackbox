@@ -8,6 +8,7 @@ interface StatTileProps {
 function StatTile({ value, label, accentColor, valueColor }: StatTileProps) {
   return (
     <div
+      className="stat-tile"
       style={{
         background: '#0F0F0F',
         border: '1px solid #1E1E1E',
@@ -27,6 +28,7 @@ function StatTile({ value, label, accentColor, valueColor }: StatTileProps) {
         }}
       />
       <div
+        className="stat-tile-value"
         style={{
           fontSize: 30,
           fontWeight: 700,
@@ -38,7 +40,7 @@ function StatTile({ value, label, accentColor, valueColor }: StatTileProps) {
       >
         {value}
       </div>
-      <div style={{ fontSize: 10, color: '#666', letterSpacing: '0.12em' }}>
+      <div className="stat-tile-label" style={{ fontSize: 10, color: '#666', letterSpacing: '0.12em' }}>
         {label}
       </div>
     </div>
@@ -64,6 +66,7 @@ export default function StatRow({
 
   return (
     <div
+      className="stat-row"
       style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(4, 1fr)',

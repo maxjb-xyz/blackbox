@@ -138,7 +138,7 @@ function incidentBorderColor(inc: Incident): string {
 function confidenceBadge(inc: Incident) {
   const color = inc.confidence === 'confirmed' ? 'var(--danger)' : 'var(--warning)'
   return (
-    <span style={{ color, fontSize: 11, letterSpacing: '0.1em', marginRight: 8 }}>
+    <span style={{ color, fontSize: 11, letterSpacing: '0.1em', display: 'inline-flex' }}>
       [{inc.confidence.toUpperCase()}]
     </span>
   )
@@ -324,6 +324,7 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
     >
       <button
         type="button"
+        className="incident-card-toggle"
         onClick={() => void toggle()}
         style={{
           width: '100%',
@@ -334,34 +335,39 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
           display: 'flex',
           alignItems: 'center',
           gap: 8,
+          flexWrap: 'wrap',
           fontFamily: 'inherit',
           textAlign: 'left',
         }}
       >
-        {expanded
-          ? <ChevronDown size={12} color="var(--muted)" />
-          : <ChevronRight size={12} color="var(--muted)" />}
-        {confidenceBadge(incident)}
-        <span style={{ fontSize: 12, color: 'var(--text)', flex: 1, minWidth: 0 }}>
-          {services.join(', ')}
-          {nodes.length > 0 && (
-            <span style={{ color: 'var(--muted)', marginLeft: 6 }}>
-              {'\u00B7'} {nodes.join(', ')}
+        <span className="incident-card-leading">
+          {expanded
+            ? <ChevronDown size={12} color="var(--muted)" />
+            : <ChevronRight size={12} color="var(--muted)" />}
+          {confidenceBadge(incident)}
+          <span className="incident-card-summary" style={{ fontSize: 12, color: 'var(--text)' }}>
+            {services.join(', ')}
+            {nodes.length > 0 && (
+              <span style={{ color: 'var(--muted)', marginLeft: 6 }}>
+                {'\u00B7'} {nodes.join(', ')}
+              </span>
+            )}
+          </span>
+        </span>
+        <span className="incident-card-badges">
+          {statusLabel(incident)}
+          {aiPending && (
+            <span style={{ color: 'var(--accent)', fontSize: 11, whiteSpace: 'nowrap', letterSpacing: '0.1em', border: '1px solid var(--accent)', padding: '2px 6px', lineHeight: 1.4 }}>
+              AI THINKING
+            </span>
+          )}
+          {!aiPending && aiMode === 'enhanced' && hasEnhancedEvidence && (
+            <span style={{ color: '#a855f7', fontSize: 11, whiteSpace: 'nowrap', letterSpacing: '0.1em', border: '1px solid #a855f7', padding: '2px 6px', lineHeight: 1.4 }}>
+              {isVerified ? 'AI VERIFIED' : 'AI ENHANCED'}
             </span>
           )}
         </span>
-        {statusLabel(incident)}
-        {aiPending && (
-          <span style={{ color: 'var(--accent)', fontSize: 11, marginLeft: 12, whiteSpace: 'nowrap', letterSpacing: '0.1em', border: '1px solid var(--accent)', padding: '2px 6px', lineHeight: 1.4 }}>
-            AI THINKING
-          </span>
-        )}
-        {!aiPending && aiMode === 'enhanced' && hasEnhancedEvidence && (
-          <span style={{ color: '#a855f7', fontSize: 11, marginLeft: 12, whiteSpace: 'nowrap', letterSpacing: '0.1em', border: '1px solid #a855f7', padding: '2px 6px', lineHeight: 1.4 }}>
-            {isVerified ? 'AI VERIFIED' : 'AI ENHANCED'}
-          </span>
-        )}
-        <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 12, whiteSpace: 'nowrap' }}>
+        <span className="incident-card-time" style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
           {formatTs(incident.opened_at)}
           {' \u2192 '}
           {incident.status === 'resolved'
@@ -370,7 +376,7 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
         </span>
       </button>
 
-      <div style={{ padding: '0 12px 8px 36px', fontSize: 12, color: 'var(--text)' }}>
+      <div className="incident-card-title" style={{ padding: '0 12px 8px 36px', fontSize: 12, color: 'var(--text)' }}>
         {incident.title}
       </div>
 
@@ -707,7 +713,7 @@ export default function IncidentsPage() {
   return (
     <div style={{ fontFamily: 'inherit' }}>
       <PageHeader title="INCIDENTS" subtitle="real-time incident tracking" />
-      <div style={{ padding: '20px 28px 48px' }}>
+      <div className="incidents-page-body" style={{ padding: '20px 28px 48px' }}>
         <StatRow
           confirmed={confirmed}
           suspected={suspected}

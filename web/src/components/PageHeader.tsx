@@ -35,14 +35,16 @@ export default function PageHeader({
   actions?: ReactNode
 }) {
   return (
-    <div style={barStyle}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, flexWrap: 'wrap' }}>
-        <span style={titleStyle}>{title}</span>
-        {titleActions}
-        {subtitle && <span style={subtitleStyle}>{subtitle}</span>}
+    <div className="page-header" style={barStyle}>
+      <div className="page-header-main">
+        <div className="page-header-title-row">
+          <span className="page-header-title" style={titleStyle}>{title}</span>
+          {titleActions ? <div className="page-header-title-actions">{titleActions}</div> : null}
+        </div>
+        {subtitle && <span className="page-header-subtitle" style={subtitleStyle}>{subtitle}</span>}
       </div>
       {actions ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <div className="page-header-actions" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {actions}
         </div>
       ) : null}
