@@ -613,10 +613,10 @@ The database is automatically migrated on startup — no manual schema managemen
 - [x] Optional AI-enhanced correlation engine
 - [x] Support tracking systemd services
 - [x] Mobile-friendly view
+- [x] Support OpenAI/Other AI Providers
+- [x] Webhook notification support
 - [ ] Timeline UI polish and interaction improvements
 - [ ] Grafana data source plugin
-- [ ] Dynamic notifications to Discord
-- [ ] Support OpenAI/Other AI Providers
 - [ ] Bi-directional agent analysis
 
 ---
