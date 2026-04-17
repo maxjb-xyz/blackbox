@@ -17,10 +17,11 @@ import (
 func TestManager_ReplayCutoff_SkipsOldEntries(t *testing.T) {
 	database, err := db.Init(":memory:")
 	require.NoError(t, err)
-	defer func() {
-		sqlDB, _ := database.DB()
-		sqlDB.Close()
-	}()
+	t.Cleanup(func() {
+		sqlDB, err := database.DB()
+		require.NoError(t, err)
+		require.NoError(t, sqlDB.Close())
+	})
 
 	t.Setenv("INCIDENT_REPLAY_CUTOFF", "5m")
 
@@ -48,10 +49,11 @@ func TestManager_ReplayCutoff_SkipsOldEntries(t *testing.T) {
 func TestManager_ReplayCutoff_AllowsRecentEntries(t *testing.T) {
 	database, err := db.Init(":memory:")
 	require.NoError(t, err)
-	defer func() {
-		sqlDB, _ := database.DB()
-		sqlDB.Close()
-	}()
+	t.Cleanup(func() {
+		sqlDB, err := database.DB()
+		require.NoError(t, err)
+		require.NoError(t, sqlDB.Close())
+	})
 
 	t.Setenv("INCIDENT_REPLAY_CUTOFF", "5m")
 

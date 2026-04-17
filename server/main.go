@@ -49,7 +49,7 @@ func main() {
 		if err != nil {
 			os.Exit(1)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if resp.StatusCode >= 400 {
 			os.Exit(1)
 		}
