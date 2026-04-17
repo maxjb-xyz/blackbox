@@ -37,6 +37,25 @@ var (
 const defaultDBPath = "/data/blackbox.db"
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "--health-check" {
+		addr := getEnv("LISTEN_ADDR", ":8080")
+		if strings.HasPrefix(addr, ":") {
+			addr = "localhost" + addr
+		}
+		// Plain HTTP is intentional: TLS termination is expected at the ingress layer.
+		// This check targets the container's loopback interface only.
+		client := &http.Client{Timeout: 4 * time.Second}
+		resp, err := client.Get("http://" + addr + "/api/setup/health")
+		if err != nil {
+			os.Exit(1)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode >= 400 {
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
 	if tz, err := timezone.ConfigureLocal(); err != nil {
 		log.Printf("timezone: invalid TZ %q: %v; using container default timezone", tz, err)
 	}
@@ -113,7 +132,7 @@ func main() {
 	}
 
 	go func() {
-		const retryInterval = 10 * time.Second
+		const retryInterval = 60 * time.Second
 		lastOIDCRegistryStatus := oidcRegistryStatusUnknown
 		for attempt := 1; ; attempt++ {
 			if err := rootCtx.Err(); err != nil {

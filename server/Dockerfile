@@ -44,4 +44,6 @@ COPY --from=go-builder /blackbox-server /blackbox-server
 COPY --from=go-builder --chown=65532:65532 /data /data
 VOLUME /data
 EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD ["/blackbox-server", "--health-check"]
 ENTRYPOINT ["/blackbox-server"]

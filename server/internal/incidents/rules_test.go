@@ -1,6 +1,7 @@
 package incidents
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -12,6 +13,70 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestManager_ReplayCutoff_SkipsOldEntries(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		sqlDB, err := database.DB()
+		require.NoError(t, err)
+		require.NoError(t, sqlDB.Close())
+	})
+
+	t.Setenv("INCIDENT_REPLAY_CUTOFF", "5m")
+
+	mgr := NewManager(database, nil, nil)
+	ch := NewChannel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go mgr.Run(ctx, ch)
+
+	old := makeEntryAt("myapp", "webhook", "down", "", time.Now().Add(-10*time.Minute))
+	old.NodeName = "node1"
+	require.NoError(t, database.Create(&old).Error)
+	ch <- old
+
+	require.Never(t, func() bool {
+		var c int64
+		if err := database.Model(&models.Incident{}).Count(&c).Error; err != nil {
+			return false
+		}
+		return c > 0
+	}, 200*time.Millisecond, 10*time.Millisecond, "old replayed entry should not create an incident")
+}
+
+func TestManager_ReplayCutoff_AllowsRecentEntries(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		sqlDB, err := database.DB()
+		require.NoError(t, err)
+		require.NoError(t, sqlDB.Close())
+	})
+
+	t.Setenv("INCIDENT_REPLAY_CUTOFF", "5m")
+
+	mgr := NewManager(database, hub.New(), nil)
+	ch := NewChannel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go mgr.Run(ctx, ch)
+
+	recent := makeEntryAt("myapp", "webhook", "down", "", time.Now().Add(-2*time.Minute))
+	recent.NodeName = "node1"
+	require.NoError(t, database.Create(&recent).Error)
+	ch <- recent
+
+	require.Eventually(t, func() bool {
+		var c int64
+		if err := database.Model(&models.Incident{}).Count(&c).Error; err != nil {
+			return false
+		}
+		return c > 0
+	}, time.Second, 10*time.Millisecond, "recent entry should create an incident")
+}
 
 func makeEntry(service, source, event, metadata string) types.Entry {
 	return makeEntryAt(service, source, event, metadata, time.Now().UTC())

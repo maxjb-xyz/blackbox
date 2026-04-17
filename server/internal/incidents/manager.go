@@ -2,7 +2,10 @@ package incidents
 
 import (
 	"context"
+	"log"
+	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"blackbox/server/internal/hub"
@@ -13,6 +16,7 @@ import (
 )
 
 const managerChannelSize = 256
+const defaultReplayCutoff = 10 * time.Minute
 
 // pendingWatchtower tracks a Watchtower update entry waiting to be linked
 // to a subsequent container restart.
@@ -30,10 +34,12 @@ type pendingRecovery struct {
 
 // Manager evaluates incoming entries and manages the incident lifecycle.
 type Manager struct {
-	db       *gorm.DB
-	hub      *hub.Hub
-	notifier *notify.Dispatcher
-	enricher *AIEnricher
+	db              *gorm.DB
+	hub             *hub.Hub
+	notifier        *notify.Dispatcher
+	enricher        *AIEnricher
+	replayCutoff    time.Duration
+	filteredReplays atomic.Int64
 
 	mu                  sync.Mutex
 	openIncidents       map[string]string            // "service|node" -> incidentID
@@ -51,10 +57,24 @@ func incidentKey(svc, node string) string {
 
 // NewManager creates a Manager. Call Run in a goroutine.
 func NewManager(db *gorm.DB, h *hub.Hub, notifier *notify.Dispatcher) *Manager {
+	cutoff := defaultReplayCutoff
+	if v := os.Getenv("INCIDENT_REPLAY_CUTOFF"); v != "" {
+		if d, err := time.ParseDuration(v); err != nil {
+			log.Printf("incidents: invalid INCIDENT_REPLAY_CUTOFF %q: %v; using default %v", v, err, cutoff)
+		} else if d < 0 {
+			log.Printf("incidents: negative INCIDENT_REPLAY_CUTOFF %v ignored; using default %v", d, cutoff)
+		} else {
+			cutoff = d
+			if d == 0 {
+				log.Printf("incidents: INCIDENT_REPLAY_CUTOFF=0, replay filter disabled")
+			}
+		}
+	}
 	m := &Manager{
 		db:                  db,
 		hub:                 h,
 		notifier:            notifier,
+		replayCutoff:        cutoff,
 		openIncidents:       make(map[string]string),
 		pendingWT:           make(map[string]pendingWatchtower),
 		pendingRecover:      make(map[string]pendingRecovery),
@@ -87,6 +107,14 @@ func (m *Manager) Run(ctx context.Context, ch <-chan types.Entry) {
 		case entry, ok := <-ch:
 			if !ok {
 				return
+			}
+			// replayCutoff gates processEntry for newly arriving entries.
+			// Incidents already open in the DB are loaded by rebuildOpenIncidentsLocked
+			// above, so resolution signals ("up" events) still close them even if
+			// their original trigger is older than the cutoff.
+			if m.replayCutoff > 0 && time.Since(entry.Timestamp) > m.replayCutoff {
+				m.filteredReplays.Add(1)
+				continue
 			}
 			m.processEntry(entry)
 		case <-ticker.C:

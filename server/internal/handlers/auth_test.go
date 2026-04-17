@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"blackbox/server/internal/auth"
+	"blackbox/server/internal/db"
 	"blackbox/server/internal/handlers"
 	"blackbox/server/internal/models"
 	"github.com/stretchr/testify/assert"
@@ -140,6 +141,24 @@ func TestLogin_WrongPassword(t *testing.T) {
 	handlers.Login(database, "jwt-test-secret")(w2, req2)
 
 	assert.Equal(t, http.StatusUnauthorized, w2.Code)
+}
+
+func TestLogin_DBError_Returns503(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+	sqlDB, err := database.DB()
+	require.NoError(t, err)
+	require.NoError(t, sqlDB.Close())
+
+	body, err := json.Marshal(map[string]string{"username": "admin", "password": "pass"})
+	require.NoError(t, err)
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handlers.Login(database, "test-secret")(w, req)
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
 }
 
 func TestCurrentUser_ReturnsSessionUser(t *testing.T) {
