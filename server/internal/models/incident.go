@@ -48,9 +48,17 @@ func (i *Incident) UnmarshalJSON(data []byte) error {
 	i.TriggerID = wire.TriggerID
 
 	services, _ := json.Marshal(wire.Services)
-	i.Services = string(services)
+	if s := string(services); s == "" || s == "null" {
+		i.Services = "[]"
+	} else {
+		i.Services = s
+	}
 	nodeNames, _ := json.Marshal(wire.NodeNames)
-	i.NodeNames = string(nodeNames)
+	if s := string(nodeNames); s == "" || s == "null" {
+		i.NodeNames = "[]"
+	} else {
+		i.NodeNames = s
+	}
 	if len(wire.Metadata) > 0 {
 		i.Metadata = string(wire.Metadata)
 	} else {

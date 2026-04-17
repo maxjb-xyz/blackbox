@@ -77,7 +77,17 @@ func (e *Entry) UnmarshalJSON(data []byte) error {
 		// New agents send it directly as a JSON object.
 		var s string
 		if json.Unmarshal(v.Metadata, &s) == nil {
-			e.Metadata = s
+			// Unwrapped a legacy string. Validate the inner value is itself
+			// valid JSON so MarshalJSON can safely emit it as json.RawMessage.
+			var tmp json.RawMessage
+			if json.Unmarshal([]byte(s), &tmp) == nil {
+				e.Metadata = s
+			} else {
+				// The inner string is plain text, not JSON; wrap it to keep
+				// the value without producing invalid RawMessage output.
+				wrapped, _ := json.Marshal(map[string]string{"value": s})
+				e.Metadata = string(wrapped)
+			}
 		} else {
 			e.Metadata = string(v.Metadata)
 		}

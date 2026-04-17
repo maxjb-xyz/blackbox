@@ -63,15 +63,20 @@ components:
       in: cookie
       name: sessionid
       description: JWT session cookie set on login
-    agentToken:
+    agentKey:
       type: apiKey
       in: header
-      name: X-Blackbox-Agent-Token
-      description: Agent authentication token (also accepted as `Authorization: Bearer <token>`)
+      name: X-Blackbox-Agent-Key
+      description: "Agent authentication token (paired with X-Blackbox-Node-Name)"
+    agentNode:
+      type: apiKey
+      in: header
+      name: X-Blackbox-Node-Name
+      description: Agent node name (paired with X-Blackbox-Agent-Key)
     webhookSecret:
       type: apiKey
       in: header
-      name: X-Blackbox-Webhook-Secret
+      name: X-Webhook-Secret
       description: Shared webhook secret
 
   schemas:
@@ -152,6 +157,7 @@ components:
           description: ID of a related entry this was correlated to
         replace_id:
           type: string
+          writeOnly: true
           description: Entry ID replaced by a Docker restart (write-only on push)
 
     EntryNote:
@@ -1266,7 +1272,8 @@ paths:
       tags: [Agent]
       summary: Fetch agent configuration from server
       security:
-        - agentToken: []
+        - agentKey: []
+          agentNode: []
       responses:
         "200":
           description: OK
@@ -1291,7 +1298,8 @@ paths:
         Idempotent: if an entry with the same ID already exists and the content matches,
         returns 200. A conflicting duplicate (same ID, different content) returns 409.
       security:
-        - agentToken: []
+        - agentKey: []
+          agentNode: []
       requestBody:
         required: true
         content:
@@ -1324,7 +1332,8 @@ paths:
         Accepts up to 200 entries in a single request (10 MB body limit).
         Each entry is processed independently; partial success is possible.
       security:
-        - agentToken: []
+        - agentKey: []
+          agentNode: []
       requestBody:
         required: true
         content:
