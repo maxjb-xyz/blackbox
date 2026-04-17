@@ -663,6 +663,31 @@ body {
   min-width: 140px;
 }
 
+@media (min-width: 641px) {
+  .timeline-controls {
+    flex-direction: row;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .timeline-controls-header {
+    order: 2;
+    margin-left: auto;
+    justify-content: flex-end;
+  }
+
+  .timeline-controls-meta {
+    margin-left: 0;
+  }
+
+  .timeline-filter-panel {
+    order: 1;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+}
+
 .incident-card-leading {
   display: flex;
   align-items: center;
