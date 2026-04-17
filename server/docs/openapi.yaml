@@ -1,0 +1,2057 @@
+openapi: "3.1.0"
+info:
+  title: Blackbox API
+  version: "0.1.0"
+  description: |
+    Blackbox is a self-hosted forensic timeline server. This API is used by the
+    web UI, agents, and external webhook sources.
+
+    ## Authentication
+
+    Three separate mechanisms are used depending on the caller:
+
+    | Mechanism | Header / Cookie | Used by |
+    |-----------|-----------------|---------|
+    | Session cookie | `Cookie: sessionid=<jwt>` | Browser / web UI |
+    | Agent token | `X-Blackbox-Agent-Token: <token>` or `Authorization: Bearer <token>` | Blackbox agents |
+    | Webhook secret | `X-Blackbox-Webhook-Secret: <secret>` | External webhook sources |
+
+    Session cookies are set automatically on login and cleared on logout.
+
+servers:
+  - url: /
+    description: Current server
+
+tags:
+  - name: Setup
+    description: Server status and bootstrap
+  - name: Auth
+    description: Login, logout, registration, and session management
+  - name: OIDC
+    description: OpenID Connect login flow (public endpoints)
+  - name: Account
+    description: Authenticated user account management
+  - name: Invites
+    description: Invite code management (admin only)
+  - name: Entries
+    description: Timeline event entries
+  - name: Notes
+    description: Manual notes attached to entries
+  - name: Incidents
+    description: Correlated incident groups
+  - name: Nodes
+    description: Connected agent nodes
+  - name: Agent
+    description: Agent push endpoints (agent token required)
+  - name: Webhooks
+    description: External webhook ingestion (webhook secret required)
+  - name: Admin — Users
+    description: User management (admin only)
+  - name: Admin — Config
+    description: Server configuration (admin only)
+  - name: Admin — OIDC
+    description: OIDC provider management (admin only)
+  - name: Admin — Notifications
+    description: Notification destination management (admin only)
+  - name: WebSocket
+    description: Real-time event stream
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: sessionid
+      description: JWT session cookie set on login
+    agentToken:
+      type: apiKey
+      in: header
+      name: X-Blackbox-Agent-Token
+      description: Agent authentication token (also accepted as `Authorization: Bearer <token>`)
+    webhookSecret:
+      type: apiKey
+      in: header
+      name: X-Blackbox-Webhook-Secret
+      description: Shared webhook secret
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          example: "entry not found"
+
+    SessionUser:
+      type: object
+      required: [user_id, username, email, oidc_linked, is_admin]
+      properties:
+        user_id:
+          type: string
+          example: "01HXYZ..."
+        username:
+          type: string
+          example: "alice"
+        email:
+          type: string
+          format: email
+          example: "alice@example.com"
+        oidc_linked:
+          type: boolean
+        is_admin:
+          type: boolean
+
+    SessionResponse:
+      type: object
+      required: [user]
+      properties:
+        user:
+          $ref: "#/components/schemas/SessionUser"
+
+    Entry:
+      type: object
+      required: [id, timestamp, node_name, source, service, event, content, metadata]
+      properties:
+        id:
+          type: string
+          description: ULID
+          example: "01HXYZ..."
+        timestamp:
+          type: string
+          format: date-time
+        node_name:
+          type: string
+          description: Originating agent node name, or "api" for manual entries
+          example: "homelab-01"
+        source:
+          type: string
+          description: Event source
+          enum: [docker, file, systemd, agent, webhook, api]
+          example: "docker"
+        service:
+          type: string
+          example: "nginx"
+        compose_service:
+          type: string
+          description: Docker Compose service name, if applicable
+          example: "proxy"
+        event:
+          type: string
+          description: Event type within the source
+          example: "die"
+        content:
+          type: string
+          description: Human-readable summary of the event
+        metadata:
+          type: object
+          description: Source-specific structured data
+          additionalProperties: true
+        correlated_id:
+          type: string
+          description: ID of a related entry this was correlated to
+        replace_id:
+          type: string
+          description: Entry ID replaced by a Docker restart (write-only on push)
+
+    EntryNote:
+      type: object
+      required: [id, entry_id, user_id, username, content, created_at]
+      properties:
+        id:
+          type: string
+        entry_id:
+          type: string
+        user_id:
+          type: string
+        username:
+          type: string
+        content:
+          type: string
+          maxLength: 2000
+        created_at:
+          type: string
+          format: date-time
+
+    Incident:
+      type: object
+      required: [id, opened_at, status, confidence, title, services, node_names, metadata]
+      properties:
+        id:
+          type: string
+        opened_at:
+          type: string
+          format: date-time
+        resolved_at:
+          type: string
+          format: date-time
+          nullable: true
+        status:
+          type: string
+          enum: [open, resolved]
+        confidence:
+          type: string
+          enum: [confirmed, suspected]
+        title:
+          type: string
+        services:
+          type: array
+          items:
+            type: string
+        root_cause_id:
+          type: string
+          description: Entry ID identified as root cause
+        trigger_id:
+          type: string
+          description: Entry ID that triggered incident creation
+        node_names:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          description: AI analysis and other enrichment data
+          additionalProperties: true
+
+    IncidentEntry:
+      type: object
+      required: [incident_id, entry_id, role, score, reason]
+      properties:
+        incident_id:
+          type: string
+        entry_id:
+          type: string
+        role:
+          type: string
+          enum: [trigger, cause, evidence, recovery, ai_cause]
+        score:
+          type: integer
+          description: Correlation score; 0 for non-cause roles
+        reason:
+          type: string
+          description: AI explanation for ai_cause role; empty for deterministic links
+
+    IncidentMembership:
+      type: object
+      required: [id, confidence]
+      properties:
+        id:
+          type: string
+          description: Incident ID
+        confidence:
+          type: string
+          enum: [confirmed, suspected]
+
+    Node:
+      type: object
+      required: [id, name, last_seen, status, agent_version, ip_address, os_info]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        last_seen:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [online, offline]
+        agent_version:
+          type: string
+        ip_address:
+          type: string
+        os_info:
+          type: string
+
+    InviteCode:
+      type: object
+      required: [id, code, created_by, used_by, expires_at, created_at]
+      properties:
+        id:
+          type: string
+        code:
+          type: string
+        created_by:
+          type: string
+        used_by:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    OIDCProvider:
+      type: object
+      required: [id, name, issuer, client_id, client_secret, redirect_url, require_verified_email, enabled, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        issuer:
+          type: string
+          format: uri
+        client_id:
+          type: string
+        client_secret:
+          type: string
+          description: Always returned as "***"
+          example: "***"
+        redirect_url:
+          type: string
+          format: uri
+        require_verified_email:
+          type: boolean
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    OIDCProviderPublic:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+
+    NotificationDest:
+      type: object
+      required: [id, name, type, url, events, enabled, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          enum: [discord, slack, ntfy]
+        url:
+          type: string
+          format: uri
+        events:
+          type: array
+          items:
+            type: string
+            enum: [incident_opened_confirmed, incident_opened_suspected, incident_confirmed, incident_resolved]
+        enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    AdminUser:
+      type: object
+      required: [id, username, is_admin, token_version, created_at]
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        is_admin:
+          type: boolean
+        token_version:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    AdminConfig:
+      type: object
+      required: [webhook_secret, file_watcher_redact_secrets, ai_provider, ai_url, ai_model, ai_api_key_set, ai_mode]
+      properties:
+        webhook_secret:
+          type: string
+        file_watcher_redact_secrets:
+          type: boolean
+        ai_provider:
+          type: string
+          enum: [ollama, openai_compat]
+        ai_url:
+          type: string
+        ai_model:
+          type: string
+        ai_api_key_set:
+          type: boolean
+          description: True if an API key is stored; the key itself is never returned
+        ai_mode:
+          type: string
+          enum: [analysis, enhanced]
+
+    AgentPushBatchResult:
+      type: object
+      required: [accepted, failed]
+      properties:
+        accepted:
+          type: array
+          items:
+            type: string
+          description: IDs of successfully accepted entries
+        failed:
+          type: array
+          items:
+            type: object
+            required: [id, reason, permanent]
+            properties:
+              id:
+                type: string
+              reason:
+                type: string
+              permanent:
+                type: boolean
+
+paths:
+  # ── Setup ─────────────────────────────────────────────────────────────────
+
+  /api/setup/status:
+    get:
+      tags: [Setup]
+      summary: Bootstrap status
+      description: Returns whether an admin account has been created. Used by the UI to redirect to the bootstrap wizard on first run.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [bootstrapped]
+                properties:
+                  bootstrapped:
+                    type: boolean
+
+  /api/setup/health:
+    get:
+      tags: [Setup]
+      summary: Health check
+      description: Returns the health status of the database and OIDC subsystem. Used by the container health check.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [database, oidc, oidc_enabled]
+                properties:
+                  database:
+                    type: string
+                    enum: [ok, error]
+                  oidc:
+                    type: string
+                    enum: [ok, disabled, unavailable, error]
+                  oidc_enabled:
+                    type: boolean
+
+  # ── Auth ──────────────────────────────────────────────────────────────────
+
+  /api/auth/bootstrap:
+    post:
+      tags: [Auth]
+      summary: Create the first admin account
+      description: |
+        Creates the initial admin user. Only succeeds if no users exist yet.
+        Rate limited to 3 requests per 10 minutes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+                  format: password
+                email:
+                  type: string
+                  format: email
+      responses:
+        "201":
+          description: Admin account created
+          headers:
+            Set-Cookie:
+              description: Session cookie
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "409":
+          description: Already bootstrapped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in with username and password
+      description: Rate limited to 10 requests per minute.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+                  format: password
+      responses:
+        "200":
+          description: Logged in
+          headers:
+            Set-Cookie:
+              description: Session cookie
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new account using an invite code
+      description: Rate limited to 10 requests per minute.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password, email, invite_code]
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+                  format: password
+                email:
+                  type: string
+                  format: email
+                invite_code:
+                  type: string
+      responses:
+        "201":
+          description: Registered and logged in
+          headers:
+            Set-Cookie:
+              description: Session cookie
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "400":
+          description: Invalid email or missing fields
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Invalid or expired invite code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Username or email already taken
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Log out
+      description: Clears the session cookie. No authentication required.
+      responses:
+        "200":
+          description: Logged out
+          headers:
+            Set-Cookie:
+              description: Expired session cookie
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+
+  /api/auth/me:
+    get:
+      tags: [Account]
+      summary: Get current session user
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    patch:
+      tags: [Account]
+      summary: Update account email
+      description: Not available for OIDC-linked accounts.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        "200":
+          description: Updated
+          headers:
+            Set-Cookie:
+              description: New session cookie reflecting updated email
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "403":
+          description: OIDC-linked accounts cannot change email here
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Email already in use
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ── OIDC (public) ─────────────────────────────────────────────────────────
+
+  /api/auth/oidc/providers:
+    get:
+      tags: [OIDC]
+      summary: List enabled OIDC providers
+      description: Returns the name and ID of each enabled provider for the login screen.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [providers]
+                properties:
+                  providers:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/OIDCProviderPublic"
+
+  /api/auth/oidc/{provider_id}/login:
+    get:
+      tags: [OIDC]
+      summary: Start OIDC login flow
+      description: |
+        Redirects the browser to the OIDC provider's authorization endpoint.
+        Rate limited to 10 requests per minute. An optional `invite_code` can be
+        supplied to allow a new user to register via OIDC.
+      parameters:
+        - in: path
+          name: provider_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: invite_code
+          schema:
+            type: string
+          description: Invite code for new-user registration
+      responses:
+        "302":
+          description: Redirect to OIDC provider
+
+  /api/auth/oidc/{provider_id}/callback:
+    get:
+      tags: [OIDC]
+      summary: OIDC callback
+      description: Handles the authorization code returned by the OIDC provider. On success, redirects to `/timeline` and sets a session cookie.
+      parameters:
+        - in: path
+          name: provider_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: code
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: state
+          required: true
+          schema:
+            type: string
+      responses:
+        "302":
+          description: Redirect to /timeline on success or /login on failure
+
+  # ── Invites ───────────────────────────────────────────────────────────────
+
+  /api/auth/invite:
+    post:
+      tags: [Invites]
+      summary: Create an invite code
+      security:
+        - sessionCookie: []
+      responses:
+        "201":
+          description: Invite created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [code, expires_at]
+                properties:
+                  code:
+                    type: string
+                  expires_at:
+                    type: string
+                    format: date-time
+        "403":
+          description: Admin role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    get:
+      tags: [Invites]
+      summary: List all invite codes
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/InviteCode"
+        "403":
+          description: Admin role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/auth/invite/{id}:
+    delete:
+      tags: [Invites]
+      summary: Revoke an invite code
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Revoked
+        "403":
+          description: Admin role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Invite not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ── Entries ───────────────────────────────────────────────────────────────
+
+  /api/entries:
+    get:
+      tags: [Entries]
+      summary: List timeline entries
+      description: Returns entries in reverse-chronological order with cursor-based pagination.
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: query
+          name: cursor
+          schema:
+            type: string
+          description: Opaque pagination cursor returned as `next_cursor` from a previous response
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - in: query
+          name: node
+          schema:
+            type: string
+          description: Filter by exact node name
+        - in: query
+          name: source
+          schema:
+            type: string
+          description: Filter by exact source
+        - in: query
+          name: service
+          schema:
+            type: string
+          description: Filter by exact service name
+        - in: query
+          name: q
+          schema:
+            type: string
+          description: Full-text search against content and service name
+        - in: query
+          name: time_start
+          schema:
+            type: string
+            format: date-time
+          description: Include only entries at or after this time (RFC3339)
+        - in: query
+          name: time_end
+          schema:
+            type: string
+            format: date-time
+          description: Include only entries at or before this time (RFC3339)
+        - in: query
+          name: hide_heartbeat
+          schema:
+            type: boolean
+          description: Exclude agent heartbeat entries
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [entries]
+                properties:
+                  entries:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Entry"
+                  next_cursor:
+                    type: string
+                    description: Present when more entries exist; pass as `cursor` on the next request
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      tags: [Entries]
+      summary: Create a manual entry
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title:
+                  type: string
+                  description: Event summary (stored as `content`)
+                note:
+                  type: string
+                  description: Optional longer note stored in metadata
+                services:
+                  type: array
+                  items:
+                    type: string
+                timestamp:
+                  type: string
+                  format: date-time
+                  description: Defaults to current server time if omitted
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Entry"
+        "400":
+          description: Missing title
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/entries/services:
+    get:
+      tags: [Entries]
+      summary: List distinct service names
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [services]
+                properties:
+                  services:
+                    type: array
+                    items:
+                      type: string
+
+  /api/entries/{id}:
+    get:
+      tags: [Entries]
+      summary: Get a single entry
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Entry"
+        "404":
+          description: Entry not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/entries/{id}/notes:
+    post:
+      tags: [Notes]
+      summary: Add a note to an entry
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: Entry ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content:
+                  type: string
+                  maxLength: 2000
+      responses:
+        "201":
+          description: Note created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EntryNote"
+        "404":
+          description: Entry not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    get:
+      tags: [Notes]
+      summary: List notes for an entry
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: Entry ID
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - in: query
+          name: offset
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [notes, has_more]
+                properties:
+                  notes:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/EntryNote"
+                  has_more:
+                    type: boolean
+                  next_offset:
+                    type: integer
+
+  /api/notes/{id}:
+    delete:
+      tags: [Notes]
+      summary: Delete a note
+      description: Only the note's author may delete it.
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: Note ID
+      responses:
+        "204":
+          description: Deleted
+        "403":
+          description: Not the note author
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Note not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ── Incidents ─────────────────────────────────────────────────────────────
+
+  /api/incidents:
+    get:
+      tags: [Incidents]
+      summary: List incidents
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [open, resolved]
+        - in: query
+          name: confidence
+          schema:
+            type: string
+            enum: [confirmed, suspected]
+        - in: query
+          name: service
+          schema:
+            type: string
+          description: Filter to incidents involving this service
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [incidents, has_more]
+                properties:
+                  incidents:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Incident"
+                  has_more:
+                    type: boolean
+
+  /api/incidents/summary:
+    get:
+      tags: [Incidents]
+      summary: Get open incident counts
+      description: Lightweight summary used by the navigation badge.
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [open_count, has_confirmed_open]
+                properties:
+                  open_count:
+                    type: integer
+                  has_confirmed_open:
+                    type: boolean
+
+  /api/incidents/membership:
+    post:
+      tags: [Incidents]
+      summary: Check which entries belong to open incidents
+      description: |
+        Accepts a list of entry IDs and returns a map of entry ID → incident membership
+        for any entry that is part of a currently open incident. Entries not in any open
+        incident are omitted from the response.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [entry_ids]
+              properties:
+                entry_ids:
+                  type: array
+                  items:
+                    type: string
+                  maxItems: 200
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [memberships]
+                properties:
+                  memberships:
+                    type: object
+                    description: Keys are entry IDs; values are incident membership details
+                    additionalProperties:
+                      $ref: "#/components/schemas/IncidentMembership"
+
+  /api/incidents/{id}:
+    get:
+      tags: [Incidents]
+      summary: Get a single incident with all linked entries
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [incident, entries]
+                properties:
+                  incident:
+                    $ref: "#/components/schemas/Incident"
+                  entries:
+                    type: array
+                    items:
+                      type: object
+                      required: [link, entry]
+                      properties:
+                        link:
+                          $ref: "#/components/schemas/IncidentEntry"
+                        entry:
+                          $ref: "#/components/schemas/Entry"
+        "404":
+          description: Incident not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ── Nodes ─────────────────────────────────────────────────────────────────
+
+  /api/nodes:
+    get:
+      tags: [Nodes]
+      summary: List agent nodes
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Node"
+
+  # ── Agent ─────────────────────────────────────────────────────────────────
+
+  /api/agent/config:
+    get:
+      tags: [Agent]
+      summary: Fetch agent configuration from server
+      security:
+        - agentToken: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [file_watcher_redact_secrets, systemd_units]
+                properties:
+                  file_watcher_redact_secrets:
+                    type: boolean
+                  systemd_units:
+                    type: array
+                    items:
+                      type: string
+
+  /api/agent/push:
+    post:
+      tags: [Agent]
+      summary: Push a single event entry
+      description: |
+        Idempotent: if an entry with the same ID already exists and the content matches,
+        returns 200. A conflicting duplicate (same ID, different content) returns 409.
+      security:
+        - agentToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Entry"
+      responses:
+        "201":
+          description: Entry created
+        "200":
+          description: Duplicate — entry already exists with identical content
+        "400":
+          description: Missing required fields
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: ID conflict with different content
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/agent/push/batch:
+    post:
+      tags: [Agent]
+      summary: Push multiple event entries in one request
+      description: |
+        Accepts up to 200 entries in a single request (10 MB body limit).
+        Each entry is processed independently; partial success is possible.
+      security:
+        - agentToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/Entry"
+              maxItems: 200
+      responses:
+        "200":
+          description: Batch processed (check `failed` for per-entry errors)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentPushBatchResult"
+
+  # ── Webhooks ──────────────────────────────────────────────────────────────
+
+  /api/webhooks/uptime:
+    post:
+      tags: [Webhooks]
+      summary: Uptime Kuma webhook
+      description: Accepts the JSON payload sent by Uptime Kuma's webhook notification type.
+      security:
+        - webhookSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [monitor]
+              properties:
+                heartbeat:
+                  type: object
+                  properties:
+                    status:
+                      type: integer
+                      description: "0 = down, >0 = up"
+                    time:
+                      type: string
+                      format: date-time
+                    msg:
+                      type: string
+                monitor:
+                  type: object
+                  required: [name]
+                  properties:
+                    name:
+                      type: string
+      responses:
+        "201":
+          description: Ingested
+        "400":
+          description: Missing required fields
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/webhooks/watchtower:
+    post:
+      tags: [Webhooks]
+      summary: Watchtower webhook
+      description: Accepts the JSON payload sent by Watchtower's HTTP API notifications.
+      security:
+        - webhookSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [Message]
+              properties:
+                Title:
+                  type: string
+                Message:
+                  type: string
+                Level:
+                  type: string
+      responses:
+        "201":
+          description: Ingested
+        "400":
+          description: Missing Message field
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ── Admin — Users ─────────────────────────────────────────────────────────
+
+  /api/admin/users:
+    get:
+      tags: [Admin — Users]
+      summary: List all users
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AdminUser"
+
+  /api/admin/users/{id}:
+    patch:
+      tags: [Admin — Users]
+      summary: Update a user's admin status
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [is_admin]
+              properties:
+                is_admin:
+                  type: boolean
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUser"
+        "403":
+          description: Cannot demote your own account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      tags: [Admin — Users]
+      summary: Delete a user
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        "403":
+          description: Cannot delete your own account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/admin/users/{id}/force-logout:
+    post:
+      tags: [Admin — Users]
+      summary: Force-logout a user
+      description: Invalidates all existing sessions for the user by bumping their token version.
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Done
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+
+  # ── Admin — Config ────────────────────────────────────────────────────────
+
+  /api/admin/config:
+    get:
+      tags: [Admin — Config]
+      summary: Get server configuration
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminConfig"
+
+  /api/admin/settings/file-watcher:
+    put:
+      tags: [Admin — Config]
+      summary: Update file watcher settings
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [redact_secrets]
+              properties:
+                redact_secrets:
+                  type: boolean
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [redact_secrets]
+                properties:
+                  redact_secrets:
+                    type: boolean
+
+  /api/admin/settings/systemd:
+    get:
+      tags: [Admin — Config]
+      summary: Get systemd unit watch configuration
+      description: Returns a map of node name → list of monitored unit names.
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: array
+                  items:
+                    type: string
+
+  /api/admin/settings/systemd/{node_name}:
+    put:
+      tags: [Admin — Config]
+      summary: Set systemd units to monitor for a node
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: node_name
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [units]
+              properties:
+                units:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "204":
+          description: Updated
+
+  /api/admin/settings/ai:
+    put:
+      tags: [Admin — Config]
+      summary: Update AI settings
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ai_provider:
+                  type: string
+                  enum: [ollama, openai_compat]
+                  default: ollama
+                ai_url:
+                  type: string
+                  format: uri
+                ai_model:
+                  type: string
+                ai_api_key:
+                  type: string
+                  description: Omit to keep the existing stored key
+                ai_clear_api_key:
+                  type: boolean
+                  description: Set to true to remove the stored API key
+                ai_mode:
+                  type: string
+                  enum: [analysis, enhanced]
+                  default: analysis
+      responses:
+        "204":
+          description: Updated
+        "400":
+          description: Invalid settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/admin/settings/ai/test:
+    post:
+      tags: [Admin — Config]
+      summary: Test AI connectivity
+      description: Sends a trivial prompt to the configured AI endpoint and returns the response.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ai_provider:
+                  type: string
+                  enum: [ollama, openai_compat]
+                ai_url:
+                  type: string
+                  format: uri
+                ai_model:
+                  type: string
+                ai_api_key:
+                  type: string
+                ai_mode:
+                  type: string
+                  enum: [analysis, enhanced]
+      responses:
+        "200":
+          description: Test result
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, response]
+                properties:
+                  ok:
+                    type: boolean
+                  response:
+                    type: string
+        "400":
+          description: Missing required fields
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: AI endpoint unreachable or returned an error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ── Admin — OIDC ──────────────────────────────────────────────────────────
+
+  /api/admin/oidc/providers:
+    get:
+      tags: [Admin — OIDC]
+      summary: List OIDC providers
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OIDCProvider"
+    post:
+      tags: [Admin — OIDC]
+      summary: Create an OIDC provider
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, issuer, client_id, client_secret, redirect_url]
+              properties:
+                id:
+                  type: string
+                  description: Auto-generated ULID if omitted
+                name:
+                  type: string
+                issuer:
+                  type: string
+                  format: uri
+                client_id:
+                  type: string
+                client_secret:
+                  type: string
+                redirect_url:
+                  type: string
+                  format: uri
+                require_verified_email:
+                  type: boolean
+                  default: false
+                enabled:
+                  type: boolean
+                  default: true
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OIDCProvider"
+
+  /api/admin/oidc/providers/{id}:
+    patch:
+      tags: [Admin — OIDC]
+      summary: Update an OIDC provider
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                issuer:
+                  type: string
+                  format: uri
+                client_id:
+                  type: string
+                client_secret:
+                  type: string
+                redirect_url:
+                  type: string
+                  format: uri
+                require_verified_email:
+                  type: boolean
+                enabled:
+                  type: boolean
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OIDCProvider"
+        "404":
+          description: Provider not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      tags: [Admin — OIDC]
+      summary: Delete an OIDC provider
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+
+  /api/admin/oidc/policy:
+    get:
+      tags: [Admin — OIDC]
+      summary: Get OIDC registration policy
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [policy]
+                properties:
+                  policy:
+                    type: string
+                    enum: [open, existing_only, invite_required]
+    put:
+      tags: [Admin — OIDC]
+      summary: Set OIDC registration policy
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [policy]
+              properties:
+                policy:
+                  type: string
+                  enum: [open, existing_only, invite_required]
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [policy]
+                properties:
+                  policy:
+                    type: string
+                    enum: [open, existing_only, invite_required]
+
+  # ── Admin — Notifications ─────────────────────────────────────────────────
+
+  /api/admin/notifications:
+    get:
+      tags: [Admin — Notifications]
+      summary: List notification destinations
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NotificationDest"
+    post:
+      tags: [Admin — Notifications]
+      summary: Create a notification destination
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, type, url, events]
+              properties:
+                name:
+                  type: string
+                type:
+                  type: string
+                  enum: [discord, slack, ntfy]
+                url:
+                  type: string
+                  format: uri
+                events:
+                  type: array
+                  items:
+                    type: string
+                    enum: [incident_opened_confirmed, incident_opened_suspected, incident_confirmed, incident_resolved]
+                enabled:
+                  type: boolean
+                  default: true
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationDest"
+
+  /api/admin/notifications/{id}:
+    put:
+      tags: [Admin — Notifications]
+      summary: Update a notification destination
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                type:
+                  type: string
+                  enum: [discord, slack, ntfy]
+                url:
+                  type: string
+                  format: uri
+                events:
+                  type: array
+                  items:
+                    type: string
+                    enum: [incident_opened_confirmed, incident_opened_suspected, incident_confirmed, incident_resolved]
+                enabled:
+                  type: boolean
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationDest"
+    delete:
+      tags: [Admin — Notifications]
+      summary: Delete a notification destination
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  /api/admin/notifications/{id}/test:
+    post:
+      tags: [Admin — Notifications]
+      summary: Send a test notification
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Test sent
+        "404":
+          description: Destination not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: Delivery failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ── WebSocket ─────────────────────────────────────────────────────────────
+
+  /api/ws:
+    get:
+      tags: [WebSocket]
+      summary: Real-time event stream
+      description: |
+        Upgrades the connection to WebSocket. The server pushes JSON messages as events occur.
+
+        **Message types:**
+
+        | type | payload | Description |
+        |------|---------|-------------|
+        | `entry` | `Entry` | A new entry was ingested |
+        | `entry_replaced` | `Entry` | A Docker restart replaced an existing entry |
+        | `node_status` | `{online: number, total: number}` | Node connectivity changed |
+        | `invalidate_user` | — | Your session was invalidated; re-authenticate |
+
+        The server sends a ping every 30 seconds. Maximum 8 connections per user,
+        64 per IP address.
+      security:
+        - sessionCookie: []
+      responses:
+        "101":
+          description: Switching Protocols
+        "401":
+          description: Not authenticated

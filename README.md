@@ -519,6 +519,19 @@ Blackbox is split into two components designed to run across multiple nodes.
 
 ---
 
+## API Reference
+
+Blackbox ships an interactive API reference at **`/api/docs`** on every running server instance. It is powered by [Scalar](https://scalar.com) and auto-detects the server URL — no configuration needed.
+
+The raw OpenAPI 3.1 spec is available at `/api/openapi.yaml` for use with any OpenAPI-compatible tooling.
+
+| URL | Description |
+|-----|-------------|
+| `/api/docs` | Interactive Scalar UI |
+| `/api/openapi.yaml` | Raw OpenAPI 3.1 spec |
+
+---
+
 ## Building from Source
 
 **Requirements:**
