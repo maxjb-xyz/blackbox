@@ -28,12 +28,6 @@ Blackbox is a lightweight, self-hosted event correlation platform built for home
 
 When your homelab breaks, Blackbox tells you what happened. You don't need to lift a finger.
 
-### Core Principles
-
-- **The Forensic Timeline** — Every event (Docker, file change, systemd, webhook) is timestamped and correlated. Nothing is lost.
-- **The "Discipline" Fix** — Automation handles the *what*. Your notes handle the *why*. No manual logging of events that can be detected automatically.
-- **The 2 AM Rule** — High-density, low eye strain (dark mode), zero-friction navigation. Built for stressful troubleshooting.
-
 ---
 
 > [!CAUTION]
@@ -603,7 +597,7 @@ The database is automatically migrated on startup — no manual schema managemen
 - [x] Server REST API + SQLite
 - [x] JWT + OIDC authentication
 - [x] Uptime Kuma + Watchtower webhook ingestion
-- [x] React timeline UI (Zerobyte dark theme)
+- [x] React timeline UI (Zerobyte inspired)
 - [x] Node management + pulse indicator
 - [x] Manual note creation with attribution
 - [x] Incident lifecycle engine
