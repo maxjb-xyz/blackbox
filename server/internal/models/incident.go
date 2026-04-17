@@ -5,6 +5,22 @@ import (
 	"time"
 )
 
+// incidentWire is the shared JSON wire representation used by both
+// MarshalJSON and UnmarshalJSON to keep encoding and decoding symmetric.
+type incidentWire struct {
+	ID          string          `json:"id"`
+	OpenedAt    time.Time       `json:"opened_at"`
+	ResolvedAt  *time.Time      `json:"resolved_at,omitempty"`
+	Status      string          `json:"status"`
+	Confidence  string          `json:"confidence"`
+	Title       string          `json:"title"`
+	Services    []string        `json:"services"`
+	RootCauseID string          `json:"root_cause_id,omitempty"`
+	TriggerID   string          `json:"trigger_id,omitempty"`
+	NodeNames   []string        `json:"node_names"`
+	Metadata    json.RawMessage `json:"metadata"`
+}
+
 type Incident struct {
 	ID          string     `gorm:"primaryKey" json:"-"`
 	OpenedAt    time.Time  `gorm:"index" json:"-"`
@@ -22,19 +38,7 @@ type Incident struct {
 // UnmarshalJSON accepts Services and NodeNames as JSON arrays and Metadata as a JSON
 // object, converting them back to their internal string representation.
 func (i *Incident) UnmarshalJSON(data []byte) error {
-	var wire struct {
-		ID          string          `json:"id"`
-		OpenedAt    time.Time       `json:"opened_at"`
-		ResolvedAt  *time.Time      `json:"resolved_at"`
-		Status      string          `json:"status"`
-		Confidence  string          `json:"confidence"`
-		Title       string          `json:"title"`
-		Services    []string        `json:"services"`
-		RootCauseID string          `json:"root_cause_id"`
-		TriggerID   string          `json:"trigger_id"`
-		NodeNames   []string        `json:"node_names"`
-		Metadata    json.RawMessage `json:"metadata"`
-	}
+	var wire incidentWire
 	if err := json.Unmarshal(data, &wire); err != nil {
 		return err
 	}
@@ -90,20 +94,7 @@ func (i Incident) MarshalJSON() ([]byte, error) {
 		metadata = json.RawMessage(i.Metadata)
 	}
 
-	type wire struct {
-		ID          string          `json:"id"`
-		OpenedAt    time.Time       `json:"opened_at"`
-		ResolvedAt  *time.Time      `json:"resolved_at,omitempty"`
-		Status      string          `json:"status"`
-		Confidence  string          `json:"confidence"`
-		Title       string          `json:"title"`
-		Services    []string        `json:"services"`
-		RootCauseID string          `json:"root_cause_id,omitempty"`
-		TriggerID   string          `json:"trigger_id,omitempty"`
-		NodeNames   []string        `json:"node_names"`
-		Metadata    json.RawMessage `json:"metadata"`
-	}
-	return json.Marshal(wire{
+	return json.Marshal(incidentWire{
 		ID:          i.ID,
 		OpenedAt:    i.OpenedAt,
 		ResolvedAt:  i.ResolvedAt,

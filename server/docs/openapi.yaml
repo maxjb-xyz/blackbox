@@ -13,8 +13,8 @@ info:
     | Mechanism | Header / Cookie | Used by |
     |-----------|-----------------|---------|
     | Session cookie | `Cookie: sessionid=<jwt>` | Browser / web UI |
-    | Agent token | `X-Blackbox-Agent-Token: <token>` or `Authorization: Bearer <token>` | Blackbox agents |
-    | Webhook secret | `X-Blackbox-Webhook-Secret: <secret>` | External webhook sources |
+    | Agent key | `X-Blackbox-Agent-Key: <token>` + `X-Blackbox-Node-Name: <node>` | Blackbox agents |
+    | Webhook secret | `X-Webhook-Secret: <secret>` | External webhook sources |
 
     Session cookies are set automatically on login and cleared on logout.
 
@@ -154,6 +154,7 @@ components:
           additionalProperties: true
         correlated_id:
           type: string
+          readOnly: true
           description: ID of a related entry this was correlated to
         replace_id:
           type: string
