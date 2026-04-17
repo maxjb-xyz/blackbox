@@ -519,6 +519,19 @@ Blackbox is split into two components designed to run across multiple nodes.
 
 ---
 
+## API Reference
+
+Blackbox ships an interactive API reference at **`/api/docs`** on every running server instance. It is powered by [Scalar](https://scalar.com) and auto-detects the server URL — no configuration needed.
+
+The raw OpenAPI 3.1 spec is available at `/api/openapi.yaml` for use with any OpenAPI-compatible tooling.
+
+| URL | Description |
+|-----|-------------|
+| `/api/docs` | Interactive Scalar UI |
+| `/api/openapi.yaml` | Raw OpenAPI 3.1 spec |
+
+---
+
 ## Building from Source
 
 **Requirements:**
@@ -561,67 +574,6 @@ docker build -f server/Dockerfile -t blackbox-server .
 # Agent
 docker build -f agent/Dockerfile -t blackbox-agent .
 ```
-
----
-
-## API Reference
-
-All protected endpoints require an authenticated session cookie (obtained via login). Agent endpoints require `X-Blackbox-Agent-Key` and `X-Blackbox-Node-Name` headers. Webhook endpoints require an `X-Webhook-Secret` header.
-
-### Incidents
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/incidents` | List incidents. Query params: `status`, `confidence`, `service`, `limit` (1-200). |
-| `GET` | `/api/incidents/{id}` | Get a single incident with linked trigger/cause/evidence/recovery entries and any `ai_cause` links. |
-
-### Timeline
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/entries` | List entries. Query params: `cursor`, `limit` (1-200), `node`, `source`, `q` (search). |
-| `POST` | `/api/entries` | Create a manual entry. |
-| `GET` | `/api/entries/{id}` | Get a single entry. |
-| `GET` | `/api/entries/{id}/notes` | Get notes for an entry. |
-| `POST` | `/api/entries/{id}/notes` | Add a note to an entry. |
-| `DELETE` | `/api/notes/{id}` | Delete a note. |
-
-### Nodes
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/nodes` | List all registered nodes with metadata. |
-
-### Services
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/services/aliases` | List service name aliases. |
-| `POST` | `/api/services/aliases` | Create a service alias. |
-| `DELETE` | `/api/services/aliases/{alias}` | Remove a service alias. |
-
-### Admin Settings
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/admin/config` | Load admin-visible runtime config, including webhook secret, file-watcher settings, Ollama URL/model, and `ollama_mode`. |
-| `PUT` | `/api/admin/settings/file-watcher` | Update file-diff secret redaction behavior for newly uploaded diffs. |
-| `PUT` | `/api/admin/settings/ollama` | Update the Ollama URL, model, and `ollama_mode` (`analysis` or `enhanced`) used for optional incident analysis. |
-| `GET` | `/api/admin/settings/systemd` | List per-node systemd unit selections. |
-| `PUT` | `/api/admin/settings/systemd/{node_name}` | Replace the watched systemd unit list for a node. |
-
-### Agent Ingestion
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/api/agent/push` | Push events from an agent. Requires agent auth headers. |
-
-### Webhooks
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/api/webhooks/uptime` | Uptime Kuma Down/Up events. |
-| `POST` | `/api/webhooks/watchtower` | Watchtower image update events. |
 
 ---
 

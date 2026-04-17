@@ -29,6 +29,9 @@ import (
 //go:embed web/dist
 var staticFiles embed.FS
 
+//go:embed docs/openapi.yaml
+var openapiSpec []byte
+
 var (
 	Version = "dev"
 	Commit  = "unknown"
@@ -171,6 +174,8 @@ func main() {
 
 	r.Get("/api/setup/status", handlers.SetupStatus(database))
 	r.Get("/api/setup/health", handlers.HealthCheck(database, registry))
+	r.Get("/api/openapi.yaml", handlers.OpenAPISpec(openapiSpec))
+	r.Get("/api/docs", handlers.APIDocs())
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RateLimit(10*time.Minute, 3))
 		r.Post("/api/auth/bootstrap", handlers.Bootstrap(database, jwtSecret))
