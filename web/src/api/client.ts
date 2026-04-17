@@ -267,6 +267,15 @@ export interface AdminConfig {
   ai_mode: 'analysis' | 'enhanced'
 }
 
+export interface AISettingsInput {
+  provider: 'ollama' | 'openai_compat'
+  url: string
+  model: string
+  apiKey: string
+  clearAPIKey: boolean
+  mode: 'analysis' | 'enhanced'
+}
+
 export interface AITestResult {
   ok: boolean
   response?: string
@@ -288,34 +297,34 @@ export async function updateFileWatcherSettings(redactSecrets: boolean): Promise
   return res.json()
 }
 
-export async function updateAISettings(
-  provider: 'ollama' | 'openai_compat',
-  url: string,
-  model: string,
-  apiKey: string,
-  clearAPIKey: boolean,
-  mode: 'analysis' | 'enhanced',
-): Promise<void> {
+export async function updateAISettings(settings: AISettingsInput): Promise<void> {
   const res = await apiFetch('/api/admin/settings/ai', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ai_provider: provider, ai_url: url, ai_model: model, ai_api_key: apiKey, ai_clear_api_key: clearAPIKey, ai_mode: mode }),
+    body: JSON.stringify({
+      ai_provider: settings.provider,
+      ai_url: settings.url,
+      ai_model: settings.model,
+      ai_api_key: settings.apiKey,
+      ai_clear_api_key: settings.clearAPIKey,
+      ai_mode: settings.mode,
+    }),
   })
   if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to update AI settings'))
 }
 
-export async function testAISettings(
-  provider: 'ollama' | 'openai_compat',
-  url: string,
-  model: string,
-  apiKey: string,
-  clearAPIKey: boolean,
-  mode: 'analysis' | 'enhanced',
-): Promise<AITestResult> {
+export async function testAISettings(settings: AISettingsInput): Promise<AITestResult> {
   const res = await apiFetch('/api/admin/settings/ai/test', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ai_provider: provider, ai_url: url, ai_model: model, ai_api_key: apiKey, ai_clear_api_key: clearAPIKey, ai_mode: mode }),
+    body: JSON.stringify({
+      ai_provider: settings.provider,
+      ai_url: settings.url,
+      ai_model: settings.model,
+      ai_api_key: settings.apiKey,
+      ai_clear_api_key: settings.clearAPIKey,
+      ai_mode: settings.mode,
+    }),
   })
   if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to test AI settings'))
   return res.json() as Promise<AITestResult>

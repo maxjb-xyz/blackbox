@@ -55,8 +55,14 @@ type openAIResponse struct {
 // single prompt through it.
 func GenerateWithConfig(ctx context.Context, providerType, baseURL, model, apiKey, prompt string, timeout time.Duration) (string, error) {
 	providerType = strings.TrimSpace(providerType)
-	baseURL = strings.TrimSpace(baseURL)
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	model = strings.TrimSpace(model)
+	if baseURL == "" {
+		return "", errors.New("baseURL is required")
+	}
+	if model == "" {
+		return "", errors.New("model is required")
+	}
 
 	var provider LLMProvider
 	switch providerType {

@@ -154,16 +154,19 @@ func TestAISettings(db *gorm.DB) http.HandlerFunc {
 		}
 
 		result = strings.TrimSpace(result)
-		if len(result) > 200 {
-			result = result[:200] + "..."
+		resultRunes := []rune(result)
+		if len(resultRunes) > 200 {
+			result = string(resultRunes[:200]) + "..."
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
-		_ = json.NewEncoder(w).Encode(map[string]any{
+		if err := json.NewEncoder(w).Encode(map[string]any{
 			"ok":       true,
 			"response": result,
-		})
+		}); err != nil {
+			log.Printf("TestAISettings encode: %v", err)
+		}
 	}
 }
 

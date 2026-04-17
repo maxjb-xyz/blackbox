@@ -26,7 +26,7 @@ import {
   updateNotificationDest,
   updateSystemdSettings,
 } from '../api/client'
-import type { AdminUser, Node, NotificationDest, NotificationDestInput, OIDCProviderConfig } from '../api/client'
+import type { AISettingsInput, AdminUser, Node, NotificationDest, NotificationDestInput, OIDCProviderConfig } from '../api/client'
 import { readErrorMessage } from '../api/errorUtils'
 import { useSession } from '../session'
 import PageHeader from '../components/PageHeader'
@@ -85,6 +85,12 @@ function normalizeInvite(invite: Record<string, unknown>): InviteCode {
 function normalizeOIDCPolicy(value: string | null | undefined): OIDCPolicy {
   if (value === 'existing_only' || value === 'invite_required') return value
   return 'open'
+}
+
+function truncateDisplayText(value: string, maxChars = 200): string {
+  const chars = Array.from(value)
+  if (chars.length <= maxChars) return value
+  return chars.slice(0, maxChars).join('') + '...'
 }
 
 function formatInviteTimestamp(value: string): string {
@@ -1606,7 +1612,7 @@ function SettingsTab() {
     setAIError(null)
     setAISuccess(false)
     try {
-      await updateAISettings(aiProvider, aiURL, aiModel, aiAPIKey, aiClearAPIKey, aiMode)
+      await updateAISettings(getAISettingsInput())
       setAIAPIKey('')
       setAIClearAPIKey(false)
       const saved = await fetchAdminConfig()
@@ -1626,12 +1632,23 @@ function SettingsTab() {
     }
   }
 
+  function getAISettingsInput(): AISettingsInput {
+    return {
+      provider: aiProvider,
+      url: aiURL,
+      model: aiModel,
+      apiKey: aiAPIKey,
+      clearAPIKey: aiClearAPIKey,
+      mode: aiMode,
+    }
+  }
+
   async function runAITest() {
     if (!initialLoaded) return
     setAITesting(true)
     setAITestResult(null)
     try {
-      const result = await testAISettings(aiProvider, aiURL, aiModel, aiAPIKey, aiClearAPIKey, aiMode)
+      const result = await testAISettings(getAISettingsInput())
       setAITestResult(result)
     } catch (err) {
       setAITestResult({
@@ -1642,6 +1659,12 @@ function SettingsTab() {
       setAITesting(false)
     }
   }
+
+  const aiTestMessage = aiTestResult
+    ? aiTestResult.ok
+      ? `test ok${aiTestResult.response ? `: ${truncateDisplayText(aiTestResult.response)}` : ''}`
+      : truncateDisplayText(aiTestResult.error ?? 'Test failed')
+    : null
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -1845,9 +1868,9 @@ function SettingsTab() {
               </div>
             )}
             {aiError && <div style={{ color: 'var(--danger)', fontSize: 11 }}>{aiError}</div>}
-            {aiTestResult && (
-              <div style={{ color: aiTestResult.ok ? 'var(--success)' : 'var(--danger)', fontSize: 11 }}>
-                {aiTestResult.ok ? `test ok${aiTestResult.response ? `: ${aiTestResult.response}` : ''}` : aiTestResult.error ?? 'Test failed'}
+            {aiTestMessage && (
+              <div style={{ color: aiTestResult?.ok ? 'var(--success)' : 'var(--danger)', fontSize: 11, overflowWrap: 'anywhere' }}>
+                {aiTestMessage}
               </div>
             )}
             {aiSuccess && <div style={{ color: 'var(--success)', fontSize: 11 }}>saved</div>}
@@ -1856,14 +1879,32 @@ function SettingsTab() {
                 type="button"
                 onClick={() => void runAITest()}
                 disabled={!initialLoaded || aiSaving || aiTesting || aiURL.trim() === '' || aiModel.trim() === ''}
-                style={{ alignSelf: 'flex-start', fontSize: 11, padding: '4px 12px', cursor: !initialLoaded || aiSaving || aiTesting || aiURL.trim() === '' || aiModel.trim() === '' ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
+                style={{
+                  alignSelf: 'flex-start',
+                  background: 'transparent',
+                  border: '1px solid var(--border)',
+                  color: 'var(--muted)',
+                  fontSize: 11,
+                  padding: '4px 12px',
+                  cursor: !initialLoaded || aiSaving || aiTesting || aiURL.trim() === '' || aiModel.trim() === '' ? 'not-allowed' : 'pointer',
+                  fontFamily: 'inherit',
+                }}
               >
                 {aiTesting ? 'TESTING...' : 'TEST'}
               </button>
               <button
                 type="submit"
                 disabled={!initialLoaded || aiSaving || aiTesting}
-                style={{ alignSelf: 'flex-start', fontSize: 11, padding: '4px 12px', cursor: !initialLoaded || aiSaving || aiTesting ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
+                style={{
+                  alignSelf: 'flex-start',
+                  background: 'transparent',
+                  border: '1px solid var(--border)',
+                  color: 'var(--muted)',
+                  fontSize: 11,
+                  padding: '4px 12px',
+                  cursor: !initialLoaded || aiSaving || aiTesting ? 'not-allowed' : 'pointer',
+                  fontFamily: 'inherit',
+                }}
               >
                 {aiSaving ? 'SAVING...' : 'SAVE'}
               </button>

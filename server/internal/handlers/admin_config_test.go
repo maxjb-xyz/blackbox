@@ -177,6 +177,7 @@ func TestTestAISettings_Success(t *testing.T) {
 	t.Parallel()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
 		assert.Equal(t, "/api/generate", r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"response":"OK"}`))
@@ -201,6 +202,7 @@ func TestTestAISettings_UsesStoredAPIKeyWhenBlank(t *testing.T) {
 	t.Parallel()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
 		assert.Equal(t, "/v1/chat/completions", r.URL.Path)
 		assert.Equal(t, "Bearer sk-saved", r.Header.Get("Authorization"))
 		w.Header().Set("Content-Type", "application/json")
