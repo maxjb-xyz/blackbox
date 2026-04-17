@@ -267,6 +267,11 @@ export interface AdminConfig {
   ai_mode: 'analysis' | 'enhanced'
 }
 
+export interface AITestResult {
+  ok: boolean
+  response?: string
+}
+
 export async function fetchAdminConfig(): Promise<AdminConfig> {
   const res = await apiFetch('/api/admin/config')
   if (!res.ok) throw new Error('Failed to fetch admin config')
@@ -297,6 +302,23 @@ export async function updateAISettings(
     body: JSON.stringify({ ai_provider: provider, ai_url: url, ai_model: model, ai_api_key: apiKey, ai_clear_api_key: clearAPIKey, ai_mode: mode }),
   })
   if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to update AI settings'))
+}
+
+export async function testAISettings(
+  provider: 'ollama' | 'openai_compat',
+  url: string,
+  model: string,
+  apiKey: string,
+  clearAPIKey: boolean,
+  mode: 'analysis' | 'enhanced',
+): Promise<AITestResult> {
+  const res = await apiFetch('/api/admin/settings/ai/test', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ai_provider: provider, ai_url: url, ai_model: model, ai_api_key: apiKey, ai_clear_api_key: clearAPIKey, ai_mode: mode }),
+  })
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to test AI settings'))
+  return res.json() as Promise<AITestResult>
 }
 
 export async function fetchSystemdSettings(): Promise<Record<string, string[]>> {

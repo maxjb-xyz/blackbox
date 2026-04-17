@@ -172,3 +172,54 @@ func TestUpdateAISettings_PreservesAPIKeyWhenBlank(t *testing.T) {
 	require.NoError(t, database.First(&modelSetting, "key = ?", "ai_model").Error)
 	assert.Equal(t, "gpt-4o-mini", modelSetting.Value)
 }
+
+func TestTestAISettings_Success(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/generate", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"response":"OK"}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	database := newTestDB(t)
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/settings/ai/test", strings.NewReader(`{"ai_provider":"ollama","ai_url":"`+srv.URL+`","ai_model":"llama3.2"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handlers.TestAISettings(database)(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp map[string]any
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	assert.Equal(t, true, resp["ok"])
+	assert.Equal(t, "OK", resp["response"])
+}
+
+func TestTestAISettings_UsesStoredAPIKeyWhenBlank(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/v1/chat/completions", r.URL.Path)
+		assert.Equal(t, "Bearer sk-saved", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"OK"}}]}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	database := newTestDB(t)
+	require.NoError(t, database.Create(&models.AppSetting{Key: "ai_api_key", Value: "sk-saved"}).Error)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/settings/ai/test", strings.NewReader(`{"ai_provider":"openai_compat","ai_url":"`+srv.URL+`","ai_model":"gpt-4o-mini","ai_api_key":"","ai_mode":"analysis"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handlers.TestAISettings(database)(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp map[string]any
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	assert.Equal(t, true, resp["ok"])
+	assert.Equal(t, "OK", resp["response"])
+}

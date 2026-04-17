@@ -51,6 +51,26 @@ type openAIResponse struct {
 	Choices []openAIChoice `json:"choices"`
 }
 
+// GenerateWithConfig instantiates an AI provider from raw settings and runs a
+// single prompt through it.
+func GenerateWithConfig(ctx context.Context, providerType, baseURL, model, apiKey, prompt string, timeout time.Duration) (string, error) {
+	providerType = strings.TrimSpace(providerType)
+	baseURL = strings.TrimSpace(baseURL)
+	model = strings.TrimSpace(model)
+
+	var provider LLMProvider
+	switch providerType {
+	case "ollama":
+		provider = &ollamaProvider{baseURL: baseURL}
+	case "openai_compat":
+		provider = &openAICompatProvider{baseURL: baseURL, apiKey: strings.TrimSpace(apiKey)}
+	default:
+		return "", fmt.Errorf("unsupported ai provider %q", providerType)
+	}
+
+	return provider.Generate(ctx, model, prompt, timeout)
+}
+
 func (p *openAICompatProvider) Generate(ctx context.Context, model, prompt string, timeout time.Duration) (string, error) {
 	reqBody, _ := json.Marshal(openAIRequest{
 		Model:    model,

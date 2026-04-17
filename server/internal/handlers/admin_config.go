@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"blackbox/server/internal/incidents"
 	"blackbox/server/internal/models"
 	"gorm.io/gorm"
 )
@@ -23,6 +24,23 @@ const aiModeKey = "ai_mode"
 const legacyOllamaURLKey = "ollama_url"
 const legacyOllamaModelKey = "ollama_model"
 const legacyOllamaModeKey = "ollama_mode"
+
+type aiSettingsRequest struct {
+	Provider    string `json:"ai_provider"`
+	URL         string `json:"ai_url"`
+	Model       string `json:"ai_model"`
+	APIKey      string `json:"ai_api_key"`
+	ClearAPIKey bool   `json:"ai_clear_api_key"`
+	Mode        string `json:"ai_mode"`
+}
+
+type normalizedAISettings struct {
+	provider string
+	url      string
+	model    string
+	apiKey   string
+	mode     string
+}
 
 func AdminConfig(db *gorm.DB, webhookSecret string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -57,67 +75,31 @@ func AdminConfig(db *gorm.DB, webhookSecret string) http.HandlerFunc {
 
 func UpdateAISettings(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Provider    string `json:"ai_provider"`
-			URL         string `json:"ai_url"`
-			Model       string `json:"ai_model"`
-			APIKey      string `json:"ai_api_key"`
-			ClearAPIKey bool   `json:"ai_clear_api_key"`
-			Mode        string `json:"ai_mode"`
-		}
+		var req aiSettingsRequest
 		if !decodeJSONBody(w, r, 1<<20, &req) {
 			return
 		}
 
-		provider := strings.TrimSpace(req.Provider)
-		if provider == "" {
-			provider = "ollama"
-		}
-		if provider != "ollama" && provider != "openai_compat" {
-			writeError(w, http.StatusBadRequest, "ai_provider must be 'ollama' or 'openai_compat'")
-			return
-		}
-
-		aiURL := strings.TrimSpace(req.URL)
-		if aiURL != "" {
-			parsed, err := url.ParseRequestURI(aiURL)
-			if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-				writeError(w, http.StatusBadRequest, "ai_url must be a valid absolute URL")
-				return
+		normalized, err := normalizeAISettingsRequest(db, req)
+		if err != nil {
+			if errors.Is(err, errLoadExistingAPIKey) {
+				writeError(w, http.StatusInternalServerError, err.Error())
+			} else {
+				writeError(w, http.StatusBadRequest, err.Error())
 			}
-		}
-
-		mode := strings.TrimSpace(req.Mode)
-		if mode != "" && mode != "analysis" && mode != "enhanced" {
-			writeError(w, http.StatusBadRequest, "ai_mode must be 'analysis' or 'enhanced'")
 			return
-		}
-		if mode == "" {
-			mode = "analysis"
-		}
-
-		// Blank key: preserve existing unless ClearAPIKey is explicitly true.
-		apiKey := strings.TrimSpace(req.APIKey)
-		if apiKey == "" && !req.ClearAPIKey {
-			var existing models.AppSetting
-			if err := db.First(&existing, "key = ?", aiAPIKeyKey).Error; err == nil {
-				apiKey = existing.Value
-			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-				writeError(w, http.StatusInternalServerError, "failed to load existing api key")
-				return
-			}
 		}
 
 		now := time.Now()
-		settings := []models.AppSetting{
-			{Key: aiProviderKey, Value: provider, UpdatedAt: now},
-			{Key: aiURLKey, Value: aiURL, UpdatedAt: now},
-			{Key: aiModelKey, Value: strings.TrimSpace(req.Model), UpdatedAt: now},
-			{Key: aiAPIKeyKey, Value: apiKey, UpdatedAt: now},
-			{Key: aiModeKey, Value: mode, UpdatedAt: now},
+		appSettings := []models.AppSetting{
+			{Key: aiProviderKey, Value: normalized.provider, UpdatedAt: now},
+			{Key: aiURLKey, Value: normalized.url, UpdatedAt: now},
+			{Key: aiModelKey, Value: normalized.model, UpdatedAt: now},
+			{Key: aiAPIKeyKey, Value: normalized.apiKey, UpdatedAt: now},
+			{Key: aiModeKey, Value: normalized.mode, UpdatedAt: now},
 		}
 		if err := db.Transaction(func(tx *gorm.DB) error {
-			for _, s := range settings {
+			for _, s := range appSettings {
 				if err := tx.Save(&s).Error; err != nil {
 					return err
 				}
@@ -129,6 +111,59 @@ func UpdateAISettings(db *gorm.DB) http.HandlerFunc {
 		}
 
 		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func TestAISettings(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req aiSettingsRequest
+		if !decodeJSONBody(w, r, 1<<20, &req) {
+			return
+		}
+
+		settings, err := normalizeAISettingsRequest(db, req)
+		if err != nil {
+			if errors.Is(err, errLoadExistingAPIKey) {
+				writeError(w, http.StatusInternalServerError, err.Error())
+			} else {
+				writeError(w, http.StatusBadRequest, err.Error())
+			}
+			return
+		}
+		if settings.url == "" {
+			writeError(w, http.StatusBadRequest, "ai_url is required")
+			return
+		}
+		if settings.model == "" {
+			writeError(w, http.StatusBadRequest, "ai_model is required")
+			return
+		}
+
+		result, err := incidents.GenerateWithConfig(
+			r.Context(),
+			settings.provider,
+			settings.url,
+			settings.model,
+			settings.apiKey,
+			"Reply with the single word OK.",
+			15*time.Second,
+		)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, err.Error())
+			return
+		}
+
+		result = strings.TrimSpace(result)
+		if len(result) > 200 {
+			result = result[:200] + "..."
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok":       true,
+			"response": result,
+		})
 	}
 }
 
@@ -248,4 +283,50 @@ func getAISettings(db *gorm.DB) (aiSettingsResult, error) {
 	}
 
 	return result, nil
+}
+
+var errLoadExistingAPIKey = errors.New("failed to load existing api key")
+
+func normalizeAISettingsRequest(db *gorm.DB, req aiSettingsRequest) (normalizedAISettings, error) {
+	provider := strings.TrimSpace(req.Provider)
+	if provider == "" {
+		provider = "ollama"
+	}
+	if provider != "ollama" && provider != "openai_compat" {
+		return normalizedAISettings{}, errors.New("ai_provider must be 'ollama' or 'openai_compat'")
+	}
+
+	aiURL := strings.TrimSpace(req.URL)
+	if aiURL != "" {
+		parsed, err := url.ParseRequestURI(aiURL)
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+			return normalizedAISettings{}, errors.New("ai_url must be a valid absolute URL")
+		}
+	}
+
+	mode := strings.TrimSpace(req.Mode)
+	if mode != "" && mode != "analysis" && mode != "enhanced" {
+		return normalizedAISettings{}, errors.New("ai_mode must be 'analysis' or 'enhanced'")
+	}
+	if mode == "" {
+		mode = "analysis"
+	}
+
+	apiKey := strings.TrimSpace(req.APIKey)
+	if apiKey == "" && !req.ClearAPIKey {
+		var existing models.AppSetting
+		if err := db.First(&existing, "key = ?", aiAPIKeyKey).Error; err == nil {
+			apiKey = existing.Value
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return normalizedAISettings{}, errLoadExistingAPIKey
+		}
+	}
+
+	return normalizedAISettings{
+		provider: provider,
+		url:      aiURL,
+		model:    strings.TrimSpace(req.Model),
+		apiKey:   apiKey,
+		mode:     mode,
+	}, nil
 }

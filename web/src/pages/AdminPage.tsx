@@ -17,6 +17,7 @@ import {
   listNotificationDests,
   revokeInvite,
   setOIDCPolicy,
+  testAISettings,
   testNotificationDest,
   updateAISettings,
   updateFileWatcherSettings,
@@ -1544,8 +1545,10 @@ function SettingsTab() {
   const [aiClearAPIKey, setAIClearAPIKey] = useState(false)
   const [aiMode, setAIMode] = useState<'analysis' | 'enhanced'>('analysis')
   const [aiSaving, setAISaving] = useState(false)
+  const [aiTesting, setAITesting] = useState(false)
   const [aiError, setAIError] = useState<string | null>(null)
   const [aiSuccess, setAISuccess] = useState(false)
+  const [aiTestResult, setAITestResult] = useState<{ ok: boolean; response?: string; error?: string } | null>(null)
   const [initialLoaded, setInitialLoaded] = useState(false)
   const aiSuccessTimerRef = useRef<number | null>(null)
 
@@ -1620,6 +1623,23 @@ function SettingsTab() {
       setAIError(err instanceof Error ? err.message : 'Save failed')
     } finally {
       setAISaving(false)
+    }
+  }
+
+  async function runAITest() {
+    if (!initialLoaded) return
+    setAITesting(true)
+    setAITestResult(null)
+    try {
+      const result = await testAISettings(aiProvider, aiURL, aiModel, aiAPIKey, aiClearAPIKey, aiMode)
+      setAITestResult(result)
+    } catch (err) {
+      setAITestResult({
+        ok: false,
+        error: err instanceof Error ? err.message : 'Test failed',
+      })
+    } finally {
+      setAITesting(false)
     }
   }
 
@@ -1713,8 +1733,9 @@ function SettingsTab() {
                       if (p !== 'openai_compat') { setAIAPIKey(''); setAIClearAPIKey(false) }
                       setAIProvider(p)
                       setAISuccess(false)
+                      setAITestResult(null)
                     }}
-                    disabled={aiSaving}
+                    disabled={aiSaving || aiTesting}
                     style={{
                       padding: '4px 12px',
                       fontSize: 12,
@@ -1722,7 +1743,7 @@ function SettingsTab() {
                       borderColor: selected ? AI_SETTINGS_ACCENT_COLOR : 'var(--border)',
                       background: selected ? 'rgba(168, 85, 247, 0.1)' : 'transparent',
                       color: selected ? AI_SETTINGS_ACCENT_COLOR : 'var(--muted)',
-                      cursor: aiSaving ? 'not-allowed' : 'pointer',
+                      cursor: aiSaving || aiTesting ? 'not-allowed' : 'pointer',
                       fontFamily: 'inherit',
                     }}
                   >
@@ -1736,9 +1757,9 @@ function SettingsTab() {
               <input
                 type="url"
                 value={aiURL}
-                onChange={e => { setAIURL(e.target.value); setAISuccess(false) }}
+                onChange={e => { setAIURL(e.target.value); setAISuccess(false); setAITestResult(null) }}
                 placeholder={aiProvider === 'openai_compat' ? 'https://api.openai.com' : 'http://192.168.1.10:11434'}
-                disabled={!initialLoaded || aiSaving}
+                disabled={!initialLoaded || aiSaving || aiTesting}
                 style={{ display: 'block', width: '100%', marginTop: 4, ...FILTER_CONTROL_STYLE }}
               />
             </label>
@@ -1749,8 +1770,8 @@ function SettingsTab() {
                   {aiAPIKeySet && !aiClearAPIKey && (
                     <button
                       type="button"
-                      onClick={() => { setAIClearAPIKey(true); setAIAPIKey(''); setAISuccess(false) }}
-                      disabled={aiSaving}
+                      onClick={() => { setAIClearAPIKey(true); setAIAPIKey(''); setAISuccess(false); setAITestResult(null) }}
+                      disabled={aiSaving || aiTesting}
                       style={{ fontSize: 10, padding: '1px 6px', border: '1px solid var(--danger)', color: 'var(--danger)', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit' }}
                     >
                       CLEAR KEY
@@ -1759,8 +1780,8 @@ function SettingsTab() {
                   {aiClearAPIKey && (
                     <button
                       type="button"
-                      onClick={() => { setAIClearAPIKey(false); setAISuccess(false) }}
-                      disabled={aiSaving}
+                      onClick={() => { setAIClearAPIKey(false); setAISuccess(false); setAITestResult(null) }}
+                      disabled={aiSaving || aiTesting}
                       style={{ fontSize: 10, padding: '1px 6px', border: '1px solid var(--muted)', color: 'var(--muted)', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit' }}
                     >
                       CANCEL
@@ -1770,9 +1791,9 @@ function SettingsTab() {
                 <input
                   type="password"
                   value={aiAPIKey}
-                  onChange={e => { setAIAPIKey(e.target.value); if (aiClearAPIKey) setAIClearAPIKey(false); setAISuccess(false) }}
+                  onChange={e => { setAIAPIKey(e.target.value); if (aiClearAPIKey) setAIClearAPIKey(false); setAISuccess(false); setAITestResult(null) }}
                   placeholder={aiClearAPIKey ? '[key will be removed on save]' : aiAPIKeySet ? '[key set — leave blank to keep]' : 'sk-...'}
-                  disabled={!initialLoaded || aiSaving}
+                  disabled={!initialLoaded || aiSaving || aiTesting}
                   style={{ display: 'block', width: '100%', marginTop: 4, ...FILTER_CONTROL_STYLE }}
                 />
               </label>
@@ -1782,9 +1803,9 @@ function SettingsTab() {
               <input
                 type="text"
                 value={aiModel}
-                onChange={e => { setAIModel(e.target.value); setAISuccess(false) }}
+                onChange={e => { setAIModel(e.target.value); setAISuccess(false); setAITestResult(null) }}
                 placeholder={aiProvider === 'openai_compat' ? 'gpt-4o-mini' : 'llama3.2'}
-                disabled={!initialLoaded || aiSaving}
+                disabled={!initialLoaded || aiSaving || aiTesting}
                 style={{ display: 'block', width: '100%', marginTop: 4, ...FILTER_CONTROL_STYLE }}
               />
             </label>
@@ -1798,8 +1819,8 @@ function SettingsTab() {
                       <button
                         key={mode}
                         type="button"
-                        onClick={() => { setAIMode(mode); setAISuccess(false) }}
-                        disabled={aiSaving}
+                        onClick={() => { setAIMode(mode); setAISuccess(false); setAITestResult(null) }}
+                        disabled={aiSaving || aiTesting}
                         style={{
                           padding: '4px 12px',
                           fontSize: 12,
@@ -1807,7 +1828,7 @@ function SettingsTab() {
                           borderColor: selected ? AI_SETTINGS_ACCENT_COLOR : 'var(--border)',
                           background: selected ? 'rgba(168, 85, 247, 0.1)' : 'transparent',
                           color: selected ? AI_SETTINGS_ACCENT_COLOR : 'var(--muted)',
-                          cursor: aiSaving ? 'not-allowed' : 'pointer',
+                          cursor: aiSaving || aiTesting ? 'not-allowed' : 'pointer',
                           fontFamily: 'inherit',
                         }}
                       >
@@ -1824,14 +1845,29 @@ function SettingsTab() {
               </div>
             )}
             {aiError && <div style={{ color: 'var(--danger)', fontSize: 11 }}>{aiError}</div>}
+            {aiTestResult && (
+              <div style={{ color: aiTestResult.ok ? 'var(--success)' : 'var(--danger)', fontSize: 11 }}>
+                {aiTestResult.ok ? `test ok${aiTestResult.response ? `: ${aiTestResult.response}` : ''}` : aiTestResult.error ?? 'Test failed'}
+              </div>
+            )}
             {aiSuccess && <div style={{ color: 'var(--success)', fontSize: 11 }}>saved</div>}
-            <button
-              type="submit"
-              disabled={!initialLoaded || aiSaving}
-              style={{ alignSelf: 'flex-start', fontSize: 11, padding: '4px 12px', cursor: 'pointer', fontFamily: 'inherit' }}
-            >
-              {aiSaving ? 'SAVING...' : 'SAVE'}
-            </button>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => void runAITest()}
+                disabled={!initialLoaded || aiSaving || aiTesting || aiURL.trim() === '' || aiModel.trim() === ''}
+                style={{ alignSelf: 'flex-start', fontSize: 11, padding: '4px 12px', cursor: !initialLoaded || aiSaving || aiTesting || aiURL.trim() === '' || aiModel.trim() === '' ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
+              >
+                {aiTesting ? 'TESTING...' : 'TEST'}
+              </button>
+              <button
+                type="submit"
+                disabled={!initialLoaded || aiSaving || aiTesting}
+                style={{ alignSelf: 'flex-start', fontSize: 11, padding: '4px 12px', cursor: !initialLoaded || aiSaving || aiTesting ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
+              >
+                {aiSaving ? 'SAVING...' : 'SAVE'}
+              </button>
+            </div>
           </form>
         )}
       </section>
