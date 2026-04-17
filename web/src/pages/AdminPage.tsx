@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { Navigate } from 'react-router-dom'
 import {
@@ -225,55 +225,60 @@ export default function AdminPage() {
       <PageHeader
         title="ADMIN"
         titleActions={(
-          <div className="admin-tab-list" role="tablist" aria-label="Admin sections">
-            {ADMIN_TABS.map((t, index) => (
-              <button
-                key={t}
-                ref={element => { adminTabRefs.current[index] = element }}
-                className="admin-tab-button"
-                id={`admin-tab-${t}`}
-                role="tab"
-                aria-selected={tab === t}
-                aria-controls={`admin-panel-${t}`}
-                tabIndex={tab === t ? 0 : -1}
-                onClick={() => setTab(t)}
-                onKeyDown={event => {
-                  if (event.key === 'ArrowRight') {
-                    event.preventDefault()
-                    selectAdminTabAt(index + 1)
-                    return
-                  }
-                  if (event.key === 'ArrowLeft') {
-                    event.preventDefault()
-                    selectAdminTabAt(index - 1)
-                    return
-                  }
-                  if (event.key === 'Home') {
-                    event.preventDefault()
-                    selectAdminTabAt(0)
-                    return
-                  }
-                  if (event.key === 'End') {
-                    event.preventDefault()
-                    selectAdminTabAt(ADMIN_TABS.length - 1)
-                  }
-                }}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: tab === t ? 'var(--accent)' : '#F0F0F0',
-                  fontSize: '18px',
-                  fontWeight: 700,
-                  letterSpacing: '0.12em',
-                  cursor: 'pointer',
-                  fontFamily: 'inherit',
-                  lineHeight: 1,
-                  padding: 0,
-                }}
-              >
-                {t.toUpperCase()}
-              </button>
-            ))}
+          <div className="admin-title-actions">
+            <span className="admin-title-divider" aria-hidden="true" />
+            <div className="admin-tab-list" role="tablist" aria-label="Admin sections">
+              {ADMIN_TABS.map((t, index) => (
+                <Fragment key={t}>
+                  {index > 0 ? <span className="admin-tab-divider" aria-hidden="true">/</span> : null}
+                  <button
+                    ref={element => { adminTabRefs.current[index] = element }}
+                    className="admin-tab-button"
+                    id={`admin-tab-${t}`}
+                    role="tab"
+                    aria-selected={tab === t}
+                    aria-controls={`admin-panel-${t}`}
+                    tabIndex={tab === t ? 0 : -1}
+                    onClick={() => setTab(t)}
+                    onKeyDown={event => {
+                      if (event.key === 'ArrowRight') {
+                        event.preventDefault()
+                        selectAdminTabAt(index + 1)
+                        return
+                      }
+                      if (event.key === 'ArrowLeft') {
+                        event.preventDefault()
+                        selectAdminTabAt(index - 1)
+                        return
+                      }
+                      if (event.key === 'Home') {
+                        event.preventDefault()
+                        selectAdminTabAt(0)
+                        return
+                      }
+                      if (event.key === 'End') {
+                        event.preventDefault()
+                        selectAdminTabAt(ADMIN_TABS.length - 1)
+                      }
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: tab === t ? 'var(--accent)' : '#F0F0F0',
+                      fontSize: '18px',
+                      fontWeight: 700,
+                      letterSpacing: '0.12em',
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                      lineHeight: 1,
+                      padding: 0,
+                    }}
+                  >
+                    {t.toUpperCase()}
+                  </button>
+                </Fragment>
+              ))}
+            </div>
           </div>
         )}
       />
