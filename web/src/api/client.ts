@@ -24,6 +24,7 @@ export interface Entry {
   node_name: string
   source: string
   service: string
+  compose_service?: string
   event: string
   content: string
   metadata: string
@@ -33,6 +34,42 @@ export interface Entry {
 export interface EntriesPage {
   entries: Entry[]
   next_cursor?: string
+}
+
+function stringifyJSONField(value: unknown, fallback: string): string {
+  if (typeof value === 'string') {
+    try {
+      return JSON.stringify(JSON.parse(value))
+    } catch {
+      return JSON.stringify(value)
+    }
+  }
+  if (value === null || value === undefined) return fallback
+  try {
+    return JSON.stringify(value) ?? fallback
+  } catch {
+    return JSON.stringify(String(value))
+  }
+}
+
+export function normalizeEntry(value: unknown): Entry | null {
+  const data = value && typeof value === 'object' ? value as Record<string, unknown> : {}
+  if (typeof data.id !== 'string' || data.id.trim() === '') return null
+  if (typeof data.timestamp !== 'string' || data.timestamp.trim() === '') return null
+  const correlatedId = data.correlated_id
+  const composeService = data.compose_service
+  return {
+    id: data.id,
+    timestamp: data.timestamp,
+    node_name: String(data.node_name ?? ''),
+    source: String(data.source ?? ''),
+    service: String(data.service ?? ''),
+    ...(typeof composeService === 'string' ? { compose_service: composeService } : {}),
+    event: String(data.event ?? ''),
+    content: String(data.content ?? ''),
+    metadata: stringifyJSONField(data.metadata, '{}'),
+    ...(typeof correlatedId === 'string' && correlatedId ? { correlated_id: correlatedId } : {}),
+  }
 }
 
 export interface Node {
@@ -189,7 +226,13 @@ export async function fetchEntries(params: {
 
   const res = await apiFetch(url.toString())
   if (!res.ok) throw new Error('Failed to fetch entries')
-  return res.json()
+  const data = await res.json() as { entries?: unknown[]; next_cursor?: unknown }
+  return {
+    entries: Array.isArray(data.entries)
+      ? data.entries.map(normalizeEntry).filter((entry): entry is Entry => entry !== null)
+      : [],
+    ...(typeof data.next_cursor === 'string' ? { next_cursor: data.next_cursor } : {}),
+  }
 }
 
 export async function fetchEntryServices(): Promise<{ services: string[] }> {
@@ -201,7 +244,9 @@ export async function fetchEntryServices(): Promise<{ services: string[] }> {
 export async function fetchEntry(id: string): Promise<Entry> {
   const res = await apiFetch(`/api/entries/${id}`)
   if (!res.ok) throw new Error('Entry not found')
-  return res.json()
+  const entry = normalizeEntry(await res.json())
+  if (!entry) throw new Error('Invalid entry response')
+  return entry
 }
 
 export async function fetchNotes(entryId: string): Promise<EntryNote[]> {
@@ -472,6 +517,62 @@ export interface IncidentSummary {
   hasConfirmedOpen: boolean
 }
 
+function normalizeIncident(value: unknown): Incident {
+  const data = value && typeof value === 'object' ? value as Record<string, unknown> : {}
+  const id = String(data.id ?? '')
+  const status = (() => {
+    if (data.status === 'resolved' || data.status === 'open') return data.status
+    if (data.status !== null && data.status !== undefined) {
+      console.warn(`normalizeIncident: unexpected status ${String(data.status)} for incident ${id}, falling back to 'open'`)
+    }
+    return 'open'
+  })()
+  const confidence = (() => {
+    if (data.confidence === 'confirmed' || data.confidence === 'suspected') return data.confidence
+    if (data.confidence !== null && data.confidence !== undefined) {
+      console.warn(`normalizeIncident: unexpected confidence ${String(data.confidence)} for incident ${id}, falling back to 'suspected'`)
+    }
+    return 'suspected'
+  })()
+  return {
+    id,
+    opened_at: String(data.opened_at ?? ''),
+    resolved_at: data.resolved_at === null || data.resolved_at === undefined ? null : String(data.resolved_at),
+    status,
+    confidence,
+    title: String(data.title ?? ''),
+    services: stringifyJSONField(data.services, '[]'),
+    root_cause_id: typeof data.root_cause_id === 'string' ? data.root_cause_id : undefined,
+    trigger_id: typeof data.trigger_id === 'string' ? data.trigger_id : undefined,
+    node_names: stringifyJSONField(data.node_names, '[]'),
+    metadata: stringifyJSONField(data.metadata, '{}'),
+  }
+}
+
+function normalizeIncidentEntryLink(value: unknown): IncidentEntryLink | null {
+  if (!value || typeof value !== 'object') return null
+  const data = value as Record<string, unknown>
+  const rawLink = data.link
+  if (!rawLink || typeof rawLink !== 'object') return null
+  const link = rawLink as Record<string, unknown>
+  const role = link.role
+  const allowedRoles: IncidentEntryLink['link']['role'][] = ['trigger', 'cause', 'evidence', 'recovery', 'ai_cause']
+  if (typeof role !== 'string' || !(allowedRoles as string[]).includes(role)) return null
+  const entry = normalizeEntry(data.entry)
+  if (!entry) return null
+  const score = Number(link.score ?? 0)
+  return {
+    link: {
+      incident_id: String(link.incident_id ?? ''),
+      entry_id: String(link.entry_id ?? ''),
+      role: role as IncidentEntryLink['link']['role'],
+      score: Number.isFinite(score) ? score : 0,
+      ...(typeof link.reason === 'string' ? { reason: link.reason } : {}),
+    },
+    entry,
+  }
+}
+
 export interface NotificationDest {
   id: string
   name: string
@@ -517,7 +618,11 @@ export async function fetchIncidents(params?: {
   const url = '/api/incidents' + (qs.toString() ? '?' + qs.toString() : '')
   const res = await apiFetch(url)
   if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to fetch incidents'))
-  return res.json() as Promise<IncidentsPage>
+  const data = await res.json() as { incidents?: unknown[]; has_more?: unknown }
+  return {
+    incidents: Array.isArray(data.incidents) ? data.incidents.map(normalizeIncident) : [],
+    has_more: data.has_more === true,
+  }
 }
 
 export async function fetchIncidentSummary(): Promise<IncidentSummary> {
@@ -533,7 +638,13 @@ export async function fetchIncidentSummary(): Promise<IncidentSummary> {
 export async function fetchIncident(id: string): Promise<IncidentDetail> {
   const res = await apiFetch(`/api/incidents/${id}`)
   if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to fetch incident'))
-  return res.json() as Promise<IncidentDetail>
+  const data = await res.json() as { incident?: unknown; entries?: unknown[] }
+  return {
+    incident: normalizeIncident(data.incident),
+    entries: Array.isArray(data.entries)
+      ? data.entries.map(normalizeIncidentEntryLink).filter((link): link is IncidentEntryLink => link !== null)
+      : [],
+  }
 }
 
 export async function fetchIncidentsForEntryIds(entryIds: string[]): Promise<Record<string, IncidentMembership>> {
