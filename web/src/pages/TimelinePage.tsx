@@ -8,6 +8,7 @@ import {
   fetchEntryServices,
   fetchIncidentsForEntryIds,
   fetchNotes,
+  normalizeEntry,
 } from '../api/client'
 import type { Entry, EntryNote } from '../api/client'
 import { useNodePulse } from '../components/NodePulse'
@@ -1016,7 +1017,8 @@ function TimelineFeed({
     if (!lastMessage) return
 
     if (lastMessage.type === 'entry_replaced') {
-      const { entry } = lastMessage.data as { old_id: string; entry: Entry }
+      const { entry: rawEntry } = lastMessage.data as { old_id: string; entry: unknown }
+      const entry = normalizeEntry(rawEntry)
       onEntriesChanged()
       setEntries(prev => {
         if (!prev.some(existing => existing.id === entry.id)) return prev
@@ -1027,7 +1029,7 @@ function TimelineFeed({
 
     if (lastMessage.type !== 'entry') return
     onEntriesChanged()
-    const newEntry = lastMessage.data as Entry
+    const newEntry = normalizeEntry(lastMessage.data)
     const materializedGhost = ghostEntryRef.current?.id === newEntry.id
     if (renderedIdsRef.current.has(newEntry.id) && !materializedGhost) return
     if (!matchesEntryFilters(newEntry, nodeFilter, sourceFilter, serviceFilter, qFilter, hideHeartbeat)) return
