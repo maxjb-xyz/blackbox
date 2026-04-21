@@ -188,9 +188,6 @@ func addRecursive(w *fsnotify.Watcher, root watchRoot, ignorePatterns []string) 
 }
 
 func handleWalkError(root watchRoot, path string, err error) error {
-	if err == nil {
-		return nil
-	}
 	if filepath.Clean(path) == filepath.Clean(root.resolved) {
 		return err
 	}
