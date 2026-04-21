@@ -188,7 +188,7 @@ docker compose up -d
 
 #### Granting File Watcher Access
 
-The agent needs read access to every directory and file under your `WATCH_PATHS`. The right approach depends on who owns those files on the host.
+The agent needs traversal access to directories it should watch and read access to files it should diff under your `WATCH_PATHS`. The right approach depends on who owns those files on the host.
 
 ##### You own the files (easiest)
 
@@ -235,15 +235,15 @@ Notes:
 
 - `PUID`/`PGID` default to `65532` if not set. Numeric ownership is authoritative on the host — the agent image creates a `nonroot` user at UID 65532, but custom `PUID`/`PGID` values may not have a corresponding name entry in `/etc/passwd`, so always use numeric IDs when setting file ownership.
 - Parent directories must also be traversable (`x` bit), not just the final config file.
-- If part of a tree should stay unreadable, mount only the readable subtree and point `WATCH_PATHS` at that path instead.
+- If part of a tree should stay unreadable, the watcher skips that inaccessible subtree and continues tracking the rest of the root. Mounting only the readable subtree is still cleaner when you intentionally exclude private data.
 - After changing permissions or `PUID`/`PGID`, restart the agent and look for `files watcher: registered ... directories` in the logs.
 
 ### File Watcher Troubleshooting
 
 - `WATCH_PATHS` must match the container-side mount target, not the host source path. Example: `- /srv/stacks:/watch/stacks:ro` pairs with `WATCH_PATHS=/watch/stacks`.
 - On startup, the agent now logs a per-root registration line. If you see `failed to register root /watch/stacks`, the bind mount and `WATCH_PATHS` do not line up inside the container.
-- The agent runs as `PUID`/`PGID` (default `65532`). For watched bind mounts, that user must be able to traverse every directory under each watched root and read the files you want diffed. A single unreadable subdirectory can cause the whole watched root to fail registration.
-- `WATCH_IGNORE` helps skip noisy paths after they are reachable, but it cannot bypass a directory the container user cannot traverse at all. If a tree contains unreadable secrets, narrow `WATCH_PATHS` to a readable subdirectory instead of mounting the whole parent.
+- The agent runs as `PUID`/`PGID` (default `65532`). For watched bind mounts, that user must be able to traverse directories you want watched and read files you want diffed. Inaccessible child paths are skipped and logged without disabling the whole root.
+- `WATCH_IGNORE` helps skip noisy paths after they are reachable. It is still useful for reducing watch count and suppressing expected churn, but unreadable paths are ignored automatically.
 - Some editors save by replacing files instead of writing them in place. Blackbox now emits alerts for those `rename` and `chmod-style` config-file changes as well.
 - File-change metadata now includes a small line diff when the file is UTF-8 text and under the tracking limit. Obvious secret values such as `TOKEN`, `PASSWORD`, and `CLIENT_SECRET` are redacted before upload.
 

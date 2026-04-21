@@ -157,7 +157,7 @@ func addRecursive(w *fsnotify.Watcher, root watchRoot, ignorePatterns []string) 
 	count := 0
 	if err := filepath.Walk(root.resolved, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return err
+			return handleWalkError(root, path, err)
 		}
 		if info.IsDir() {
 			if isExcluded(path, ignorePatterns) {
@@ -185,6 +185,14 @@ func addRecursive(w *fsnotify.Watcher, root watchRoot, ignorePatterns []string) 
 		return count, err
 	}
 	return count, nil
+}
+
+func handleWalkError(root watchRoot, path string, err error) error {
+	if filepath.Clean(path) == filepath.Clean(root.resolved) {
+		return err
+	}
+	log.Printf("files watcher: skipping inaccessible path %s: %v", path, err)
+	return nil
 }
 
 func isExcluded(path string, ignorePatterns []string) bool {
@@ -339,7 +347,7 @@ func primeSnapshots(roots []watchRoot, ignorePatterns []string) *snapshotStore {
 	for _, root := range roots {
 		if err := filepath.Walk(root.resolved, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
-				return err
+				return handleWalkError(root, path, err)
 			}
 			logicalPath := logicalPathFor(path, roots)
 			if info.IsDir() {
