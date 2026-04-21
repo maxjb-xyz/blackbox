@@ -37,22 +37,30 @@ export interface EntriesPage {
 }
 
 function stringifyJSONField(value: unknown, fallback: string): string {
-  if (typeof value === 'string') return value
+  if (typeof value === 'string') {
+    try {
+      return JSON.stringify(JSON.parse(value))
+    } catch {
+      return JSON.stringify(value)
+    }
+  }
   if (value === null || value === undefined) return fallback
   try {
     return JSON.stringify(value) ?? fallback
   } catch {
-    return String(value)
+    return JSON.stringify(String(value))
   }
 }
 
-export function normalizeEntry(value: unknown): Entry {
+export function normalizeEntry(value: unknown): Entry | null {
   const data = value && typeof value === 'object' ? value as Record<string, unknown> : {}
+  if (typeof data.id !== 'string' || data.id.trim() === '') return null
+  if (typeof data.timestamp !== 'string' || data.timestamp.trim() === '') return null
   const correlatedId = data.correlated_id
   const composeService = data.compose_service
   return {
-    id: String(data.id ?? ''),
-    timestamp: String(data.timestamp ?? ''),
+    id: data.id,
+    timestamp: data.timestamp,
     node_name: String(data.node_name ?? ''),
     source: String(data.source ?? ''),
     service: String(data.service ?? ''),
@@ -220,7 +228,9 @@ export async function fetchEntries(params: {
   if (!res.ok) throw new Error('Failed to fetch entries')
   const data = await res.json() as { entries?: unknown[]; next_cursor?: unknown }
   return {
-    entries: Array.isArray(data.entries) ? data.entries.map(normalizeEntry) : [],
+    entries: Array.isArray(data.entries)
+      ? data.entries.map(normalizeEntry).filter((entry): entry is Entry => entry !== null)
+      : [],
     ...(typeof data.next_cursor === 'string' ? { next_cursor: data.next_cursor } : {}),
   }
 }
@@ -234,7 +244,9 @@ export async function fetchEntryServices(): Promise<{ services: string[] }> {
 export async function fetchEntry(id: string): Promise<Entry> {
   const res = await apiFetch(`/api/entries/${id}`)
   if (!res.ok) throw new Error('Entry not found')
-  return normalizeEntry(await res.json())
+  const entry = normalizeEntry(await res.json())
+  if (!entry) throw new Error('Invalid entry response')
+  return entry
 }
 
 export async function fetchNotes(entryId: string): Promise<EntryNote[]> {
@@ -507,12 +519,27 @@ export interface IncidentSummary {
 
 function normalizeIncident(value: unknown): Incident {
   const data = value && typeof value === 'object' ? value as Record<string, unknown> : {}
+  const id = String(data.id ?? '')
+  const status = (() => {
+    if (data.status === 'resolved' || data.status === 'open') return data.status
+    if (data.status !== null && data.status !== undefined) {
+      console.warn(`normalizeIncident: unexpected status ${String(data.status)} for incident ${id}, falling back to 'open'`)
+    }
+    return 'open'
+  })()
+  const confidence = (() => {
+    if (data.confidence === 'confirmed' || data.confidence === 'suspected') return data.confidence
+    if (data.confidence !== null && data.confidence !== undefined) {
+      console.warn(`normalizeIncident: unexpected confidence ${String(data.confidence)} for incident ${id}, falling back to 'suspected'`)
+    }
+    return 'suspected'
+  })()
   return {
-    id: String(data.id ?? ''),
+    id,
     opened_at: String(data.opened_at ?? ''),
     resolved_at: data.resolved_at === null || data.resolved_at === undefined ? null : String(data.resolved_at),
-    status: data.status === 'resolved' ? 'resolved' : 'open',
-    confidence: data.confidence === 'confirmed' ? 'confirmed' : 'suspected',
+    status,
+    confidence,
     title: String(data.title ?? ''),
     services: stringifyJSONField(data.services, '[]'),
     root_cause_id: typeof data.root_cause_id === 'string' ? data.root_cause_id : undefined,
@@ -530,15 +557,19 @@ function normalizeIncidentEntryLink(value: unknown): IncidentEntryLink | null {
   const link = rawLink as Record<string, unknown>
   const role = link.role
   const allowedRoles: IncidentEntryLink['link']['role'][] = ['trigger', 'cause', 'evidence', 'recovery', 'ai_cause']
+  if (typeof role !== 'string' || !(allowedRoles as string[]).includes(role)) return null
+  const entry = normalizeEntry(data.entry)
+  if (!entry) return null
+  const score = Number(link.score ?? 0)
   return {
     link: {
       incident_id: String(link.incident_id ?? ''),
       entry_id: String(link.entry_id ?? ''),
-      role: typeof role === 'string' && (allowedRoles as string[]).includes(role) ? role as IncidentEntryLink['link']['role'] : 'evidence',
-      score: typeof link.score === 'number' ? link.score : Number(link.score ?? 0),
+      role: role as IncidentEntryLink['link']['role'],
+      score: Number.isFinite(score) ? score : 0,
       ...(typeof link.reason === 'string' ? { reason: link.reason } : {}),
     },
-    entry: normalizeEntry(data.entry),
+    entry,
   }
 }
 

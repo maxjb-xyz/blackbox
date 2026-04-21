@@ -27,6 +27,7 @@ function isEntry(value: unknown): value is Entry {
 }
 
 function extractComposeService(entry: Entry): string | null {
+  if (entry.compose_service && entry.compose_service !== entry.service) return entry.compose_service
   if (entry.source !== 'docker') return null
   try {
     const meta = JSON.parse(entry.metadata || '{}')
@@ -1017,8 +1018,11 @@ function TimelineFeed({
     if (!lastMessage) return
 
     if (lastMessage.type === 'entry_replaced') {
-      const { entry: rawEntry } = lastMessage.data as { old_id: string; entry: unknown }
+      const data = lastMessage.data
+      if (!data || typeof data !== 'object' || !('entry' in data)) return
+      const rawEntry = (data as { entry: unknown }).entry
       const entry = normalizeEntry(rawEntry)
+      if (!entry) return
       onEntriesChanged()
       setEntries(prev => {
         if (!prev.some(existing => existing.id === entry.id)) return prev
@@ -1028,8 +1032,9 @@ function TimelineFeed({
     }
 
     if (lastMessage.type !== 'entry') return
-    onEntriesChanged()
     const newEntry = normalizeEntry(lastMessage.data)
+    if (!newEntry) return
+    onEntriesChanged()
     const materializedGhost = ghostEntryRef.current?.id === newEntry.id
     if (renderedIdsRef.current.has(newEntry.id) && !materializedGhost) return
     if (!matchesEntryFilters(newEntry, nodeFilter, sourceFilter, serviceFilter, qFilter, hideHeartbeat)) return
