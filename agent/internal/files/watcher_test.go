@@ -155,6 +155,70 @@ func TestWatch_FollowsSymlinkedRootDirectory(t *testing.T) {
 	}
 }
 
+func TestAddRecursive_SkipsUnreadableChildDirectory(t *testing.T) {
+	skipIfUnreadableDirsRemainReadable(t)
+
+	root := t.TempDir()
+	readable := filepath.Join(root, "readable")
+	unreadable := filepath.Join(root, "unreadable")
+	if err := os.MkdirAll(readable, 0o755); err != nil {
+		t.Fatalf("mkdir readable dir: %v", err)
+	}
+	if err := os.MkdirAll(unreadable, 0o755); err != nil {
+		t.Fatalf("mkdir unreadable dir: %v", err)
+	}
+	if err := os.Chmod(unreadable, 0); err != nil {
+		t.Fatalf("chmod unreadable dir: %v", err)
+	}
+	defer func() {
+		_ = os.Chmod(unreadable, 0o755)
+	}()
+
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		t.Fatalf("new fsnotify watcher: %v", err)
+	}
+	defer func() {
+		_ = watcher.Close()
+	}()
+
+	count, err := addRecursive(watcher, watchRoot{configured: root, resolved: root}, nil)
+	if err != nil {
+		t.Fatalf("addRecursive returned error for unreadable child: %v", err)
+	}
+	if count == 0 {
+		t.Fatal("expected addRecursive to register readable directories")
+	}
+}
+
+func TestPrimeSnapshots_SkipsUnreadableChildDirectory(t *testing.T) {
+	skipIfUnreadableDirsRemainReadable(t)
+
+	root := t.TempDir()
+	unreadable := filepath.Join(root, "aaa-unreadable")
+	if err := os.MkdirAll(unreadable, 0o755); err != nil {
+		t.Fatalf("mkdir unreadable dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(unreadable, "secret.env"), []byte("TOKEN=hidden\n"), 0o644); err != nil {
+		t.Fatalf("write unreadable child file: %v", err)
+	}
+	visible := filepath.Join(root, "zzz-visible.yml")
+	if err := os.WriteFile(visible, []byte("services:\n  app:\n    image: example/app\n"), 0o644); err != nil {
+		t.Fatalf("write visible file: %v", err)
+	}
+	if err := os.Chmod(unreadable, 0); err != nil {
+		t.Fatalf("chmod unreadable dir: %v", err)
+	}
+	defer func() {
+		_ = os.Chmod(unreadable, 0o755)
+	}()
+
+	store := primeSnapshots([]watchRoot{{configured: root, resolved: root}}, nil)
+	if _, ok := store.Get(visible); !ok {
+		t.Fatal("expected snapshot priming to continue after unreadable child directory")
+	}
+}
+
 func TestWatch_RedactsSensitiveDiffValues(t *testing.T) {
 	root := t.TempDir()
 	target := filepath.Join(root, ".env")
@@ -246,6 +310,16 @@ func TestEventNameForOp_IncludesChmod(t *testing.T) {
 				t.Fatalf("eventNameForOp(%s) = %q, want %q", tt.name, got, tt.want)
 			}
 		})
+	}
+}
+
+func skipIfUnreadableDirsRemainReadable(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod-based permission checks are not portable on Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root can still traverse directories with permission bits cleared")
 	}
 }
 
