@@ -74,28 +74,34 @@ type ollamaResponse struct {
 }
 
 type correlationResponse struct {
-	Summary  string `json:"summary"`
-	Verified *bool  `json:"verified"`
-	Findings []struct {
-		Kind       string   `json:"kind"`
-		Confidence float64  `json:"confidence"`
-		Title      string   `json:"title"`
-		Detail     string   `json:"detail"`
-		Evidence   []string `json:"evidence"`
-	} `json:"findings"`
-	Annotations []struct {
-		EntryID    string   `json:"entry_id"`
-		Kind       string   `json:"kind"`
-		Confidence float64  `json:"confidence"`
-		Title      string   `json:"title"`
-		Detail     string   `json:"detail"`
-		Evidence   []string `json:"evidence"`
-	} `json:"annotations"`
-	Causes []struct {
-		EntryID    string  `json:"entry_id"`
-		Confidence float64 `json:"confidence"`
-		Reason     string  `json:"reason"`
-	} `json:"causes"`
+	Summary     string       `json:"summary"`
+	Verified    *bool        `json:"verified"`
+	Findings    []Finding    `json:"findings"`
+	Annotations []Annotation `json:"annotations"`
+	Causes      []Cause      `json:"causes"`
+}
+
+type Finding struct {
+	Kind       string   `json:"kind"`
+	Confidence float64  `json:"confidence"`
+	Title      string   `json:"title"`
+	Detail     string   `json:"detail"`
+	Evidence   []string `json:"evidence"`
+}
+
+type Annotation struct {
+	EntryID    string   `json:"entry_id"`
+	Kind       string   `json:"kind"`
+	Confidence float64  `json:"confidence"`
+	Title      string   `json:"title"`
+	Detail     string   `json:"detail"`
+	Evidence   []string `json:"evidence"`
+}
+
+type Cause struct {
+	EntryID    string  `json:"entry_id"`
+	Confidence float64 `json:"confidence"`
+	Reason     string  `json:"reason"`
 }
 
 type aiFindingMetadata struct {
@@ -451,7 +457,7 @@ func (e *AIEnricher) correlate(dispatch aiDispatch) {
 
 	findings := sanitizeAIFindings(response.Findings)
 	annotations := sanitizeAIAnnotations(response.Annotations, validIDs)
-	verified := acceptedCauseCount == 0
+	verified := len(response.Causes) == 0
 	if response.Verified != nil {
 		verified = *response.Verified && acceptedCauseCount == 0
 	}
@@ -746,13 +752,7 @@ Keep all titles short and all details concrete. Do not invent entry IDs or evide
 	return b.String()
 }
 
-func sanitizeAIFindings(raw []struct {
-	Kind       string   `json:"kind"`
-	Confidence float64  `json:"confidence"`
-	Title      string   `json:"title"`
-	Detail     string   `json:"detail"`
-	Evidence   []string `json:"evidence"`
-}) []aiFindingMetadata {
+func sanitizeAIFindings(raw []Finding) []aiFindingMetadata {
 	findings := make([]aiFindingMetadata, 0, len(raw))
 	for _, finding := range raw {
 		title := sanitizeExternalText(truncate(strings.TrimSpace(finding.Title), 120))
@@ -774,14 +774,7 @@ func sanitizeAIFindings(raw []struct {
 	return findings
 }
 
-func sanitizeAIAnnotations(raw []struct {
-	EntryID    string   `json:"entry_id"`
-	Kind       string   `json:"kind"`
-	Confidence float64  `json:"confidence"`
-	Title      string   `json:"title"`
-	Detail     string   `json:"detail"`
-	Evidence   []string `json:"evidence"`
-}, validIDs map[string]struct{}) []aiAnnotationMetadata {
+func sanitizeAIAnnotations(raw []Annotation, validIDs map[string]struct{}) []aiAnnotationMetadata {
 	annotations := make([]aiAnnotationMetadata, 0, len(raw))
 	seenByEntry := make(map[string]int, len(raw))
 	for _, annotation := range raw {
@@ -837,8 +830,9 @@ func normalizeAIKind(value, fallback string) string {
 	if value == "" {
 		return fallback
 	}
-	if len(value) > 40 {
-		return value[:40]
+	runes := []rune(value)
+	if len(runes) > 40 {
+		return string(runes[:40])
 	}
 	return value
 }

@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"blackbox/server/internal/db"
 	"blackbox/server/internal/models"
@@ -475,7 +476,8 @@ func TestCorrelateAsync_DropsHallucinatedEntryIDs(t *testing.T) {
 			return false
 		}
 		meta := parseIncidentTestMetadata(t, inc.Metadata)
-		return meta["ai_verified"] == true && meta["ai_enhanced_ran"] == true
+		_, pending := meta["ai_pending"]
+		return meta["ai_enhanced_ran"] == true && !pending
 	}, time.Second, 10*time.Millisecond)
 
 	var links []models.IncidentEntry
@@ -484,13 +486,19 @@ func TestCorrelateAsync_DropsHallucinatedEntryIDs(t *testing.T) {
 
 	require.NoError(t, database.First(&inc, "id = ?", incidentID).Error)
 	meta := parseIncidentTestMetadata(t, inc.Metadata)
-	require.Equal(t, true, meta["ai_verified"])
+	require.NotContains(t, meta, "ai_verified")
 }
 
 func TestCorrelationScopeNodes_DropsEmptyFallback(t *testing.T) {
 	require.Empty(t, correlationScopeNodes("", nil, "   "))
 	require.Equal(t, []string{"node-01"}, correlationScopeNodes("", nil, " node-01 "))
 	require.Equal(t, []string{"node-01"}, correlationScopeNodes(`[""]`, nil, " node-01 "))
+}
+
+func TestNormalizeAIKind_TruncatesRunesSafely(t *testing.T) {
+	got := normalizeAIKind(strings.Repeat("å", 41), "fallback")
+	require.True(t, utf8.ValidString(got))
+	require.Len(t, []rune(got), 40)
 }
 
 func TestAIEnricher_LoadAIConfig_FallsBackToLegacyOllamaSettings(t *testing.T) {
