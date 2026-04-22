@@ -610,6 +610,129 @@ body {
   outline-offset: -1px;
 }
 
+.event-chain-item {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.025);
+}
+
+.event-chain-item:last-child {
+  border-bottom: 0;
+}
+
+.ai-entry-annotation {
+  margin: 2px 4px 6px 78px;
+  padding: 6px 8px;
+  border-left: 2px solid #7c3aed;
+  background: rgba(124, 58, 237, 0.045);
+  color: #9ca3af;
+  line-height: 1.45;
+}
+
+.ai-entry-annotation-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+  color: #a78bfa;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+}
+
+.ai-entry-annotation-confidence {
+  color: #71717a;
+}
+
+.ai-entry-annotation-title {
+  color: #d6d3d1;
+  font-size: 11px;
+  margin-bottom: 2px;
+}
+
+.ai-entry-annotation-detail {
+  color: #8b949e;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.ai-entry-annotation-evidence,
+.ai-finding-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 5px;
+}
+
+.ai-entry-annotation-evidence span,
+.ai-finding-evidence span {
+  border: 1px solid rgba(167, 139, 250, 0.18);
+  color: #a1a1aa;
+  padding: 2px 5px;
+  font-size: 10px;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+
+.ai-findings-panel {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+  margin-bottom: 10px;
+}
+
+.ai-findings-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  margin-bottom: 7px;
+}
+
+.ai-findings-window {
+  color: #71717a;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.ai-findings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+}
+
+.ai-finding {
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-left: 2px solid #7c3aed;
+  background: rgba(255, 255, 255, 0.018);
+  padding: 8px 10px;
+  min-width: 0;
+}
+
+.ai-finding-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #a78bfa;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  margin-bottom: 5px;
+}
+
+.ai-finding-title {
+  color: var(--text);
+  font-size: 12px;
+  margin-bottom: 4px;
+  overflow-wrap: anywhere;
+}
+
+.ai-finding-detail {
+  color: #9ca3af;
+  line-height: 1.5;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
 .timeline-controls {
   display: flex;
   flex-direction: column;
@@ -1078,6 +1201,14 @@ body {
   .event-chain-row > span {
     display: block;
     margin-bottom: 4px;
+  }
+
+  .ai-entry-annotation {
+    margin: 2px 4px 8px 4px;
+  }
+
+  .ai-findings-grid {
+    grid-template-columns: 1fr;
   }
 
   .diff-modal {

@@ -58,10 +58,10 @@ func TestManager_SuspectedIncidentDispatchesAIAnalysisWithTriggerLogs(t *testing
 
 	select {
 	case prompt := <-promptSeen:
-		require.Contains(t, prompt, "concise but detailed root cause analysis")
+		require.Contains(t, prompt, "concise but useful root cause analysis")
 		require.Contains(t, prompt, "[trigger] docker/die")
 		require.Contains(t, prompt, "Log: fatal: invalid nginx.conf")
-		require.Contains(t, prompt, "Root cause summary in 2-4 sentences")
+		require.Contains(t, prompt, "Do not answer with a single generic sentence")
 		require.True(t, strings.Contains(prompt, "Confidence: suspected"), prompt)
 	default:
 		t.Fatal("expected Ollama prompt for suspected incident")
@@ -302,7 +302,8 @@ func TestCorrelateAsync_UsesScopedIncidentNodesAndSetsVerified(t *testing.T) {
 	select {
 	case prompt := <-promptSeen:
 		require.Contains(t, prompt, "Recent events from the scoped incident timeline")
-		require.Contains(t, prompt, "\"summary\": \"<concise but detailed 2-4 sentence root cause summary>\"")
+		require.Contains(t, prompt, "\"findings\"")
+		require.Contains(t, prompt, "\"annotations\"")
 		require.Contains(t, prompt, "node=media-node")
 		require.Contains(t, prompt, "Log: rss sync panic")
 		require.Contains(t, prompt, "Log: unit entered failed state")
@@ -310,6 +311,114 @@ func TestCorrelateAsync_UsesScopedIncidentNodesAndSetsVerified(t *testing.T) {
 	default:
 		t.Fatal("expected Ollama correlation prompt")
 	}
+}
+
+func TestCorrelateAsync_StoresFindingsAnnotationsAndDefaultsVerified(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	require.NoError(t, database.Create(&models.AppSetting{Key: aiURLKey, Value: "http://ollama.local"}).Error)
+	require.NoError(t, database.Create(&models.AppSetting{Key: aiModelKey, Value: "llama3.2"}).Error)
+
+	now := time.Now().UTC()
+	triggerID := ulid.Make().String()
+	causeID := ulid.Make().String()
+
+	require.NoError(t, database.Create(&types.Entry{
+		ID:        triggerID,
+		Timestamp: now,
+		NodeName:  "node-01",
+		Source:    "systemd",
+		Service:   "jackett.service",
+		Event:     "failed",
+		Content:   "jackett.service failed",
+		Metadata:  `{"log_snippet":["copying dlls from /tmp/JackettUpdate to /opt/Jackett"]}`,
+	}).Error)
+	require.NoError(t, database.Create(&types.Entry{
+		ID:        causeID,
+		Timestamp: now.Add(-30 * time.Second),
+		NodeName:  "node-01",
+		Source:    "systemd",
+		Service:   "jackett.service",
+		Event:     "restart",
+		Content:   "jackett.service restarted",
+		Metadata:  `{}`,
+	}).Error)
+
+	incidentID := ulid.Make().String()
+	require.NoError(t, database.Create(&models.Incident{
+		ID:         incidentID,
+		OpenedAt:   now,
+		Status:     "resolved",
+		Confidence: "suspected",
+		Title:      "jackett.service - systemd unit failed",
+		Services:   `["jackett.service"]`,
+		NodeNames:  `["node-01"]`,
+		TriggerID:  triggerID,
+		Metadata:   `{}`,
+	}).Error)
+	require.NoError(t, database.Create(&models.IncidentEntry{
+		IncidentID: incidentID,
+		EntryID:    triggerID,
+		Role:       "trigger",
+		Score:      0,
+	}).Error)
+	require.NoError(t, database.Create(&models.IncidentEntry{
+		IncidentID: incidentID,
+		EntryID:    causeID,
+		Role:       "evidence",
+		Score:      0,
+	}).Error)
+
+	originalCall := callCorrelateGenerateFunc
+	originalDelay := correlateDelay
+	callCorrelateGenerateFunc = func(_ context.Context, provider LLMProvider, model, prompt string, timeout time.Duration) (string, error) {
+		return `{
+			"summary":"Jackett appears to have failed during a self-update file replacement.",
+			"findings":[{"kind":"key_clue","confidence":0.82,"title":"Self-update activity","detail":"The log points to file replacement during startup rather than a generic systemd fault.","evidence":["copying dlls from /tmp/JackettUpdate"]}],
+			"annotations":[{"entry_id":"` + triggerID + `","kind":"key_evidence","confidence":0.78,"title":"Update file copy in failure log","detail":"The attached log shows DLLs copied into /opt/Jackett immediately before the failure.","evidence":["/tmp/JackettUpdate"]}],
+			"causes":[]
+		}`, nil
+	}
+	correlateDelay = 0
+	defer func() {
+		callCorrelateGenerateFunc = originalCall
+		correlateDelay = originalDelay
+	}()
+
+	enricher := NewAIEnricher(database, nil)
+	enricher.CorrelateAsync(incidentID, nil, "node-01")
+
+	var incident models.Incident
+	require.Eventually(t, func() bool {
+		if err := database.First(&incident, "id = ?", incidentID).Error; err != nil {
+			return false
+		}
+		meta := parseIncidentTestMetadata(t, incident.Metadata)
+		return meta["ai_analysis"] == "Jackett appears to have failed during a self-update file replacement." &&
+			meta["ai_verified"] == true &&
+			meta["ai_enhanced_ran"] == true
+	}, time.Second, 10*time.Millisecond)
+
+	meta := parseIncidentTestMetadata(t, incident.Metadata)
+	require.Equal(t, float64(2), meta["ai_reviewed_event_count"])
+
+	var findings []aiFindingMetadata
+	findingsRaw, err := json.Marshal(meta["ai_findings"])
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(findingsRaw, &findings))
+	require.Len(t, findings, 1)
+	require.Equal(t, "key_clue", findings[0].Kind)
+	require.Equal(t, 82, findings[0].Confidence)
+
+	var annotations []aiAnnotationMetadata
+	annotationsRaw, err := json.Marshal(meta["ai_annotations"])
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(annotationsRaw, &annotations))
+	require.Len(t, annotations, 1)
+	require.Equal(t, triggerID, annotations[0].EntryID)
+	require.Equal(t, "key_evidence", annotations[0].Kind)
+	require.Equal(t, 78, annotations[0].Confidence)
 }
 
 func TestCorrelateAsync_DropsHallucinatedEntryIDs(t *testing.T) {
