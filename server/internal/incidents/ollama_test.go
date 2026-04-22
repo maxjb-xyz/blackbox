@@ -204,6 +204,7 @@ func TestCorrelateAsync_WritesAICauseLinks(t *testing.T) {
 	meta := parseIncidentTestMetadata(t, inc.Metadata)
 	require.Equal(t, "nginx crashed due to resource exhaustion", meta["ai_analysis"])
 	require.Equal(t, "enhanced", meta["ai_mode"])
+	require.NotContains(t, meta, "ai_verified")
 }
 
 func TestCorrelateAsync_UsesScopedIncidentNodesAndSetsVerified(t *testing.T) {
@@ -468,19 +469,22 @@ func TestCorrelateAsync_DropsHallucinatedEntryIDs(t *testing.T) {
 	enricher := NewAIEnricher(database, nil)
 	enricher.CorrelateAsync(incidentID, nil, "node-01")
 
+	var inc models.Incident
 	require.Eventually(t, func() bool {
-		var inc models.Incident
 		if err := database.First(&inc, "id = ?", incidentID).Error; err != nil {
 			return false
 		}
 		meta := parseIncidentTestMetadata(t, inc.Metadata)
-		_, pending := meta["ai_pending"]
-		return !pending
+		return meta["ai_verified"] == true && meta["ai_enhanced_ran"] == true
 	}, time.Second, 10*time.Millisecond)
 
 	var links []models.IncidentEntry
 	require.NoError(t, database.Where("incident_id = ? AND role = ?", incidentID, "ai_cause").Find(&links).Error)
 	require.Empty(t, links)
+
+	require.NoError(t, database.First(&inc, "id = ?", incidentID).Error)
+	meta := parseIncidentTestMetadata(t, inc.Metadata)
+	require.Equal(t, true, meta["ai_verified"])
 }
 
 func TestCorrelationScopeNodes_DropsEmptyFallback(t *testing.T) {

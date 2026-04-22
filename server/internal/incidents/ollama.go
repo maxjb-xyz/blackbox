@@ -394,6 +394,7 @@ func (e *AIEnricher) correlate(dispatch aiDispatch) {
 		validIDs[entry.ID] = struct{}{}
 	}
 
+	acceptedCauseCount := 0
 	if err := e.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("incident_id = ? AND role = ?", dispatch.incidentID, "ai_cause").Delete(&models.IncidentEntry{}).Error; err != nil {
 			return err
@@ -439,6 +440,7 @@ func (e *AIEnricher) correlate(dispatch aiDispatch) {
 			if err := tx.Create(&link).Error; err != nil {
 				return fmt.Errorf("write ai_cause link %s->%s: %w", dispatch.incidentID, cause.EntryID, err)
 			}
+			acceptedCauseCount++
 		}
 		return nil
 	}); err != nil {
@@ -449,9 +451,9 @@ func (e *AIEnricher) correlate(dispatch aiDispatch) {
 
 	findings := sanitizeAIFindings(response.Findings)
 	annotations := sanitizeAIAnnotations(response.Annotations, validIDs)
-	verified := len(response.Causes) == 0
+	verified := acceptedCauseCount == 0
 	if response.Verified != nil {
-		verified = *response.Verified && len(response.Causes) == 0
+		verified = *response.Verified && acceptedCauseCount == 0
 	}
 
 	if !e.updateIncidentMetadata(dispatch.incidentID, func(meta map[string]interface{}) {

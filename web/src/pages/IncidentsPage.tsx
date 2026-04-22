@@ -671,6 +671,25 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
                             {link.reason}
                           </div>
                         )}
+                        {annotationsByEntry[link.entry_id]?.map((annotation, idx) => (
+                          <div
+                            key={`${annotation.entry_id}-${annotation.kind}-${idx}`}
+                            style={{ color: 'var(--muted)', fontStyle: 'italic', marginTop: 4, lineHeight: 1.5 }}
+                          >
+                            {annotation.title && (
+                              <span style={{ color: '#a78bfa', fontStyle: 'normal' }}>
+                                {annotation.title}
+                              </span>
+                            )}
+                            {annotation.title && annotation.detail && ' - '}
+                            {annotation.detail}
+                            {annotation.evidence.length > 0 && (
+                              <span style={{ display: 'block', color: '#777', marginTop: 2 }}>
+                                {annotation.evidence.join(' | ')}
+                              </span>
+                            )}
+                          </div>
+                        ))}
                         <ConfidenceBar score={link.score} />
                       </div>
                     ))}
