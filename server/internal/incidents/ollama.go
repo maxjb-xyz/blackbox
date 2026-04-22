@@ -457,7 +457,7 @@ func (e *AIEnricher) correlate(dispatch aiDispatch) {
 
 	findings := sanitizeAIFindings(response.Findings)
 	annotations := sanitizeAIAnnotations(response.Annotations, validIDs)
-	verified := len(response.Causes) == 0
+	verified := acceptedCauseCount == 0
 	if response.Verified != nil {
 		verified = *response.Verified && acceptedCauseCount == 0
 	}

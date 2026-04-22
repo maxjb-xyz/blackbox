@@ -12,6 +12,14 @@
   --danger: #FF4444;
   --info: #3399FF;
   --warning: #FF9900;
+  --ai-accent: #7c3aed;
+  --ai-accent-light: #a78bfa;
+  --ai-bg-mix: color-mix(in srgb, var(--ai-accent) 5%, transparent);
+  --ai-text: #d6d3d1;
+  --ai-text-muted: #9ca3af;
+  --ai-text-dim: #8b949e;
+  --ai-evidence-border: color-mix(in srgb, var(--ai-accent-light) 18%, transparent);
+  --ai-evidence-text: #a1a1aa;
   --success-bg: color-mix(in srgb, var(--success) 8%, transparent);
   --danger-bg: color-mix(in srgb, var(--danger) 8%, transparent);
   --info-bg: color-mix(in srgb, var(--info) 8%, transparent);
@@ -621,9 +629,9 @@ body {
 .ai-entry-annotation {
   margin: 2px 4px 6px 78px;
   padding: 6px 8px;
-  border-left: 2px solid #7c3aed;
-  background: rgba(124, 58, 237, 0.045);
-  color: #9ca3af;
+  border-left: 2px solid var(--ai-accent);
+  background: var(--ai-bg-mix);
+  color: var(--ai-text-muted);
   line-height: 1.45;
 }
 
@@ -632,23 +640,23 @@ body {
   align-items: center;
   gap: 8px;
   margin-bottom: 2px;
-  color: #a78bfa;
+  color: var(--ai-accent-light);
   font-size: 9px;
   letter-spacing: 0.12em;
 }
 
 .ai-entry-annotation-confidence {
-  color: #71717a;
+  color: var(--muted);
 }
 
 .ai-entry-annotation-title {
-  color: #d6d3d1;
+  color: var(--ai-text);
   font-size: 11px;
   margin-bottom: 2px;
 }
 
 .ai-entry-annotation-detail {
-  color: #8b949e;
+  color: var(--ai-text-dim);
   font-size: 11px;
   overflow-wrap: anywhere;
 }
@@ -663,8 +671,8 @@ body {
 
 .ai-entry-annotation-evidence span,
 .ai-finding-evidence span {
-  border: 1px solid rgba(167, 139, 250, 0.18);
-  color: #a1a1aa;
+  border: 1px solid var(--ai-evidence-border);
+  color: var(--ai-evidence-text);
   padding: 2px 5px;
   font-size: 10px;
   overflow-wrap: anywhere;
@@ -689,7 +697,7 @@ body {
 }
 
 .ai-findings-window {
-  color: #71717a;
+  color: var(--muted);
   font-size: 10px;
   letter-spacing: 0.04em;
 }
@@ -702,7 +710,7 @@ body {
 
 .ai-finding {
   border: 1px solid rgba(255, 255, 255, 0.07);
-  border-left: 2px solid #7c3aed;
+  border-left: 2px solid var(--ai-accent);
   background: rgba(255, 255, 255, 0.018);
   padding: 8px 10px;
   min-width: 0;
@@ -713,7 +721,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  color: #a78bfa;
+  color: var(--ai-accent-light);
   font-size: 9px;
   letter-spacing: 0.12em;
   margin-bottom: 5px;
@@ -727,7 +735,7 @@ body {
 }
 
 .ai-finding-detail {
-  color: #9ca3af;
+  color: var(--ai-text-muted);
   line-height: 1.5;
   font-size: 11px;
   overflow-wrap: anywhere;

@@ -405,18 +405,12 @@ func TestCorrelateAsync_StoresFindingsAnnotationsAndDefaultsVerified(t *testing.
 	meta := parseIncidentTestMetadata(t, incident.Metadata)
 	require.Equal(t, float64(2), meta["ai_reviewed_event_count"])
 
-	var findings []aiFindingMetadata
-	findingsRaw, err := json.Marshal(meta["ai_findings"])
-	require.NoError(t, err)
-	require.NoError(t, json.Unmarshal(findingsRaw, &findings))
+	findings := parseFindings(t, meta)
 	require.Len(t, findings, 1)
 	require.Equal(t, "key_clue", findings[0].Kind)
 	require.Equal(t, 82, findings[0].Confidence)
 
-	var annotations []aiAnnotationMetadata
-	annotationsRaw, err := json.Marshal(meta["ai_annotations"])
-	require.NoError(t, err)
-	require.NoError(t, json.Unmarshal(annotationsRaw, &annotations))
+	annotations := parseAnnotations(t, meta)
 	require.Len(t, annotations, 1)
 	require.Equal(t, triggerID, annotations[0].EntryID)
 	require.Equal(t, "key_evidence", annotations[0].Kind)
@@ -486,7 +480,7 @@ func TestCorrelateAsync_DropsHallucinatedEntryIDs(t *testing.T) {
 
 	require.NoError(t, database.First(&inc, "id = ?", incidentID).Error)
 	meta := parseIncidentTestMetadata(t, inc.Metadata)
-	require.NotContains(t, meta, "ai_verified")
+	require.Equal(t, true, meta["ai_verified"])
 }
 
 func TestCorrelationScopeNodes_DropsEmptyFallback(t *testing.T) {
@@ -700,4 +694,22 @@ func parseIncidentTestMetadata(t *testing.T, raw string) map[string]interface{} 
 	meta := make(map[string]interface{})
 	require.NoError(t, json.Unmarshal([]byte(raw), &meta))
 	return meta
+}
+
+func parseFindings(t *testing.T, meta map[string]interface{}) []aiFindingMetadata {
+	t.Helper()
+	var findings []aiFindingMetadata
+	raw, err := json.Marshal(meta["ai_findings"])
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(raw, &findings))
+	return findings
+}
+
+func parseAnnotations(t *testing.T, meta map[string]interface{}) []aiAnnotationMetadata {
+	t.Helper()
+	var annotations []aiAnnotationMetadata
+	raw, err := json.Marshal(meta["ai_annotations"])
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(raw, &annotations))
+	return annotations
 }

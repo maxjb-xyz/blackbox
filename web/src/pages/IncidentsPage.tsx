@@ -343,14 +343,14 @@ function AIAnnotationNote({
     return (
       <div style={{ color: 'var(--muted)', fontStyle: 'italic', marginTop: 4, lineHeight: 1.5 }}>
         {annotation.title && (
-          <span style={{ color: '#a78bfa', fontStyle: 'normal' }}>
+          <span style={{ color: 'var(--ai-accent-light)', fontStyle: 'normal' }}>
             {annotation.title}
           </span>
         )}
         {annotation.title && annotation.detail && ' - '}
         {annotation.detail}
         {annotation.evidence.length > 0 && (
-          <span style={{ display: 'block', color: '#777', marginTop: 2 }}>
+          <span style={{ display: 'block', color: 'var(--ai-text-dim)', marginTop: 2 }}>
             {annotation.evidence.join(' | ')}
           </span>
         )}
@@ -401,7 +401,7 @@ function AIFindingsPanel({
       {findings.length > 0 && (
         <div className="ai-findings-grid">
           {findings.map((finding, idx) => (
-            <div key={`${finding.kind}-${finding.title}-${idx}`} className="ai-finding">
+            <div key={idx} className="ai-finding">
               <div className="ai-finding-meta">
                 <span>{formatAIKind(finding.kind)}</span>
                 {finding.confidence > 0 && <span>{finding.confidence}%</span>}
