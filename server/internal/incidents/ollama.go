@@ -459,7 +459,7 @@ func (e *AIEnricher) correlate(dispatch aiDispatch) {
 	annotations := sanitizeAIAnnotations(response.Annotations, validIDs)
 	verified := acceptedCauseCount == 0
 	if response.Verified != nil {
-		verified = *response.Verified && acceptedCauseCount == 0
+		verified = *response.Verified && verified
 	}
 
 	if !e.updateIncidentMetadata(dispatch.incidentID, func(meta map[string]interface{}) {
