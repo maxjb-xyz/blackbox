@@ -179,6 +179,92 @@ function isIncidentAIPending(meta: Record<string, unknown>): boolean {
   return meta.ai_pending === true
 }
 
+interface AIFinding {
+  kind: string
+  confidence: number
+  title: string
+  detail: string
+  evidence: string[]
+}
+
+interface AIAnnotation extends AIFinding {
+  entry_id: string
+}
+
+function readString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function readConfidence(value: unknown): number {
+  const n = Number(value ?? 0)
+  if (!Number.isFinite(n)) return 0
+  return Math.max(0, Math.min(100, Math.round(n)))
+}
+
+function readEvidence(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.map(readString).filter(Boolean).slice(0, 3)
+}
+
+function parseAIFindings(meta: Record<string, unknown>): AIFinding[] {
+  const raw = meta.ai_findings
+  if (!Array.isArray(raw)) return []
+  return raw.flatMap(item => {
+    if (!item || typeof item !== 'object') return []
+    const data = item as Record<string, unknown>
+    const title = readString(data.title)
+    const detail = readString(data.detail)
+    if (!title && !detail) return []
+    return [{
+      kind: readString(data.kind) || 'finding',
+      confidence: readConfidence(data.confidence),
+      title,
+      detail,
+      evidence: readEvidence(data.evidence),
+    }]
+  }).slice(0, 6)
+}
+
+function parseAIAnnotations(meta: Record<string, unknown>): AIAnnotation[] {
+  const raw = meta.ai_annotations
+  if (!Array.isArray(raw)) return []
+  return raw.flatMap(item => {
+    if (!item || typeof item !== 'object') return []
+    const data = item as Record<string, unknown>
+    const entryID = readString(data.entry_id)
+    const title = readString(data.title)
+    const detail = readString(data.detail)
+    if (!entryID || (!title && !detail)) return []
+    return [{
+      entry_id: entryID,
+      kind: readString(data.kind) || 'note',
+      confidence: readConfidence(data.confidence),
+      title,
+      detail,
+      evidence: readEvidence(data.evidence),
+    }]
+  }).slice(0, 12)
+}
+
+function groupAnnotationsByEntry(annotations: AIAnnotation[]): Record<string, AIAnnotation[]> {
+  return annotations.reduce<Record<string, AIAnnotation[]>>((groups, annotation) => {
+    groups[annotation.entry_id] = [...(groups[annotation.entry_id] ?? []), annotation]
+    return groups
+  }, {})
+}
+
+function formatAIKind(kind: string): string {
+  return kind.replace(/[_-]+/g, ' ').trim().toUpperCase() || 'NOTE'
+}
+
+function formatReviewedWindow(meta: Record<string, unknown>): string | null {
+  const count = Number(meta.ai_reviewed_event_count)
+  const start = readString(meta.ai_reviewed_window_start)
+  const end = readString(meta.ai_reviewed_window_end)
+  if (!Number.isFinite(count) || count <= 0 || !start || !end) return null
+  return `reviewed ${count} timeline events from ${formatTs(start)} to ${formatTs(end)}`
+}
+
 function incidentFingerprint(incident: Incident): string {
   return [
     incident.id,
@@ -246,6 +332,97 @@ function ConfidenceBar({ score }: { score: number }) {
   )
 }
 
+function AIAnnotationNote({
+  annotation,
+  variant = 'card',
+}: {
+  annotation: AIAnnotation
+  variant?: 'card' | 'inline'
+}) {
+  if (variant === 'inline') {
+    return (
+      <div style={{ color: 'var(--muted)', fontStyle: 'italic', marginTop: 4, lineHeight: 1.5 }}>
+        {annotation.title && (
+          <span style={{ color: 'var(--ai-accent-light)', fontStyle: 'normal' }}>
+            {annotation.title}
+          </span>
+        )}
+        {annotation.title && annotation.detail && ' - '}
+        {annotation.detail}
+        {annotation.evidence.length > 0 && (
+          <span style={{ display: 'block', color: 'var(--ai-text-dim)', marginTop: 2 }}>
+            {annotation.evidence.join(' | ')}
+          </span>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="ai-entry-annotation">
+      <div className="ai-entry-annotation-head">
+        <span className="ai-entry-annotation-kind">{formatAIKind(annotation.kind)}</span>
+        {annotation.confidence > 0 && (
+          <span className="ai-entry-annotation-confidence">{annotation.confidence}%</span>
+        )}
+      </div>
+      {annotation.title && (
+        <div className="ai-entry-annotation-title">{annotation.title}</div>
+      )}
+      {annotation.detail && (
+        <div className="ai-entry-annotation-detail">{annotation.detail}</div>
+      )}
+      {annotation.evidence.length > 0 && (
+        <div className="ai-entry-annotation-evidence">
+          {annotation.evidence.map((line, idx) => (
+            <span key={`${line}-${idx}`}>{line}</span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AIFindingsPanel({
+  findings,
+  reviewedWindow,
+}: {
+  findings: AIFinding[]
+  reviewedWindow: string | null
+}) {
+  if (findings.length === 0 && !reviewedWindow) return null
+
+  return (
+    <div className="ai-findings-panel">
+      <div className="ai-findings-header">
+        <span>AI FINDINGS</span>
+        {reviewedWindow && <span className="ai-findings-window">{reviewedWindow}</span>}
+      </div>
+      {findings.length > 0 && (
+        <div className="ai-findings-grid">
+          {findings.map((finding, idx) => (
+            <div key={idx} className="ai-finding">
+              <div className="ai-finding-meta">
+                <span>{formatAIKind(finding.kind)}</span>
+                {finding.confidence > 0 && <span>{finding.confidence}%</span>}
+              </div>
+              {finding.title && <div className="ai-finding-title">{finding.title}</div>}
+              {finding.detail && <div className="ai-finding-detail">{finding.detail}</div>}
+              {finding.evidence.length > 0 && (
+                <div className="ai-finding-evidence">
+                  {finding.evidence.map((line, evidenceIdx) => (
+                    <span key={`${line}-${evidenceIdx}`}>{line}</span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: IncidentCardProps) {
   const [expanded, setExpanded] = useState(defaultOpen)
   const [detail, setDetail] = useState<IncidentDetail | null>(null)
@@ -308,10 +485,19 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
   const borderColor = incidentBorderColor(incident)
   const deterministicEntries = detail?.entries.filter(({ link }) => link.role !== 'ai_cause') ?? []
   const aiCauseEntries = detail?.entries.filter(({ link }) => link.role === 'ai_cause') ?? []
+  const aiFindings = parseAIFindings(meta)
+  const aiAnnotations = parseAIAnnotations(meta)
+  const annotationsByEntry = groupAnnotationsByEntry(aiAnnotations)
+  const reviewedWindow = formatReviewedWindow(meta)
   const isVerified =
     aiCauseEntries.length === 0 &&
     (meta.ai_verified === true || (meta.ai_verified === undefined && incidentMeta.ai_verified === true))
-  const hasEnhancedEvidence = isVerified || aiCauseEntries.length > 0
+  const enhancedRan = aiMode === 'enhanced' && !aiPending && (
+    typeof meta.ai_analysis === 'string' ||
+    typeof incidentMeta.ai_analysis === 'string' ||
+    meta.ai_enhanced_ran === true ||
+    incidentMeta.ai_enhanced_ran === true
+  )
 
   return (
     <div
@@ -361,7 +547,7 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
               AI THINKING
             </span>
           )}
-          {!aiPending && aiMode === 'enhanced' && hasEnhancedEvidence && (
+          {enhancedRan && (
             <span style={{ color: '#a855f7', fontSize: 11, whiteSpace: 'nowrap', letterSpacing: '0.1em', border: '1px solid #a855f7', padding: '2px 6px', lineHeight: 1.4 }}>
               {isVerified ? 'AI VERIFIED' : 'AI ENHANCED'}
             </span>
@@ -408,39 +594,47 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
                 </div>
                 <div style={{ borderTop: '1px solid var(--border)', paddingTop: 4 }}>
                   {deterministicEntries.map(({ link, entry }) => (
-                    <div
-                      key={link.entry_id}
-                      className="event-chain-row"
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => onSelectEntry(entry)}
-                      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectEntry(entry) } }}
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: '70px 130px 80px 80px 140px 1fr',
-                        gap: 8,
-                        padding: '3px 4px',
-                        alignItems: 'start',
-                        cursor: 'pointer',
-                      }}
-                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.04)' }}
-                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
-                    >
-                      <span style={{ color: roleColor(link.role) }}>
-                        {link.role.toUpperCase()}
-                        {link.role === 'cause' && detailIncident.root_cause_id === link.entry_id && ' \u2605'}
-                      </span>
-                      <span style={{ color: 'var(--muted)' }}>{formatTs(entry.timestamp)}</span>
-                      <span style={{ color: 'var(--muted)' }}>{entry.source}</span>
-                      <span style={{ color: 'var(--muted)' }}>{entry.service}</span>
-                      <span style={{ color: 'var(--text)' }}>{entry.event}</span>
-                      <span style={{ color: 'var(--muted)', wordBreak: 'break-all' }}>
-                        {link.score > 0 && `score ${link.score}`}
-                      </span>
+                    <div key={link.entry_id} className="event-chain-item">
+                      <div
+                        className="event-chain-row"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => onSelectEntry(entry)}
+                        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectEntry(entry) } }}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: '70px 130px 80px 80px 140px 1fr',
+                          gap: 8,
+                          padding: '3px 4px',
+                          alignItems: 'start',
+                          cursor: 'pointer',
+                        }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.04)' }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+                      >
+                        <span style={{ color: roleColor(link.role) }}>
+                          {link.role.toUpperCase()}
+                          {link.role === 'cause' && detailIncident.root_cause_id === link.entry_id && ' \u2605'}
+                        </span>
+                        <span style={{ color: 'var(--muted)' }}>{formatTs(entry.timestamp)}</span>
+                        <span style={{ color: 'var(--muted)' }}>{entry.source}</span>
+                        <span style={{ color: 'var(--muted)' }}>{entry.service}</span>
+                        <span style={{ color: 'var(--text)' }}>{entry.event}</span>
+                        <span style={{ color: 'var(--muted)', wordBreak: 'break-all' }}>
+                          {link.score > 0 && `score ${link.score}`}
+                        </span>
+                      </div>
+                      {annotationsByEntry[link.entry_id]?.map((annotation, idx) => (
+                        <AIAnnotationNote key={`${annotation.entry_id}-${annotation.kind}-${idx}`} annotation={annotation} />
+                      ))}
                     </div>
                   ))}
                 </div>
               </div>
+
+              {aiMode === 'enhanced' && (
+                <AIFindingsPanel findings={aiFindings} reviewedWindow={reviewedWindow} />
+              )}
 
               {aiCauseEntries.length > 0 && (
                 <div style={{ marginBottom: 8 }}>
@@ -502,6 +696,13 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
                             {link.reason}
                           </div>
                         )}
+                        {annotationsByEntry[link.entry_id]?.map((annotation, idx) => (
+                          <AIAnnotationNote
+                            key={`${annotation.entry_id}-${annotation.kind}-${idx}`}
+                            annotation={annotation}
+                            variant="inline"
+                          />
+                        ))}
                         <ConfidenceBar score={link.score} />
                       </div>
                     ))}
@@ -555,7 +756,7 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
               {aiPending && typeof meta.ai_analysis !== 'string' && (
                 <div style={{ marginBottom: 8 }}>
                   <div style={{ color: 'var(--muted)', marginBottom: 4, letterSpacing: '0.1em' }}>
-                    AI ANALYSIS
+                    {aiMode === 'enhanced' ? 'AI SUMMARY' : 'AI ANALYSIS'}
                     {typeof meta.ai_model === 'string' && (
                       <span style={{ color: 'var(--accent)', marginLeft: 8 }}>
                         [AI {'\u00B7'} {aiMode.toUpperCase()} {'\u00B7'} {meta.ai_model}]
@@ -578,7 +779,7 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
               {typeof meta.ai_analysis === 'string' && (
                 <div>
                   <div style={{ color: 'var(--muted)', marginBottom: 4, letterSpacing: '0.1em' }}>
-                    AI ANALYSIS
+                    {aiMode === 'enhanced' ? 'AI SUMMARY' : 'AI ANALYSIS'}
                     {typeof meta.ai_model === 'string' && (
                       <span style={{ color: 'var(--accent)', marginLeft: 8 }}>
                         [AI {'\u00B7'} {aiMode.toUpperCase()} {'\u00B7'} {meta.ai_model}]

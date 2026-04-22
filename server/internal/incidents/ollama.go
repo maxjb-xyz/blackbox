@@ -74,13 +74,51 @@ type ollamaResponse struct {
 }
 
 type correlationResponse struct {
-	Summary  string `json:"summary"`
-	Verified bool   `json:"verified"`
-	Causes   []struct {
-		EntryID    string  `json:"entry_id"`
-		Confidence float64 `json:"confidence"`
-		Reason     string  `json:"reason"`
-	} `json:"causes"`
+	Summary     string       `json:"summary"`
+	Verified    *bool        `json:"verified"`
+	Findings    []Finding    `json:"findings"`
+	Annotations []Annotation `json:"annotations"`
+	Causes      []Cause      `json:"causes"`
+}
+
+type Finding struct {
+	Kind       string   `json:"kind"`
+	Confidence float64  `json:"confidence"`
+	Title      string   `json:"title"`
+	Detail     string   `json:"detail"`
+	Evidence   []string `json:"evidence"`
+}
+
+type Annotation struct {
+	EntryID    string   `json:"entry_id"`
+	Kind       string   `json:"kind"`
+	Confidence float64  `json:"confidence"`
+	Title      string   `json:"title"`
+	Detail     string   `json:"detail"`
+	Evidence   []string `json:"evidence"`
+}
+
+type Cause struct {
+	EntryID    string  `json:"entry_id"`
+	Confidence float64 `json:"confidence"`
+	Reason     string  `json:"reason"`
+}
+
+type aiFindingMetadata struct {
+	Kind       string   `json:"kind"`
+	Confidence int      `json:"confidence"`
+	Title      string   `json:"title"`
+	Detail     string   `json:"detail"`
+	Evidence   []string `json:"evidence,omitempty"`
+}
+
+type aiAnnotationMetadata struct {
+	EntryID    string   `json:"entry_id"`
+	Kind       string   `json:"kind"`
+	Confidence int      `json:"confidence"`
+	Title      string   `json:"title"`
+	Detail     string   `json:"detail"`
+	Evidence   []string `json:"evidence,omitempty"`
 }
 
 type enrichEntry struct {
@@ -362,6 +400,7 @@ func (e *AIEnricher) correlate(dispatch aiDispatch) {
 		validIDs[entry.ID] = struct{}{}
 	}
 
+	acceptedCauseCount := 0
 	if err := e.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("incident_id = ? AND role = ?", dispatch.incidentID, "ai_cause").Delete(&models.IncidentEntry{}).Error; err != nil {
 			return err
@@ -407,6 +446,7 @@ func (e *AIEnricher) correlate(dispatch aiDispatch) {
 			if err := tx.Create(&link).Error; err != nil {
 				return fmt.Errorf("write ai_cause link %s->%s: %w", dispatch.incidentID, cause.EntryID, err)
 			}
+			acceptedCauseCount++
 		}
 		return nil
 	}); err != nil {
@@ -415,15 +455,36 @@ func (e *AIEnricher) correlate(dispatch aiDispatch) {
 		return
 	}
 
+	findings := sanitizeAIFindings(response.Findings)
+	annotations := sanitizeAIAnnotations(response.Annotations, validIDs)
+	verified := acceptedCauseCount == 0
+	if response.Verified != nil {
+		verified = *response.Verified && verified
+	}
+
 	if !e.updateIncidentMetadata(dispatch.incidentID, func(meta map[string]interface{}) {
 		delete(meta, "ai_pending")
 		if summary := sanitizeExternalText(response.Summary); summary != "" {
 			meta["ai_analysis"] = summary
 		}
-		if response.Verified && len(response.Causes) == 0 {
+		if verified {
 			meta["ai_verified"] = true
 		} else {
 			delete(meta, "ai_verified")
+		}
+		meta["ai_enhanced_ran"] = true
+		meta["ai_reviewed_event_count"] = len(detEntries) + len(nodeEntries)
+		meta["ai_reviewed_window_start"] = windowStart.UTC().Format(time.RFC3339)
+		meta["ai_reviewed_window_end"] = windowEnd.UTC().Format(time.RFC3339)
+		if len(findings) > 0 {
+			meta["ai_findings"] = findings
+		} else {
+			delete(meta, "ai_findings")
+		}
+		if len(annotations) > 0 {
+			meta["ai_annotations"] = annotations
+		} else {
+			delete(meta, "ai_annotations")
 		}
 		meta["ai_model"] = dispatch.model
 		meta["ai_mode"] = dispatch.mode
@@ -591,7 +652,8 @@ func uniqueStrings(values []string) []string {
 
 func buildPrompt(inc models.Incident, entries []enrichEntry) string {
 	var b strings.Builder
-	b.WriteString("You are analyzing a server incident. Provide a concise but detailed root cause analysis.\n\n")
+	b.WriteString("You are analyzing a server incident. Provide a concise but useful root cause analysis for an operator.\n")
+	b.WriteString("Look for clues that are easy to miss at first glance, especially log snippets, timing, update/config/resource hints, and whether the visible failure is only a symptom.\n\n")
 	fmt.Fprintf(&b, "Incident: %s\n", sanitizeExternalText(inc.Title))
 	fmt.Fprintf(&b, "Status: %s | Confidence: %s\n\n", inc.Status, inc.Confidence)
 	b.WriteString("Events (chronological):\n")
@@ -601,7 +663,7 @@ func buildPrompt(inc models.Incident, entries []enrichEntry) string {
 			fmt.Fprintf(&b, "  Log: %s\n", sanitizeExternalText(truncate(e.Log, 300)))
 		}
 	}
-	b.WriteString("\nProvide: 1) Root cause summary in 2-4 sentences. 2) The key timeline or log evidence that supports it. 3) A better incident title if applicable.\n")
+	b.WriteString("\nProvide 3 short sections: 1) Likely cause in 2-3 sentences. 2) Evidence, naming the exact event/log clue. 3) Uncertainty or next check. Do not answer with a single generic sentence.\n")
 	return b.String()
 }
 
@@ -626,6 +688,7 @@ func buildCorrelationPrompt(inc models.Incident, detLinks []models.IncidentEntry
 	b.WriteString("You are analyzing a server incident. Return ONLY valid JSON with no prose or markdown.\n\n")
 	fmt.Fprintf(&b, "Incident: %s\n", sanitizeExternalText(inc.Title))
 	fmt.Fprintf(&b, "Status: %s | Confidence: %s | Opened: %s\n\n", inc.Status, inc.Confidence, inc.OpenedAt.UTC().Format(time.RFC3339))
+	b.WriteString("Goal: find the non-obvious operational clues a human might miss at first glance. Distinguish a system manager symptom from the application, update, config, resource, dependency, or log evidence that likely explains it.\n\n")
 
 	roleByID := make(map[string]string, len(detLinks))
 	scoreByID := make(map[string]int, len(detLinks))
@@ -654,17 +717,135 @@ func buildCorrelationPrompt(inc models.Incident, detLinks []models.IncidentEntry
 	b.WriteString(`
 Return JSON exactly matching this schema:
 {
-  "summary": "<concise but detailed 2-4 sentence root cause summary>",
+  "summary": "<2-3 sentence operator-facing conclusion. Name the likely failure, strongest evidence, and uncertainty. Do not be generic.>",
   "verified": true,
+  "findings": [
+    {
+      "kind": "key_clue",
+      "confidence": 0.0,
+      "title": "<short label for a non-obvious clue>",
+      "detail": "<why this clue matters operationally>",
+      "evidence": ["<short quoted or paraphrased evidence from event content/logs>"]
+    }
+  ],
+  "annotations": [
+    {
+      "entry_id": "<verbatim id from any event above>",
+      "kind": "key_evidence",
+      "confidence": 0.0,
+      "title": "<small inline note title>",
+      "detail": "<specific interpretation of this existing event or its logs>",
+      "evidence": ["<short evidence phrase>"]
+    }
+  ],
   "causes": [
     {"entry_id": "<verbatim id from the events above>", "confidence": 0.0, "reason": "<why this event caused the incident>"}
   ]
 }
-Keep "summary" compact, but include the main failure and the strongest supporting evidence.
-Set "verified" to true when the deterministic links already explain the incident and no extra AI-only causes are needed.
-If no additional causes are found beyond the deterministic links, return an empty causes array.`)
+Use "findings" for cross-event clues, uncertainty, negative evidence, or log-derived interpretation that should not be crammed into the summary.
+Use "annotations" for small notes attached to specific existing events, especially when the key evidence is inside an already-linked trigger/evidence/recovery row.
+Use "causes" only for additional timeline events that are not already deterministic links. If an existing deterministic row is important, annotate it instead of repeating it as a cause.
+Set "verified" to true when the deterministic links plus annotations explain the incident and no extra AI-only causes are needed.
+If no additional causes are found beyond the deterministic links, return an empty causes array.
+Keep all titles short and all details concrete. Do not invent entry IDs or evidence.`)
 
 	return b.String()
+}
+
+func sanitizeAIFindings(raw []Finding) []aiFindingMetadata {
+	findings := make([]aiFindingMetadata, 0, len(raw))
+	for _, finding := range raw {
+		title := sanitizeExternalText(truncate(strings.TrimSpace(finding.Title), 120))
+		detail := sanitizeExternalText(truncate(strings.TrimSpace(finding.Detail), 500))
+		if title == "" && detail == "" {
+			continue
+		}
+		findings = append(findings, aiFindingMetadata{
+			Kind:       normalizeAIKind(finding.Kind, "finding"),
+			Confidence: confidencePercent(finding.Confidence),
+			Title:      title,
+			Detail:     detail,
+			Evidence:   sanitizeEvidenceList(finding.Evidence),
+		})
+		if len(findings) >= 6 {
+			break
+		}
+	}
+	return findings
+}
+
+func sanitizeAIAnnotations(raw []Annotation, validIDs map[string]struct{}) []aiAnnotationMetadata {
+	annotations := make([]aiAnnotationMetadata, 0, len(raw))
+	seenByEntry := make(map[string]int, len(raw))
+	for _, annotation := range raw {
+		entryID := strings.TrimSpace(annotation.EntryID)
+		if entryID == "" {
+			continue
+		}
+		if _, ok := validIDs[entryID]; !ok {
+			continue
+		}
+		if seenByEntry[entryID] >= 2 {
+			continue
+		}
+		title := sanitizeExternalText(truncate(strings.TrimSpace(annotation.Title), 120))
+		detail := sanitizeExternalText(truncate(strings.TrimSpace(annotation.Detail), 500))
+		if title == "" && detail == "" {
+			continue
+		}
+		annotations = append(annotations, aiAnnotationMetadata{
+			EntryID:    entryID,
+			Kind:       normalizeAIKind(annotation.Kind, "note"),
+			Confidence: confidencePercent(annotation.Confidence),
+			Title:      title,
+			Detail:     detail,
+			Evidence:   sanitizeEvidenceList(annotation.Evidence),
+		})
+		seenByEntry[entryID]++
+		if len(annotations) >= 12 {
+			break
+		}
+	}
+	return annotations
+}
+
+func sanitizeEvidenceList(values []string) []string {
+	evidence := make([]string, 0, len(values))
+	for _, value := range values {
+		value = sanitizeExternalText(truncate(strings.TrimSpace(value), 180))
+		if value == "" {
+			continue
+		}
+		evidence = append(evidence, value)
+		if len(evidence) >= 3 {
+			break
+		}
+	}
+	return evidence
+}
+
+func normalizeAIKind(value, fallback string) string {
+	value = strings.TrimSpace(strings.ToLower(value))
+	value = strings.NewReplacer(" ", "_", "-", "_").Replace(value)
+	if value == "" {
+		return fallback
+	}
+	runes := []rune(value)
+	if len(runes) > 40 {
+		return string(runes[:40])
+	}
+	return value
+}
+
+func confidencePercent(value float64) int {
+	score := int(value * 100)
+	if score < 0 {
+		return 0
+	}
+	if score > 100 {
+		return 100
+	}
+	return score
 }
 
 func extractJSON(s string) string {

@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"blackbox/server/internal/db"
 	"blackbox/server/internal/models"
@@ -58,10 +59,10 @@ func TestManager_SuspectedIncidentDispatchesAIAnalysisWithTriggerLogs(t *testing
 
 	select {
 	case prompt := <-promptSeen:
-		require.Contains(t, prompt, "concise but detailed root cause analysis")
+		require.Contains(t, prompt, "concise but useful root cause analysis")
 		require.Contains(t, prompt, "[trigger] docker/die")
 		require.Contains(t, prompt, "Log: fatal: invalid nginx.conf")
-		require.Contains(t, prompt, "Root cause summary in 2-4 sentences")
+		require.Contains(t, prompt, "Do not answer with a single generic sentence")
 		require.True(t, strings.Contains(prompt, "Confidence: suspected"), prompt)
 	default:
 		t.Fatal("expected Ollama prompt for suspected incident")
@@ -204,6 +205,7 @@ func TestCorrelateAsync_WritesAICauseLinks(t *testing.T) {
 	meta := parseIncidentTestMetadata(t, inc.Metadata)
 	require.Equal(t, "nginx crashed due to resource exhaustion", meta["ai_analysis"])
 	require.Equal(t, "enhanced", meta["ai_mode"])
+	require.NotContains(t, meta, "ai_verified")
 }
 
 func TestCorrelateAsync_UsesScopedIncidentNodesAndSetsVerified(t *testing.T) {
@@ -302,7 +304,8 @@ func TestCorrelateAsync_UsesScopedIncidentNodesAndSetsVerified(t *testing.T) {
 	select {
 	case prompt := <-promptSeen:
 		require.Contains(t, prompt, "Recent events from the scoped incident timeline")
-		require.Contains(t, prompt, "\"summary\": \"<concise but detailed 2-4 sentence root cause summary>\"")
+		require.Contains(t, prompt, "\"findings\"")
+		require.Contains(t, prompt, "\"annotations\"")
 		require.Contains(t, prompt, "node=media-node")
 		require.Contains(t, prompt, "Log: rss sync panic")
 		require.Contains(t, prompt, "Log: unit entered failed state")
@@ -310,6 +313,108 @@ func TestCorrelateAsync_UsesScopedIncidentNodesAndSetsVerified(t *testing.T) {
 	default:
 		t.Fatal("expected Ollama correlation prompt")
 	}
+}
+
+func TestCorrelateAsync_StoresFindingsAnnotationsAndDefaultsVerified(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	require.NoError(t, database.Create(&models.AppSetting{Key: aiURLKey, Value: "http://ollama.local"}).Error)
+	require.NoError(t, database.Create(&models.AppSetting{Key: aiModelKey, Value: "llama3.2"}).Error)
+
+	now := time.Now().UTC()
+	triggerID := ulid.Make().String()
+	causeID := ulid.Make().String()
+
+	require.NoError(t, database.Create(&types.Entry{
+		ID:        triggerID,
+		Timestamp: now,
+		NodeName:  "node-01",
+		Source:    "systemd",
+		Service:   "jackett.service",
+		Event:     "failed",
+		Content:   "jackett.service failed",
+		Metadata:  `{"log_snippet":["copying dlls from /tmp/JackettUpdate to /opt/Jackett"]}`,
+	}).Error)
+	require.NoError(t, database.Create(&types.Entry{
+		ID:        causeID,
+		Timestamp: now.Add(-30 * time.Second),
+		NodeName:  "node-01",
+		Source:    "systemd",
+		Service:   "jackett.service",
+		Event:     "restart",
+		Content:   "jackett.service restarted",
+		Metadata:  `{}`,
+	}).Error)
+
+	incidentID := ulid.Make().String()
+	require.NoError(t, database.Create(&models.Incident{
+		ID:         incidentID,
+		OpenedAt:   now,
+		Status:     "resolved",
+		Confidence: "suspected",
+		Title:      "jackett.service - systemd unit failed",
+		Services:   `["jackett.service"]`,
+		NodeNames:  `["node-01"]`,
+		TriggerID:  triggerID,
+		Metadata:   `{}`,
+	}).Error)
+	require.NoError(t, database.Create(&models.IncidentEntry{
+		IncidentID: incidentID,
+		EntryID:    triggerID,
+		Role:       "trigger",
+		Score:      0,
+	}).Error)
+	require.NoError(t, database.Create(&models.IncidentEntry{
+		IncidentID: incidentID,
+		EntryID:    causeID,
+		Role:       "evidence",
+		Score:      0,
+	}).Error)
+
+	originalCall := callCorrelateGenerateFunc
+	originalDelay := correlateDelay
+	callCorrelateGenerateFunc = func(_ context.Context, provider LLMProvider, model, prompt string, timeout time.Duration) (string, error) {
+		return `{
+			"summary":"Jackett appears to have failed during a self-update file replacement.",
+			"findings":[{"kind":"key_clue","confidence":0.82,"title":"Self-update activity","detail":"The log points to file replacement during startup rather than a generic systemd fault.","evidence":["copying dlls from /tmp/JackettUpdate"]}],
+			"annotations":[{"entry_id":"` + triggerID + `","kind":"key_evidence","confidence":0.78,"title":"Update file copy in failure log","detail":"The attached log shows DLLs copied into /opt/Jackett immediately before the failure.","evidence":["/tmp/JackettUpdate"]}],
+			"causes":[]
+		}`, nil
+	}
+	correlateDelay = 0
+	defer func() {
+		callCorrelateGenerateFunc = originalCall
+		correlateDelay = originalDelay
+	}()
+
+	enricher := NewAIEnricher(database, nil)
+	enricher.CorrelateAsync(incidentID, nil, "node-01")
+
+	var incident models.Incident
+	require.Eventually(t, func() bool {
+		if err := database.First(&incident, "id = ?", incidentID).Error; err != nil {
+			return false
+		}
+		meta := parseIncidentTestMetadata(t, incident.Metadata)
+		return meta["ai_analysis"] == "Jackett appears to have failed during a self-update file replacement." &&
+			meta["ai_verified"] == true &&
+			meta["ai_enhanced_ran"] == true
+	}, time.Second, 10*time.Millisecond)
+
+	meta := parseIncidentTestMetadata(t, incident.Metadata)
+	require.Equal(t, float64(2), meta["ai_reviewed_event_count"])
+
+	findings := parseFindings(t, meta)
+	require.Len(t, findings, 1)
+	require.Equal(t, "key_clue", findings[0].Kind)
+	require.Equal(t, 82, findings[0].Confidence)
+
+	annotations := parseAnnotations(t, meta)
+	require.Len(t, annotations, 1)
+	require.Equal(t, triggerID, annotations[0].EntryID)
+	require.Equal(t, "key_evidence", annotations[0].Kind)
+	require.Equal(t, 78, annotations[0].Confidence)
 }
 
 func TestCorrelateAsync_DropsHallucinatedEntryIDs(t *testing.T) {
@@ -359,25 +464,35 @@ func TestCorrelateAsync_DropsHallucinatedEntryIDs(t *testing.T) {
 	enricher := NewAIEnricher(database, nil)
 	enricher.CorrelateAsync(incidentID, nil, "node-01")
 
+	var inc models.Incident
 	require.Eventually(t, func() bool {
-		var inc models.Incident
 		if err := database.First(&inc, "id = ?", incidentID).Error; err != nil {
 			return false
 		}
 		meta := parseIncidentTestMetadata(t, inc.Metadata)
 		_, pending := meta["ai_pending"]
-		return !pending
+		return meta["ai_enhanced_ran"] == true && !pending
 	}, time.Second, 10*time.Millisecond)
 
 	var links []models.IncidentEntry
 	require.NoError(t, database.Where("incident_id = ? AND role = ?", incidentID, "ai_cause").Find(&links).Error)
 	require.Empty(t, links)
+
+	require.NoError(t, database.First(&inc, "id = ?", incidentID).Error)
+	meta := parseIncidentTestMetadata(t, inc.Metadata)
+	require.Equal(t, true, meta["ai_verified"])
 }
 
 func TestCorrelationScopeNodes_DropsEmptyFallback(t *testing.T) {
 	require.Empty(t, correlationScopeNodes("", nil, "   "))
 	require.Equal(t, []string{"node-01"}, correlationScopeNodes("", nil, " node-01 "))
 	require.Equal(t, []string{"node-01"}, correlationScopeNodes(`[""]`, nil, " node-01 "))
+}
+
+func TestNormalizeAIKind_TruncatesRunesSafely(t *testing.T) {
+	got := normalizeAIKind(strings.Repeat("å", 41), "fallback")
+	require.True(t, utf8.ValidString(got))
+	require.Len(t, []rune(got), 40)
 }
 
 func TestAIEnricher_LoadAIConfig_FallsBackToLegacyOllamaSettings(t *testing.T) {
@@ -579,4 +694,22 @@ func parseIncidentTestMetadata(t *testing.T, raw string) map[string]interface{} 
 	meta := make(map[string]interface{})
 	require.NoError(t, json.Unmarshal([]byte(raw), &meta))
 	return meta
+}
+
+func parseFindings(t *testing.T, meta map[string]interface{}) []aiFindingMetadata {
+	t.Helper()
+	var findings []aiFindingMetadata
+	raw, err := json.Marshal(meta["ai_findings"])
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(raw, &findings))
+	return findings
+}
+
+func parseAnnotations(t *testing.T, meta map[string]interface{}) []aiAnnotationMetadata {
+	t.Helper()
+	var annotations []aiAnnotationMetadata
+	raw, err := json.Marshal(meta["ai_annotations"])
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(raw, &annotations))
+	return annotations
 }
