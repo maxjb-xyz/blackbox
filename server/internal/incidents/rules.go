@@ -59,6 +59,7 @@ func (m *Manager) handleMonitorDown(entry types.Entry) {
 	}
 
 	// Prefer upgrading a suspected incident over opening a fresh one.
+	upgradedID := ""
 	for _, key := range matchedKeys {
 		incidentID := m.openIncidents[key]
 		var existing models.Incident
@@ -72,14 +73,17 @@ func (m *Manager) handleMonitorDown(entry types.Entry) {
 		if existing.Confidence == "suspected" {
 			delete(m.pendingRecover, key)
 			m.upgradeToConfirmed(incidentID, entry)
-			return
+			upgradedID = incidentID
+			break // found and upgraded; still need to clean up any confirmed incidents
 		}
 	}
 
-	// No suspected incident found. Resolve any open confirmed incidents for this
-	// service before opening a fresh one, so they are not permanently orphaned.
+	// Resolve any open confirmed incidents for this service that were not just upgraded.
 	for _, key := range matchedKeys {
 		incidentID := m.openIncidents[key]
+		if incidentID == upgradedID {
+			continue
+		}
 		now := entry.Timestamp
 		if err := m.db.Model(&models.Incident{}).
 			Where("id = ? AND status = ?", incidentID, "open").
@@ -91,6 +95,10 @@ func (m *Manager) handleMonitorDown(entry types.Entry) {
 		}
 		delete(m.openIncidents, key)
 		delete(m.pendingRecover, key)
+	}
+
+	if upgradedID != "" {
+		return
 	}
 
 	candidates, err := correlation.ScoreCauses(m.db, []string{svc}, entry.Timestamp, entry.ComposeService)
