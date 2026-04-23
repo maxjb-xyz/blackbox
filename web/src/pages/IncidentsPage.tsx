@@ -5,6 +5,7 @@ import { ChevronDown, ChevronRight, ExternalLink, X } from 'lucide-react'
 import {
   fetchIncident,
   fetchIncidents,
+  normalizeIncident,
   type Entry,
   type Incident,
   type IncidentDetail,
@@ -471,7 +472,6 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
     }
     if (incidentFingerprint(detail.incident) === incidentFingerprint(incident)) return
 
-    setDetail(prev => prev ? { ...prev, incident } : prev)
     if (!expanded) return
 
     let cancelled = false
@@ -919,11 +919,11 @@ export default function IncidentsPage() {
     if (!lastMessage) return
     const { type, data } = lastMessage
     if (type === 'incident_opened') {
-      const inc = data as Incident
+      const inc = normalizeIncident(data)
       setOpenIncidents(prev => mergeAndDedupeIncidents([inc], prev.filter(i => i.id !== inc.id)))
       setResolvedIncidents(prev => prev.filter(i => i.id !== inc.id))
     } else if (type === 'incident_updated') {
-      const inc = data as Incident
+      const inc = normalizeIncident(data)
       if (inc.status === 'resolved') {
         setOpenIncidents(prev => prev.filter(i => i.id !== inc.id))
         setResolvedIncidents(prev => mergeAndDedupeIncidents([inc], prev.filter(i => i.id !== inc.id)))
@@ -932,7 +932,7 @@ export default function IncidentsPage() {
         setResolvedIncidents(prev => prev.filter(i => i.id !== inc.id))
       }
     } else if (type === 'incident_resolved') {
-      const inc = data as Incident
+      const inc = normalizeIncident(data)
       setOpenIncidents(prev => prev.filter(i => i.id !== inc.id))
       setResolvedIncidents(prev => mergeAndDedupeIncidents([inc], prev.filter(i => i.id !== inc.id)))
     }
