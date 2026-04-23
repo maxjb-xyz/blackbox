@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useRef, useState } from 'react'
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { ChevronDown, ChevronRight, ExternalLink, X } from 'lucide-react'
@@ -170,9 +170,21 @@ function duration(opened: string, resolved?: string | null) {
 
 function roleColor(role: string): string {
   if (role === 'trigger') return 'var(--danger)'
-  if (role === 'cause') return 'var(--warning)'
+  if (role === 'immediate_cause' || role === 'cause') return 'var(--warning)'
+  if (role === 'context') return '#60a5fa'
   if (role === 'recovery') return 'var(--success)'
   return 'var(--muted)'
+}
+
+function roleLabel(role: string, source?: string): string {
+  if (role === 'trigger' && source === 'webhook') return 'OBSERVED DOWN'
+  if (role === 'trigger') return 'TRIGGER'
+  if (role === 'immediate_cause') return 'IMMEDIATE CAUSE'
+  if (role === 'cause') return 'CAUSE'
+  if (role === 'context') return 'CONTEXT'
+  if (role === 'evidence') return 'EVIDENCE'
+  if (role === 'recovery') return 'RECOVERY'
+  return (role ?? '').toUpperCase().replace(/_/g, ' ')
 }
 
 function isIncidentAIPending(meta: Record<string, unknown>): boolean {
@@ -263,6 +275,29 @@ function formatReviewedWindow(meta: Record<string, unknown>): string | null {
   const end = readString(meta.ai_reviewed_window_end)
   if (!Number.isFinite(count) || count <= 0 || !start || !end) return null
   return `reviewed ${count} timeline events from ${formatTs(start)} to ${formatTs(end)}`
+}
+
+function windowAnchorWarning(meta: Record<string, unknown>, incidentOpenedAt: string | null | undefined): string | null {
+  const anchor = readString(meta.ai_reviewed_window_anchor)
+  if (!anchor || !incidentOpenedAt) return null
+  const anchorMs = new Date(anchor).getTime()
+  const openedMs = new Date(incidentOpenedAt).getTime()
+  if (Number.isNaN(anchorMs) || Number.isNaN(openedMs)) return null
+  const deltaHours = (anchorMs - openedMs) / 3_600_000
+  if (Math.abs(deltaHours) < 2) return null
+  const when = deltaHours >= 0 ? 'after' : 'before'
+  return `⚠ AI window anchored ${Math.round(Math.abs(deltaHours))}h ${when} incident opened — events may span separate episodes`
+}
+
+function episodeSpanWarning(entries: IncidentDetail['entries']): string | null {
+  const timestamps = entries
+    .map(({ entry }) => new Date(entry.timestamp).getTime())
+    .filter(t => Number.isFinite(t))
+  if (timestamps.length < 2) return null
+  const spanHours = (timestamps.reduce((a, b) => b > a ? b : a, timestamps[0])
+    - timestamps.reduce((a, b) => b < a ? b : a, timestamps[0])) / 3_600_000
+  if (spanHours < 2) return null
+  return `⚠ Event chain spans ${Math.round(spanHours)}h — may contain separate outage episodes`
 }
 
 function incidentFingerprint(incident: Incident): string {
@@ -462,8 +497,8 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
   const detailIncident = detail?.incident ?? incident
   const services = parseIncidentServices(detailIncident)
   const nodes = parseIncidentNodes(detailIncident)
-  const incidentMeta = parseIncidentMetadata(incident)
-  const meta = parseIncidentMetadata(detailIncident)
+  const incidentMeta = useMemo(() => parseIncidentMetadata(incident), [incident.metadata])
+  const meta = useMemo(() => parseIncidentMetadata(detailIncident), [detailIncident.metadata])
   const aiPending = isIncidentAIPending(incidentMeta) || isIncidentAIPending(meta)
   const aiMode = meta.ai_mode === 'enhanced' || incidentMeta.ai_mode === 'enhanced' ? 'enhanced' : 'analysis'
 
@@ -488,6 +523,8 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
   const aiFindings = parseAIFindings(meta)
   const aiAnnotations = parseAIAnnotations(meta)
   const annotationsByEntry = groupAnnotationsByEntry(aiAnnotations)
+  const anchorWarn = useMemo(() => windowAnchorWarning(meta, detailIncident.opened_at), [meta, detailIncident.opened_at])
+  const spanWarn = useMemo(() => episodeSpanWarning(detail?.entries ?? []), [detail])
   const reviewedWindow = formatReviewedWindow(meta)
   const isVerified =
     aiCauseEntries.length === 0 &&
@@ -549,7 +586,7 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
           )}
           {enhancedRan && (
             <span style={{ color: '#a855f7', fontSize: 11, whiteSpace: 'nowrap', letterSpacing: '0.1em', border: '1px solid #a855f7', padding: '2px 6px', lineHeight: 1.4 }}>
-              {isVerified ? 'AI VERIFIED' : 'AI ENHANCED'}
+              {isVerified ? 'AI REVIEWED' : 'AI ENHANCED'}
             </span>
           )}
         </span>
@@ -574,6 +611,13 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
 
           {detail && (
             <>
+              {(anchorWarn || spanWarn) && (
+                <div style={{ marginBottom: 8 }}>
+                  {[anchorWarn, spanWarn].filter(Boolean).map(w => (
+                    <div key={w} style={{ color: 'var(--warning)', fontSize: 11, lineHeight: 1.6 }}>{w}</div>
+                  ))}
+                </div>
+              )}
               <div style={{ marginBottom: 8 }}>
                 <div style={{ color: 'var(--muted)', marginBottom: 4, letterSpacing: '0.1em', display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span>EVENT CHAIN</span>
@@ -588,7 +632,7 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
                         letterSpacing: '0.08em',
                       }}
                     >
-                      AI VERIFIED
+                      AI REVIEWED
                     </span>
                   )}
                 </div>
@@ -613,8 +657,8 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
                         onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
                       >
                         <span style={{ color: roleColor(link.role) }}>
-                          {link.role.toUpperCase()}
-                          {link.role === 'cause' && detailIncident.root_cause_id === link.entry_id && ' \u2605'}
+                          {roleLabel(link.role, entry.source)}
+                          {(link.role === 'cause' || link.role === 'immediate_cause') && detailIncident.root_cause_id === link.entry_id && ' \u2605'}
                         </span>
                         <span style={{ color: 'var(--muted)' }}>{formatTs(entry.timestamp)}</span>
                         <span style={{ color: 'var(--muted)' }}>{entry.source}</span>
@@ -711,7 +755,7 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
               )}
 
               {(() => {
-                const logSourceRoles = ['cause', 'trigger', 'evidence', 'ai_cause', 'recovery']
+                const logSourceRoles = ['immediate_cause', 'cause', 'trigger', 'evidence', 'ai_cause', 'context', 'recovery']
                 const entryWithLog = logSourceRoles.reduce<{
                   entry: IncidentDetail['entries'][number]['entry']
                   logLines: string[]
@@ -804,7 +848,7 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
                         lineHeight: 1.5,
                       }}
                     >
-                      Enhanced correlation verified the existing event chain and did not find any additional AI-only causes.
+                      AI reviewed the event chain and found no additional causes beyond the deterministic links.
                     </div>
                   )}
                 </div>
