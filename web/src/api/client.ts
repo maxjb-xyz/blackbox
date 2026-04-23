@@ -517,7 +517,7 @@ export interface IncidentSummary {
   hasConfirmedOpen: boolean
 }
 
-function normalizeIncident(value: unknown): Incident {
+export function normalizeIncident(value: unknown): Incident {
   const data = value && typeof value === 'object' ? value as Record<string, unknown> : {}
   const id = String(data.id ?? '')
   const status = (() => {
