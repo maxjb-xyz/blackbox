@@ -905,7 +905,7 @@ func normalizeFailureType(value string) string {
 
 func summaryImpliesFault(summary string) bool {
 	lower := strings.ToLower(summary)
-	for _, phrase := range []string{"crash", "non-zero exit", "exception", "panic", "oom", "killed", "segfault", "core dump"} {
+	for _, phrase := range []string{"crash", "non-zero exit", "exception", "panic", "segfault", "core dump"} {
 		if strings.Contains(lower, phrase) {
 			return true
 		}
