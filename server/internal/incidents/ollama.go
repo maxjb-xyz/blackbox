@@ -340,8 +340,25 @@ func (e *AIEnricher) correlate(dispatch aiDispatch) {
 	}
 
 	scopeNodes := correlationScopeNodes(inc.NodeNames, detEntries, dispatch.nodeName)
-	windowStart := inc.OpenedAt.Add(-5 * time.Minute)
-	windowEnd := inc.OpenedAt.Add(time.Minute)
+
+	// Anchor the analysis window to the trigger entry's timestamp so that when a
+	// suspected incident is upgraded hours after the original container exit, the
+	// window centres on the actual outage rather than the stale OpenedAt time.
+	windowAnchor := inc.OpenedAt
+	for _, link := range detLinks {
+		if link.Role == "trigger" {
+			for _, e := range detEntries {
+				if e.ID == link.EntryID {
+					windowAnchor = e.Timestamp
+					break
+				}
+			}
+			break
+		}
+	}
+
+	windowStart := windowAnchor.Add(-5 * time.Minute)
+	windowEnd := windowAnchor.Add(time.Minute)
 	query := e.db.Where(
 		"timestamp BETWEEN ? AND ? AND NOT (source = ? AND event IN ?)",
 		windowStart,
@@ -476,6 +493,7 @@ func (e *AIEnricher) correlate(dispatch aiDispatch) {
 		meta["ai_reviewed_event_count"] = len(detEntries) + len(nodeEntries)
 		meta["ai_reviewed_window_start"] = windowStart.UTC().Format(time.RFC3339)
 		meta["ai_reviewed_window_end"] = windowEnd.UTC().Format(time.RFC3339)
+		meta["ai_reviewed_window_anchor"] = windowAnchor.UTC().Format(time.RFC3339)
 		if len(findings) > 0 {
 			meta["ai_findings"] = findings
 		} else {

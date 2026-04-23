@@ -50,11 +50,17 @@ func (m *Manager) handleMonitorDown(entry types.Entry) {
 	prefix := svc + "|"
 
 	// If a suspected incident is already open for this service (any node), upgrade it.
+	// If the existing incident is already confirmed, fall through to open a fresh one.
 	for key, incidentID := range m.openIncidents {
 		if strings.HasPrefix(key, prefix) {
-			delete(m.pendingRecover, key)
-			m.upgradeToConfirmed(incidentID, entry)
-			return
+			var existing models.Incident
+			if err := m.db.First(&existing, "id = ?", incidentID).Error; err == nil && existing.Confidence == "suspected" {
+				delete(m.pendingRecover, key)
+				m.upgradeToConfirmed(incidentID, entry)
+				return
+			}
+			// Already confirmed — this is a new episode; fall through to open a fresh incident.
+			break
 		}
 	}
 
