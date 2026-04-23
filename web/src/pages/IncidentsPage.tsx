@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useRef, useState } from 'react'
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { ChevronDown, ChevronRight, ExternalLink, X } from 'lucide-react'
@@ -170,8 +170,7 @@ function duration(opened: string, resolved?: string | null) {
 
 function roleColor(role: string): string {
   if (role === 'trigger') return 'var(--danger)'
-  if (role === 'immediate_cause') return 'var(--warning)'
-  if (role === 'cause') return 'var(--warning)'
+  if (role === 'immediate_cause' || role === 'cause') return 'var(--warning)'
   if (role === 'context') return '#60a5fa'
   if (role === 'recovery') return 'var(--success)'
   return 'var(--muted)'
@@ -185,7 +184,7 @@ function roleLabel(role: string, source?: string): string {
   if (role === 'context') return 'CONTEXT'
   if (role === 'evidence') return 'EVIDENCE'
   if (role === 'recovery') return 'RECOVERY'
-  return role.toUpperCase().replace(/_/g, ' ')
+  return (role ?? '').toUpperCase().replace(/_/g, ' ')
 }
 
 function isIncidentAIPending(meta: Record<string, unknown>): boolean {
@@ -294,7 +293,8 @@ function episodeSpanWarning(entries: IncidentDetail['entries']): string | null {
     .map(({ entry }) => new Date(entry.timestamp).getTime())
     .filter(t => Number.isFinite(t))
   if (timestamps.length < 2) return null
-  const spanHours = (Math.max(...timestamps) - Math.min(...timestamps)) / 3_600_000
+  const spanHours = (timestamps.reduce((a, b) => b > a ? b : a, timestamps[0])
+    - timestamps.reduce((a, b) => b < a ? b : a, timestamps[0])) / 3_600_000
   if (spanHours < 2) return null
   return `⚠ Event chain spans ${Math.round(spanHours)}h — may contain separate outage episodes`
 }
@@ -522,6 +522,8 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
   const aiFindings = parseAIFindings(meta)
   const aiAnnotations = parseAIAnnotations(meta)
   const annotationsByEntry = groupAnnotationsByEntry(aiAnnotations)
+  const anchorWarn = useMemo(() => windowAnchorWarning(meta, detailIncident.opened_at), [meta, detailIncident.opened_at])
+  const spanWarn = useMemo(() => episodeSpanWarning(detail?.entries ?? []), [detail?.entries])
   const reviewedWindow = formatReviewedWindow(meta)
   const isVerified =
     aiCauseEntries.length === 0 &&
@@ -608,19 +610,13 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
 
           {detail && (
             <>
-              {(() => {
-                const anchorWarn = windowAnchorWarning(meta, detailIncident.opened_at)
-                const spanWarn = episodeSpanWarning(detail.entries)
-                const warnings = [anchorWarn, spanWarn].filter(Boolean)
-                if (warnings.length === 0) return null
-                return (
-                  <div style={{ marginBottom: 8 }}>
-                    {warnings.map((w, i) => (
-                      <div key={i} style={{ color: 'var(--warning)', fontSize: 11, lineHeight: 1.6 }}>{w}</div>
-                    ))}
-                  </div>
-                )
-              })()}
+              {(anchorWarn || spanWarn) && (
+                <div style={{ marginBottom: 8 }}>
+                  {[anchorWarn, spanWarn].filter(Boolean).map(w => (
+                    <div key={w} style={{ color: 'var(--warning)', fontSize: 11, lineHeight: 1.6 }}>{w}</div>
+                  ))}
+                </div>
+              )}
               <div style={{ marginBottom: 8 }}>
                 <div style={{ color: 'var(--muted)', marginBottom: 4, letterSpacing: '0.1em', display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span>EVENT CHAIN</span>

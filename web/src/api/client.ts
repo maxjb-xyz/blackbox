@@ -556,7 +556,7 @@ function normalizeIncidentEntryLink(value: unknown): IncidentEntryLink | null {
   if (!rawLink || typeof rawLink !== 'object') return null
   const link = rawLink as Record<string, unknown>
   const role = link.role
-  const allowedRoles: IncidentEntryLink['link']['role'][] = ['trigger', 'cause', 'evidence', 'recovery', 'ai_cause']
+  const allowedRoles: IncidentEntryLink['link']['role'][] = ['trigger', 'cause', 'immediate_cause', 'context', 'evidence', 'recovery', 'ai_cause']
   if (typeof role !== 'string' || !(allowedRoles as string[]).includes(role)) return null
   const entry = normalizeEntry(data.entry)
   if (!entry) return null
