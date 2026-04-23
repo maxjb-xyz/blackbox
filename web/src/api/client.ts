@@ -490,7 +490,7 @@ export interface IncidentEntryLink {
   link: {
     incident_id: string
     entry_id: string
-    role: 'trigger' | 'cause' | 'evidence' | 'recovery' | 'ai_cause'
+    role: 'trigger' | 'cause' | 'immediate_cause' | 'context' | 'evidence' | 'recovery' | 'ai_cause'
     score: number
     reason?: string
   }
