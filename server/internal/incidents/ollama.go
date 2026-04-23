@@ -483,6 +483,7 @@ func (e *AIEnricher) correlate(dispatch aiDispatch) {
 	failureType := normalizeFailureType(response.FailureType)
 	summary := sanitizeExternalText(response.Summary)
 	if failureType == "clean_stop" && summaryImpliesFault(summary) {
+		log.Printf("incidents: correlate overriding fault-implying summary for clean_stop incident %s", dispatch.incidentID)
 		summary = "Service stopped cleanly (exit 0). No crash or fault evidence found in the reviewed window. Initiator unknown."
 	}
 
@@ -490,6 +491,8 @@ func (e *AIEnricher) correlate(dispatch aiDispatch) {
 		delete(meta, "ai_pending")
 		if summary != "" {
 			meta["ai_analysis"] = summary
+		} else {
+			delete(meta, "ai_analysis")
 		}
 		if failureType != "" {
 			meta["ai_failure_type"] = failureType
@@ -902,7 +905,7 @@ func normalizeFailureType(value string) string {
 
 func summaryImpliesFault(summary string) bool {
 	lower := strings.ToLower(summary)
-	for _, phrase := range []string{"config", "error", "crash", "fail", "fault", "corrupt", "invalid", "missing", "bad "} {
+	for _, phrase := range []string{"crash", "non-zero exit", "exception", "panic", "oom", "killed", "segfault", "core dump"} {
 		if strings.Contains(lower, phrase) {
 			return true
 		}
