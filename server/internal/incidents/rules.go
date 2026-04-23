@@ -539,6 +539,10 @@ func pruneRecentTimes(times []time.Time, now time.Time, window time.Duration) []
 }
 
 func (m *Manager) linkEntry(incidentID, entryID, role string, score int) {
+	if strings.TrimSpace(entryID) == "" {
+		log.Printf("incidents: linkEntry skipped empty entryID for incident %s role %s", incidentID, role)
+		return
+	}
 	var existing models.IncidentEntry
 	err := m.db.Where("incident_id = ? AND entry_id = ?", incidentID, entryID).First(&existing).Error
 	if err == nil {
