@@ -283,9 +283,10 @@ function windowAnchorWarning(meta: Record<string, unknown>, incidentOpenedAt: st
   const anchorMs = new Date(anchor).getTime()
   const openedMs = new Date(incidentOpenedAt).getTime()
   if (Number.isNaN(anchorMs) || Number.isNaN(openedMs)) return null
-  const diffHours = Math.abs(anchorMs - openedMs) / 3_600_000
-  if (diffHours < 2) return null
-  return `⚠ AI window anchored ${Math.round(diffHours)}h after incident opened — events may span separate episodes`
+  const deltaHours = (anchorMs - openedMs) / 3_600_000
+  if (Math.abs(deltaHours) < 2) return null
+  const when = deltaHours >= 0 ? 'after' : 'before'
+  return `⚠ AI window anchored ${Math.round(Math.abs(deltaHours))}h ${when} incident opened — events may span separate episodes`
 }
 
 function episodeSpanWarning(entries: IncidentDetail['entries']): string | null {
@@ -496,8 +497,8 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
   const detailIncident = detail?.incident ?? incident
   const services = parseIncidentServices(detailIncident)
   const nodes = parseIncidentNodes(detailIncident)
-  const incidentMeta = parseIncidentMetadata(incident)
-  const meta = parseIncidentMetadata(detailIncident)
+  const incidentMeta = useMemo(() => parseIncidentMetadata(incident), [incident.metadata])
+  const meta = useMemo(() => parseIncidentMetadata(detailIncident), [detailIncident.metadata])
   const aiPending = isIncidentAIPending(incidentMeta) || isIncidentAIPending(meta)
   const aiMode = meta.ai_mode === 'enhanced' || incidentMeta.ai_mode === 'enhanced' ? 'enhanced' : 'analysis'
 
@@ -523,7 +524,7 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
   const aiAnnotations = parseAIAnnotations(meta)
   const annotationsByEntry = groupAnnotationsByEntry(aiAnnotations)
   const anchorWarn = useMemo(() => windowAnchorWarning(meta, detailIncident.opened_at), [meta, detailIncident.opened_at])
-  const spanWarn = useMemo(() => episodeSpanWarning(detail?.entries ?? []), [detail?.entries])
+  const spanWarn = useMemo(() => episodeSpanWarning(detail?.entries ?? []), [detail])
   const reviewedWindow = formatReviewedWindow(meta)
   const isVerified =
     aiCauseEntries.length === 0 &&
