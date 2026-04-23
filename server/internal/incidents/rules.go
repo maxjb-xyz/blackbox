@@ -50,11 +50,17 @@ func (m *Manager) handleMonitorDown(entry types.Entry) {
 	prefix := svc + "|"
 
 	// If a suspected incident is already open for this service (any node), upgrade it.
+	// If the existing incident is already confirmed, fall through to open a fresh one.
 	for key, incidentID := range m.openIncidents {
 		if strings.HasPrefix(key, prefix) {
-			delete(m.pendingRecover, key)
-			m.upgradeToConfirmed(incidentID, entry)
-			return
+			var existing models.Incident
+			if err := m.db.First(&existing, "id = ?", incidentID).Error; err == nil && existing.Confidence == "suspected" {
+				delete(m.pendingRecover, key)
+				m.upgradeToConfirmed(incidentID, entry)
+				return
+			}
+			// Already confirmed — this is a new episode; fall through to open a fresh incident.
+			break
 		}
 	}
 
@@ -83,7 +89,7 @@ func (m *Manager) handleMonitorDown(entry types.Entry) {
 		RootCauseID: rootCauseID,
 		TriggerID:   entry.ID,
 		NodeNames:   jsonStrings(nodeNames),
-		Metadata:    "{}",
+		Metadata:    buildInitialMeta(isCleanStopCandidate(candidates)),
 	}
 	if err := m.db.Create(&incident).Error; err != nil {
 		log.Printf("incidents: create confirmed incident error: %v", err)
@@ -91,8 +97,9 @@ func (m *Manager) handleMonitorDown(entry types.Entry) {
 	}
 
 	m.linkEntry(incidentID, entry.ID, "trigger", 0)
-	for _, c := range candidates {
-		m.linkEntry(incidentID, c.Entry.ID, "cause", c.Score)
+	for i, c := range candidates {
+		role := assignCauseRole(c, i == 0, entry.Timestamp)
+		m.linkEntry(incidentID, c.Entry.ID, role, c.Score)
 	}
 
 	m.registerOpenIncidentKeys(incidentID, svc, nodeNames)
@@ -304,15 +311,16 @@ func (m *Manager) openSuspectedIncident(trigger types.Entry, reason string) {
 		RootCauseID: rootCauseID,
 		TriggerID:   trigger.ID,
 		NodeNames:   jsonStrings([]string{trigger.NodeName}),
-		Metadata:    "{}",
+		Metadata:    buildInitialMeta(isCleanStopCandidate(candidates)),
 	}
 	if err := m.db.Create(&incident).Error; err != nil {
 		log.Printf("incidents: create suspected incident error: %v", err)
 		return
 	}
 	m.linkEntry(incidentID, trigger.ID, "trigger", 0)
-	for _, c := range candidates {
-		m.linkEntry(incidentID, c.Entry.ID, "cause", c.Score)
+	for i, c := range candidates {
+		role := assignCauseRole(c, i == 0, trigger.Timestamp)
+		m.linkEntry(incidentID, c.Entry.ID, role, c.Score)
 	}
 	m.openIncidents[incidentKey(svc, trigger.NodeName)] = incidentID
 	m.broadcastOpened(incident)
@@ -332,7 +340,7 @@ func (m *Manager) openSuspectedIncidentWithCause(trigger, cause types.Entry, rea
 		RootCauseID: cause.ID,
 		TriggerID:   trigger.ID,
 		NodeNames:   jsonStrings([]string{trigger.NodeName}),
-		Metadata:    "{}",
+		Metadata:    buildInitialMeta(false),
 	}
 	if err := m.db.Create(&incident).Error; err != nil {
 		log.Printf("incidents: create suspected incident error: %v", err)
@@ -378,8 +386,9 @@ func (m *Manager) upgradeToConfirmed(incidentID string, downEntry types.Entry) {
 		return
 	}
 	m.linkEntry(incidentID, downEntry.ID, "trigger", 0)
-	for _, c := range candidates {
-		m.linkEntry(incidentID, c.Entry.ID, "cause", c.Score)
+	for i, c := range candidates {
+		role := assignCauseRole(c, i == 0, downEntry.Timestamp)
+		m.linkEntry(incidentID, c.Entry.ID, role, c.Score)
 	}
 
 	m.broadcastUpdated(incidentID)
@@ -530,6 +539,10 @@ func pruneRecentTimes(times []time.Time, now time.Time, window time.Duration) []
 }
 
 func (m *Manager) linkEntry(incidentID, entryID, role string, score int) {
+	if strings.TrimSpace(entryID) == "" {
+		log.Printf("incidents: linkEntry skipped empty entryID for incident %s role %s", incidentID, role)
+		return
+	}
 	var existing models.IncidentEntry
 	err := m.db.Where("incident_id = ? AND entry_id = ?", incidentID, entryID).First(&existing).Error
 	if err == nil {
@@ -857,6 +870,56 @@ func watchtowerTargetServices(entry types.Entry) []string {
 		addService(entry.Service)
 	}
 	return services
+}
+
+// assignCauseRole returns the role to use when linking a cause candidate.
+// The top candidate (index 0) within 120 seconds of the trigger gets
+// "immediate_cause". Pull events get "context". Everything else is "cause".
+func assignCauseRole(candidate correlation.CauseCandidate, isTop bool, triggerTime time.Time) string {
+	if candidate.Entry == nil {
+		return "cause"
+	}
+	if candidate.Entry.Source == "docker" && candidate.Entry.Event == "pull" {
+		return "context"
+	}
+	// isTop check with 120s guards stop/update/pull/write/create; die/restart are always ≤60s so always pass.
+	if isTop && triggerTime.Sub(candidate.Entry.Timestamp) <= 120*time.Second {
+		return "immediate_cause"
+	}
+	return "cause"
+}
+
+// isCleanStopCandidate returns true when the top cause is a docker stop or
+// exit-0 die event — a signal that the container stopped intentionally.
+func isCleanStopCandidate(candidates []correlation.CauseCandidate) bool {
+	if len(candidates) == 0 || candidates[0].Entry == nil {
+		return false
+	}
+	e := candidates[0].Entry
+	if e.Source != "docker" {
+		return false
+	}
+	if e.Event == "stop" {
+		return true
+	}
+	if e.Event == "die" {
+		ec := extractExitCodeFromEntry(*e)
+		return ec == "" || ec == "0"
+	}
+	return false
+}
+
+// buildInitialMeta returns the initial metadata JSON for a new incident.
+// cleanStop should be true when the top cause is a clean docker stop.
+func buildInitialMeta(cleanStop bool) string {
+	if !cleanStop {
+		return "{}"
+	}
+	b, err := json.Marshal(map[string]interface{}{"clean_stop": true})
+	if err != nil {
+		return "{}"
+	}
+	return string(b)
 }
 
 // marshalWSMessage mirrors handlers.MarshalWSMessage to avoid a circular import.
