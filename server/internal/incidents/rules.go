@@ -340,7 +340,7 @@ func (m *Manager) openSuspectedIncidentWithCause(trigger, cause types.Entry, rea
 		RootCauseID: cause.ID,
 		TriggerID:   trigger.ID,
 		NodeNames:   jsonStrings([]string{trigger.NodeName}),
-		Metadata:    "{}",
+		Metadata:    buildInitialMeta(false),
 	}
 	if err := m.db.Create(&incident).Error; err != nil {
 		log.Printf("incidents: create suspected incident error: %v", err)
@@ -878,6 +878,7 @@ func assignCauseRole(candidate correlation.CauseCandidate, isTop bool, triggerTi
 	if candidate.Entry.Source == "docker" && candidate.Entry.Event == "pull" {
 		return "context"
 	}
+	// isTop check with 120s guards stop/update/pull/write/create; die/restart are always ≤60s so always pass.
 	if isTop && triggerTime.Sub(candidate.Entry.Timestamp) <= 120*time.Second {
 		return "immediate_cause"
 	}
