@@ -76,6 +76,7 @@ type ollamaResponse struct {
 type correlationResponse struct {
 	Summary     string       `json:"summary"`
 	Verified    *bool        `json:"verified"`
+	FailureType string       `json:"failure_type"`
 	Findings    []Finding    `json:"findings"`
 	Annotations []Annotation `json:"annotations"`
 	Causes      []Cause      `json:"causes"`
@@ -479,10 +480,21 @@ func (e *AIEnricher) correlate(dispatch aiDispatch) {
 		verified = *response.Verified && verified
 	}
 
+	failureType := normalizeFailureType(response.FailureType)
+	summary := sanitizeExternalText(response.Summary)
+	if failureType == "clean_stop" && summaryImpliesFault(summary) {
+		summary = "Service stopped cleanly (exit 0). No crash or fault evidence found in the reviewed window. Initiator unknown."
+	}
+
 	if !e.updateIncidentMetadata(dispatch.incidentID, func(meta map[string]interface{}) {
 		delete(meta, "ai_pending")
-		if summary := sanitizeExternalText(response.Summary); summary != "" {
+		if summary != "" {
 			meta["ai_analysis"] = summary
+		}
+		if failureType != "" {
+			meta["ai_failure_type"] = failureType
+		} else {
+			delete(meta, "ai_failure_type")
 		}
 		if verified {
 			meta["ai_verified"] = true
@@ -708,6 +720,15 @@ func buildCorrelationPrompt(inc models.Incident, detLinks []models.IncidentEntry
 	fmt.Fprintf(&b, "Status: %s | Confidence: %s | Opened: %s\n\n", inc.Status, inc.Confidence, inc.OpenedAt.UTC().Format(time.RFC3339))
 	b.WriteString("Goal: find the non-obvious operational clues a human might miss at first glance. Distinguish a system manager symptom from the application, update, config, resource, dependency, or log evidence that likely explains it.\n\n")
 
+	b.WriteString(`Hard rules — follow these exactly:
+- The webhook "down" trigger is an observation that the monitor detected unavailability. It is NOT root-cause evidence. Do not cite it as the reason the service failed.
+- Do NOT claim config_error unless logs or metadata show config-specific evidence: parse errors, invalid settings, missing config files, permission failures, bad paths, or validation errors.
+- Exit code 0 with graceful shutdown logs indicates intentional or orchestrated stop, NOT a crash or config failure. If no initiator is visible, say "initiator unknown" — do not invent a cause.
+- Distinguish immediate cause (the event that directly preceded the outage) from root cause (why that event happened). If only an immediate cause is visible, say so explicitly.
+- Do NOT claim dependency failure, network failure, or resource exhaustion unless there is log or metadata evidence for it.
+
+`)
+
 	roleByID := make(map[string]string, len(detLinks))
 	scoreByID := make(map[string]int, len(detLinks))
 	for _, link := range detLinks {
@@ -735,8 +756,9 @@ func buildCorrelationPrompt(inc models.Incident, detLinks []models.IncidentEntry
 	b.WriteString(`
 Return JSON exactly matching this schema:
 {
-  "summary": "<2-3 sentence operator-facing conclusion. Name the likely failure, strongest evidence, and uncertainty. Do not be generic.>",
+  "summary": "<2-3 sentence operator-facing conclusion. Name the likely failure, strongest evidence, and uncertainty. Do not be generic. Do not contradict the failure_type.>",
   "verified": true,
+  "failure_type": "<one of: clean_stop | crash | config_error | update_regression | resource_exhaustion | dependency | monitor_only | unknown>",
   "findings": [
     {
       "kind": "key_clue",
@@ -760,6 +782,16 @@ Return JSON exactly matching this schema:
     {"entry_id": "<verbatim id from the events above>", "confidence": 0.0, "reason": "<why this event caused the incident>"}
   ]
 }
+failure_type guide:
+  clean_stop: exit code 0 and/or graceful shutdown with no crash evidence
+  crash: non-zero exit code or OOM kill
+  config_error: config-specific evidence in logs or metadata (parse errors, bad paths, etc.)
+  update_regression: pull/update event preceded the failure
+  resource_exhaustion: OOM, disk full, or CPU throttle evidence
+  dependency: network/upstream failure evidence in logs
+  monitor_only: no corroborating events beyond the webhook observation
+  unknown: insufficient evidence to classify
+
 Use "findings" for cross-event clues, uncertainty, negative evidence, or log-derived interpretation that should not be crammed into the summary.
 Use "annotations" for small notes attached to specific existing events, especially when the key evidence is inside an already-linked trigger/evidence/recovery row.
 Use "causes" only for additional timeline events that are not already deterministic links. If an existing deterministic row is important, annotate it instead of repeating it as a cause.
@@ -853,6 +885,29 @@ func normalizeAIKind(value, fallback string) string {
 		return string(runes[:40])
 	}
 	return value
+}
+
+var validFailureTypes = map[string]struct{}{
+	"clean_stop": {}, "crash": {}, "config_error": {}, "update_regression": {},
+	"resource_exhaustion": {}, "dependency": {}, "monitor_only": {}, "unknown": {},
+}
+
+func normalizeFailureType(value string) string {
+	value = strings.TrimSpace(strings.ToLower(value))
+	if _, ok := validFailureTypes[value]; ok {
+		return value
+	}
+	return ""
+}
+
+func summaryImpliesFault(summary string) bool {
+	lower := strings.ToLower(summary)
+	for _, phrase := range []string{"config", "error", "crash", "fail", "fault", "corrupt", "invalid", "missing", "bad "} {
+		if strings.Contains(lower, phrase) {
+			return true
+		}
+	}
+	return false
 }
 
 func confidencePercent(value float64) int {
