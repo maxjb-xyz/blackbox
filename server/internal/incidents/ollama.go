@@ -347,9 +347,9 @@ func (e *AIEnricher) correlate(dispatch aiDispatch) {
 	windowAnchor := inc.OpenedAt
 	for _, link := range detLinks {
 		if link.Role == "trigger" {
-			for _, e := range detEntries {
-				if e.ID == link.EntryID {
-					windowAnchor = e.Timestamp
+			for _, entry := range detEntries {
+				if entry.ID == link.EntryID {
+					windowAnchor = entry.Timestamp
 					break
 				}
 			}

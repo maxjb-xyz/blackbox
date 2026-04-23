@@ -3,6 +3,7 @@ package incidents
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"sort"
@@ -49,19 +50,47 @@ func (m *Manager) handleMonitorDown(entry types.Entry) {
 	svc := entry.Service
 	prefix := svc + "|"
 
-	// If a suspected incident is already open for this service (any node), upgrade it.
-	// If the existing incident is already confirmed, fall through to open a fresh one.
-	for key, incidentID := range m.openIncidents {
+	// Collect all open incident keys for this service.
+	var matchedKeys []string
+	for key := range m.openIncidents {
 		if strings.HasPrefix(key, prefix) {
-			var existing models.Incident
-			if err := m.db.First(&existing, "id = ?", incidentID).Error; err == nil && existing.Confidence == "suspected" {
-				delete(m.pendingRecover, key)
-				m.upgradeToConfirmed(incidentID, entry)
-				return
-			}
-			// Already confirmed — this is a new episode; fall through to open a fresh incident.
-			break
+			matchedKeys = append(matchedKeys, key)
 		}
+	}
+
+	// Prefer upgrading a suspected incident over opening a fresh one.
+	for _, key := range matchedKeys {
+		incidentID := m.openIncidents[key]
+		var existing models.Incident
+		if err := m.db.First(&existing, "id = ?", incidentID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				continue
+			}
+			log.Printf("incidents: handleMonitorDown load incident %s: %v", incidentID, err)
+			return
+		}
+		if existing.Confidence == "suspected" {
+			delete(m.pendingRecover, key)
+			m.upgradeToConfirmed(incidentID, entry)
+			return
+		}
+	}
+
+	// No suspected incident found. Resolve any open confirmed incidents for this
+	// service before opening a fresh one, so they are not permanently orphaned.
+	for _, key := range matchedKeys {
+		incidentID := m.openIncidents[key]
+		now := entry.Timestamp
+		if err := m.db.Model(&models.Incident{}).
+			Where("id = ? AND status = ?", incidentID, "open").
+			Updates(map[string]interface{}{
+				"status":      "resolved",
+				"resolved_at": now,
+			}).Error; err != nil {
+			log.Printf("incidents: handleMonitorDown resolve stale confirmed incident %s: %v", incidentID, err)
+		}
+		delete(m.openIncidents, key)
+		delete(m.pendingRecover, key)
 	}
 
 	candidates, err := correlation.ScoreCauses(m.db, []string{svc}, entry.Timestamp, entry.ComposeService)
