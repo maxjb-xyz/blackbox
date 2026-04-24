@@ -94,8 +94,8 @@ func ListEntries(database *gorm.DB) http.HandlerFunc {
 			tx = tx.Where(columnName("service", usingFTS)+" = ?", service)
 		}
 		if q != "" && !usingFTS {
-			like := "%" + q + "%"
-			tx = tx.Where(columnName("content", usingFTS)+" LIKE ? OR "+columnName("service", usingFTS)+" LIKE ?", like, like)
+			like := "%" + escapeLike(q) + "%"
+			tx = tx.Where(columnName("content", usingFTS)+" LIKE ? ESCAPE '\\' OR "+columnName("service", usingFTS)+" LIKE ? ESCAPE '\\'", like, like)
 		}
 		hideHeartbeat := r.URL.Query().Get("hide_heartbeat") == "true"
 		if hideHeartbeat {
@@ -143,6 +143,13 @@ func columnName(name string, qualified bool) string {
 		return "entries." + name
 	}
 	return name
+}
+
+func escapeLike(s string) string {
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, "%", "\\%")
+	s = strings.ReplaceAll(s, "_", "\\_")
+	return s
 }
 
 func buildEntryFTSQuery(q string) string {
@@ -193,8 +200,8 @@ func listEntriesFallback(database *gorm.DB, cursor string, limit int, node, sour
 		tx = tx.Where("service = ?", service)
 	}
 	if q != "" {
-		like := "%" + q + "%"
-		tx = tx.Where("content LIKE ? OR service LIKE ?", like, like)
+		like := "%" + escapeLike(q) + "%"
+		tx = tx.Where("content LIKE ? ESCAPE '\\' OR service LIKE ? ESCAPE '\\'", like, like)
 	}
 	if hideHeartbeat {
 		tx = tx.Where("NOT (source = 'agent' AND event = 'heartbeat')")
