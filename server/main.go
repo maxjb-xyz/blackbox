@@ -91,7 +91,11 @@ func main() {
 	}
 	log.Printf("database initialized at %s", dbPath)
 	mcpMgr := bbmcp.NewMCPManager(database)
-	defer mcpMgr.Shutdown(context.Background())
+	defer func() {
+		if err := mcpMgr.Shutdown(context.Background()); err != nil {
+			log.Printf("mcp: shutdown failed: %v", err)
+		}
+	}()
 	restoreMCPState(database, mcpMgr)
 
 	db.StartOIDCStateSweeper(rootCtx, database)

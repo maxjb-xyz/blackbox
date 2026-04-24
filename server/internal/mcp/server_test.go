@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -73,12 +74,36 @@ func TestMCPManagerSamePortRestart(t *testing.T) {
 	}
 }
 
+func TestMCPManagerRepeatedSamePortRestart(t *testing.T) {
+	port := freePort(t)
+	mgr := NewMCPManager(nil)
+
+	if err := mgr.ApplySettings(true, port, "token0"); err != nil {
+		t.Fatalf("initial start: %v", err)
+	}
+
+	for i := 1; i <= 20; i++ {
+		if err := mgr.ApplySettings(true, port, fmt.Sprintf("token%d", i)); err != nil {
+			t.Fatalf("same-port restart %d: %v", i, err)
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := mgr.Shutdown(ctx); err != nil {
+		t.Fatalf("shutdown: %v", err)
+	}
+}
+
 func freePort(t *testing.T) int {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	defer ln.Close()
-	return ln.Addr().(*net.TCPAddr).Port
+	port := ln.Addr().(*net.TCPAddr).Port
+	if err := ln.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	return port
 }

@@ -54,10 +54,10 @@ func (m *MCPManager) ApplySettings(enabled bool, port int, token string) error {
 
 	var ln net.Listener
 	if m.running != nil && m.port == port {
-		// Same port: stop first to release the socket, then bind.
+		// Same port: stop first, then retry bind briefly while the OS releases the socket.
 		_ = m.stopLocked()
 		var err error
-		ln, err = net.Listen("tcp", addr)
+		ln, err = listenWithRetry(addr, 25, 10*time.Millisecond)
 		if err != nil {
 			m.port = 0
 			return fmt.Errorf("mcp: bind %s: %w", addr, err)
@@ -131,6 +131,21 @@ func (m *MCPManager) stopLockedWithContext(ctx context.Context) error {
 		return nil
 	}
 	return err
+}
+
+func listenWithRetry(addr string, attempts int, delay time.Duration) (net.Listener, error) {
+	var lastErr error
+	for i := 0; i < attempts; i++ {
+		ln, err := net.Listen("tcp", addr)
+		if err == nil {
+			return ln, nil
+		}
+		lastErr = err
+		if i < attempts-1 {
+			time.Sleep(delay)
+		}
+	}
+	return nil, lastErr
 }
 
 func buildServer(db *gorm.DB) *mcpserver.MCPServer {
