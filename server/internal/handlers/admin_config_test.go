@@ -225,3 +225,106 @@ func TestTestAISettings_UsesStoredAPIKeyWhenBlank(t *testing.T) {
 	assert.Equal(t, true, resp["ok"])
 	assert.Equal(t, "OK", resp["response"])
 }
+
+// --- MCP Settings Tests ---
+
+func TestUpdateMCPSettings_EnableGeneratesToken(t *testing.T) {
+	t.Parallel()
+
+	database := newTestDB(t)
+	body := `{"mcp_enabled":true,"mcp_port":13001}`
+	req := httptest.NewRequest(http.MethodPut, "/api/admin/settings/mcp", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handlers.UpdateMCPSettings(database, nil)(w, req)
+
+	assert.Equal(t, http.StatusNoContent, w.Code)
+
+	var tokenSetting models.AppSetting
+	require.NoError(t, database.First(&tokenSetting, "key = ?", "mcp_auth_token").Error)
+	assert.NotEmpty(t, tokenSetting.Value)
+
+	var enabledSetting models.AppSetting
+	require.NoError(t, database.First(&enabledSetting, "key = ?", "mcp_enabled").Error)
+	assert.Equal(t, "true", enabledSetting.Value)
+}
+
+func TestUpdateMCPSettings_DisablePersists(t *testing.T) {
+	t.Parallel()
+
+	database := newTestDB(t)
+	body := `{"mcp_enabled":false,"mcp_port":13002}`
+	req := httptest.NewRequest(http.MethodPut, "/api/admin/settings/mcp", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handlers.UpdateMCPSettings(database, nil)(w, req)
+
+	assert.Equal(t, http.StatusNoContent, w.Code)
+
+	var enabledSetting models.AppSetting
+	require.NoError(t, database.First(&enabledSetting, "key = ?", "mcp_enabled").Error)
+	assert.Equal(t, "false", enabledSetting.Value)
+}
+
+func TestUpdateMCPSettings_RejectsInvalidPort(t *testing.T) {
+	t.Parallel()
+
+	database := newTestDB(t)
+	body := `{"mcp_enabled":true,"mcp_port":80}`
+	req := httptest.NewRequest(http.MethodPut, "/api/admin/settings/mcp", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handlers.UpdateMCPSettings(database, nil)(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestUpdateMCPSettings_PreservesExistingToken(t *testing.T) {
+	t.Parallel()
+
+	database := newTestDB(t)
+	require.NoError(t, database.Create(&models.AppSetting{Key: "mcp_auth_token", Value: "existing-token-value-abcdef1234"}).Error)
+
+	body := `{"mcp_enabled":true,"mcp_port":13003}`
+	req := httptest.NewRequest(http.MethodPut, "/api/admin/settings/mcp", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handlers.UpdateMCPSettings(database, nil)(w, req)
+
+	assert.Equal(t, http.StatusNoContent, w.Code)
+
+	var tokenSetting models.AppSetting
+	require.NoError(t, database.First(&tokenSetting, "key = ?", "mcp_auth_token").Error)
+	assert.Equal(t, "existing-token-value-abcdef1234", tokenSetting.Value)
+}
+
+func TestRegenerateMCPToken_ReturnsNewSuffix(t *testing.T) {
+	t.Parallel()
+
+	database := newTestDB(t)
+	// Seed initial token and enabled state
+	require.NoError(t, database.Create(&models.AppSetting{Key: "mcp_auth_token", Value: "old-token-12345678"}).Error)
+	require.NoError(t, database.Create(&models.AppSetting{Key: "mcp_enabled", Value: "false"}).Error)
+	require.NoError(t, database.Create(&models.AppSetting{Key: "mcp_port", Value: "13004"}).Error)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/settings/mcp/regenerate-token", nil)
+	w := httptest.NewRecorder()
+
+	handlers.RegenerateMCPToken(database, nil)(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp map[string]string
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	suffix, ok := resp["mcp_auth_token_suffix"]
+	require.True(t, ok, "response should have mcp_auth_token_suffix")
+	assert.Len(t, suffix, 8)
+
+	var newTokenSetting models.AppSetting
+	require.NoError(t, database.First(&newTokenSetting, "key = ?", "mcp_auth_token").Error)
+	assert.NotEqual(t, "old-token-12345678", newTokenSetting.Value)
+	assert.True(t, strings.HasSuffix(newTokenSetting.Value, suffix))
+}

@@ -133,6 +133,12 @@ func UpdateMCPSettings(db *gorm.DB, mcpMgr *mcppkg.MCPManager) http.HandlerFunc 
 			return
 		}
 
+		if mcpMgr != nil {
+			if err := mcpMgr.ApplySettings(req.Enabled, port, token); err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to apply mcp settings")
+				return
+			}
+		}
 		now := time.Now()
 		settings := []models.AppSetting{
 			{Key: mcpEnabledKey, Value: strconv.FormatBool(req.Enabled), UpdatedAt: now},
@@ -151,12 +157,6 @@ func UpdateMCPSettings(db *gorm.DB, mcpMgr *mcppkg.MCPManager) http.HandlerFunc 
 		}); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to save mcp settings")
 			return
-		}
-		if mcpMgr != nil {
-			if err := mcpMgr.ApplySettings(req.Enabled, port, token); err != nil {
-				writeError(w, http.StatusInternalServerError, "failed to apply mcp settings")
-				return
-			}
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}

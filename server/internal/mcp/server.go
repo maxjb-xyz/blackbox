@@ -70,8 +70,14 @@ func (m *MCPManager) ApplySettings(enabled bool, port int, token string) error {
 	m.running = httpServer
 	m.cancel = cancel
 	go func() {
-		if err := httpServer.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Printf("mcp: server error: %v", err)
+		if serveErr := httpServer.Serve(ln); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+			log.Printf("mcp: server error: %v", serveErr)
+			m.mu.Lock()
+			if m.running == httpServer {
+				m.running = nil
+				m.cancel = nil
+			}
+			m.mu.Unlock()
 		}
 	}()
 	log.Printf("mcp: server listening on %s", httpServer.Addr)

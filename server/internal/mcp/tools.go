@@ -263,10 +263,17 @@ func searchFTS5(ctx context.Context, db *gorm.DB, query string, since *time.Time
 	return entries, "fts5", nil
 }
 
+func escapeLike(s string) string {
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, "%", "\\%")
+	s = strings.ReplaceAll(s, "_", "\\_")
+	return s
+}
+
 func searchLike(ctx context.Context, db *gorm.DB, query string, since *time.Time, limit int) ([]types.Entry, error) {
-	like := "%" + query + "%"
+	likePattern := "%" + escapeLike(query) + "%"
 	tx := db.WithContext(ctx).Model(&types.Entry{}).
-		Where("content LIKE ? OR service LIKE ?", like, like).Order("timestamp DESC").Limit(limit)
+		Where("content LIKE ? ESCAPE '\\' OR service LIKE ? ESCAPE '\\'", likePattern, likePattern).Order("timestamp DESC").Limit(limit)
 	if since != nil {
 		tx = tx.Where("timestamp >= ?", since)
 	}
