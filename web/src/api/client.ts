@@ -310,6 +310,7 @@ export interface AdminConfig {
   ai_model: string
   ai_api_key_set: boolean
   ai_mode: 'analysis' | 'enhanced'
+  base_url: string
 }
 
 export interface AISettingsInput {
@@ -340,6 +341,15 @@ export async function updateFileWatcherSettings(redactSecrets: boolean): Promise
   })
   if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to update file watcher settings'))
   return res.json()
+}
+
+export async function updateBaseURL(baseURL: string): Promise<void> {
+  const res = await apiFetch('/api/admin/settings/base-url', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ base_url: baseURL }),
+  })
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to update instance base URL'))
 }
 
 export async function updateAISettings(settings: AISettingsInput): Promise<void> {
@@ -739,6 +749,38 @@ export async function testNotificationDest(id: string): Promise<{ ok: boolean; e
   })
   if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to test notification destination'))
   return res.json() as Promise<{ ok: boolean; error?: string }>
+}
+
+export interface ExcludedTarget {
+  id: string
+  type: 'container' | 'stack'
+  name: string
+  created_at: string
+}
+
+export async function listExcludedTargets(): Promise<ExcludedTarget[]> {
+  const res = await apiFetch('/api/admin/excluded-targets')
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to list excluded targets'))
+  return res.json() as Promise<ExcludedTarget[]>
+}
+
+export async function createExcludedTarget(type: ExcludedTarget['type'], name: string): Promise<ExcludedTarget> {
+  const res = await apiFetch('/api/admin/excluded-targets', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type, name }),
+  })
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to create excluded target'))
+  return res.json() as Promise<ExcludedTarget>
+}
+
+export async function deleteExcludedTarget(id: string): Promise<void> {
+  const res = await apiFetch(`/api/admin/excluded-targets/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok && res.status !== 404) {
+    throw new Error(await readErrorMessage(res, 'Failed to delete excluded target'))
+  }
 }
 
 export interface AuditLogEntry {
