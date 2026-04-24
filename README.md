@@ -149,6 +149,10 @@ docker compose up -d
 - Admin bootstrap wizard on first launch
 - Invite-code-based user registration
 
+### Admin & Observability
+- **Audit log** — Every admin action (user management, invite creation, OIDC provider changes, notification destination changes) is recorded with actor identity, IP address, and timestamp. Viewable in Admin > Access > Audit Log. Last 10,000 entries retained.
+- **Webhook delivery log** — Every inbound Uptime Kuma and Watchtower webhook is recorded with source, status (processed / ignored / error), payload snippet, and the correlated entry ID when applicable. Viewable in Admin > Integrations > Webhook Log. Last 1,000 entries retained.
+
 ### Security
 - Non-root container images — server runs distroless (no shell, UID 65532), agent runs as configurable `PUID`/`PGID` (default 65532), drops all capabilities then adds only `SETUID`/`SETGID` for identity switching, with a read-only filesystem
 - Constant-time token comparison for all shared secrets
@@ -170,6 +174,7 @@ docker compose up -d
 | `LISTEN_ADDR` | No | `:8080` | TCP address the server binds to. |
 | `JWT_TTL` | No | `24h` | JWT cookie lifetime. Accepts Go duration strings (e.g., `12h`, `7d`). |
 | `TZ` | No | Container default | IANA timezone for process logs (for example `America/New_York`). Set this if you want container log timestamps to match your local clock. |
+| `TRUSTED_PROXY_IP` | No | — | IP address of a trusted reverse proxy on a separate host. When set, `X-Forwarded-For` from this IP is trusted for audit log IP recording. By default only loopback (`127.0.0.1`) is trusted. |
 
 ### Agent Environment Variables
 
@@ -478,6 +483,8 @@ blackbox.example.com {
 }
 ```
 
+> **Audit log IP accuracy:** Blackbox trusts `X-Forwarded-For` only from loopback by default (i.e., a reverse proxy running on the same host). If your reverse proxy runs on a separate machine, set `TRUSTED_PROXY_IP` to its IP address on the server container so the audit log records real client IPs.
+
 ---
 
 ## Architecture
@@ -609,6 +616,8 @@ The database is automatically migrated on startup — no manual schema managemen
 - [x] Mobile-friendly view
 - [x] Support OpenAI/Other AI Providers
 - [x] Webhook notification support
+- [x] Admin audit log
+- [x] Webhook delivery log
 - [ ] Timeline UI polish and interaction improvements
 - [ ] Grafana data source plugin
 - [ ] Bi-directional agent analysis
