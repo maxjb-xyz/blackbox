@@ -1,7 +1,7 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ChevronDown, ChevronRight, ExternalLink, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, ExternalLink, FileDown, X } from 'lucide-react'
 import {
   fetchIncident,
   fetchIncidents,
@@ -463,6 +463,8 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
   const [expanded, setExpanded] = useState(defaultOpen)
   const [detail, setDetail] = useState<IncidentDetail | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
+  const prevStatusRef = useRef<string>(incident.status)
+  const [resolvedFlash, setResolvedFlash] = useState(false)
 
   useEffect(() => {
     if (!detail) return
@@ -493,6 +495,16 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
       cancelled = true
     }
   }, [detail, expanded, incident])
+
+  useEffect(() => {
+    if (prevStatusRef.current !== 'resolved' && incident.status === 'resolved' && expanded) {
+      setResolvedFlash(true)
+      const id = window.setTimeout(() => setResolvedFlash(false), 1500)
+      prevStatusRef.current = incident.status
+      return () => window.clearTimeout(id)
+    }
+    prevStatusRef.current = incident.status
+  }, [incident.status, expanded])
 
   const detailIncident = detail?.incident ?? incident
   const services = parseIncidentServices(detailIncident)
@@ -540,6 +552,9 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
     <div
       style={{
         borderLeft: `2px solid ${borderColor}`,
+        outline: resolvedFlash ? '1px solid var(--success)' : '1px solid transparent',
+        boxShadow: resolvedFlash ? '0 0 0 1px var(--success)' : 'none',
+        transition: resolvedFlash ? 'none' : 'outline 0.6s ease, box-shadow 0.6s ease',
         opacity: incident.status === 'resolved' ? 0.7 : 1,
         background: 'var(--surface)',
         marginBottom: 4,
@@ -851,6 +866,31 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
                       AI reviewed the event chain and found no additional causes beyond the deterministic links.
                     </div>
                   )}
+                </div>
+              )}
+              {incident.status === 'resolved' && detail && (
+                <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
+                  <a
+                    href={`/api/incidents/${incident.id}/report.pdf`}
+                    download={`incident-${incident.id}-report.pdf`}
+                    style={{
+                      background: 'none',
+                      border: '1px solid var(--muted)',
+                      color: 'var(--muted)',
+                      padding: '5px 10px',
+                      fontFamily: 'inherit',
+                      fontSize: 11,
+                      letterSpacing: '0.08em',
+                      cursor: 'pointer',
+                      textDecoration: 'none',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 5,
+                    }}
+                  >
+                    <FileDown size={12} />
+                    DOWNLOAD REPORT
+                  </a>
                 </div>
               )}
             </>

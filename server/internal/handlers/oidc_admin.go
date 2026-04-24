@@ -149,6 +149,11 @@ func CreateOIDCProvider(db *gorm.DB, registry *auth.OIDCRegistry) http.HandlerFu
 			return
 		}
 
+		WriteAuditLog(db, r, claims, "oidc.create", "oidc_provider", provider.ID, map[string]interface{}{
+			"name":   provider.Name,
+			"issuer": provider.Issuer,
+		})
+
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(toOIDCProviderResponse(provider))
@@ -294,6 +299,10 @@ func UpdateOIDCProvider(db *gorm.DB, registry *auth.OIDCRegistry) http.HandlerFu
 			return
 		}
 
+		WriteAuditLog(db, r, claims, "oidc.update", "oidc_provider", updatedProviderID, map[string]interface{}{
+			"name": provider.Name,
+		})
+
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(toOIDCProviderResponse(provider))
 	}
@@ -322,6 +331,8 @@ func DeleteOIDCProvider(db *gorm.DB, registry *auth.OIDCRegistry) http.HandlerFu
 			writeError(w, http.StatusInternalServerError, "OIDC provider deleted but registry reload failed")
 			return
 		}
+
+		WriteAuditLog(db, r, claims, "oidc.delete", "oidc_provider", providerID, map[string]interface{}{})
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
@@ -383,6 +394,10 @@ func SetOIDCPolicy(db *gorm.DB) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "failed to update OIDC policy")
 			return
 		}
+
+		WriteAuditLog(db, r, claims, "oidc.policy_update", "oidc_policy", "oidc_policy", map[string]interface{}{
+			"policy": req.Policy,
+		})
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"policy": req.Policy})

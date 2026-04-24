@@ -173,6 +173,77 @@ func TestUpdateAISettings_PreservesAPIKeyWhenBlank(t *testing.T) {
 	assert.Equal(t, "gpt-4o-mini", modelSetting.Value)
 }
 
+func TestUpdateBaseURLSetting_ValidHTTPS(t *testing.T) {
+	t.Parallel()
+
+	database := newTestDB(t)
+	body := `{"base_url":"https://blackbox.example.com"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/admin/settings/base-url", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handlers.UpdateBaseURLSetting(database)(w, req)
+
+	assert.Equal(t, http.StatusNoContent, w.Code)
+	var setting models.AppSetting
+	require.NoError(t, database.First(&setting, "key = ?", "base_url").Error)
+	assert.Equal(t, "https://blackbox.example.com", setting.Value)
+}
+
+func TestUpdateBaseURLSetting_InvalidURL(t *testing.T) {
+	t.Parallel()
+
+	database := newTestDB(t)
+	body := `{"base_url":"not a valid url"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/admin/settings/base-url", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handlers.UpdateBaseURLSetting(database)(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	var count int64
+	require.NoError(t, database.Model(&models.AppSetting{}).Where("key = ?", "base_url").Count(&count).Error)
+	assert.Zero(t, count)
+}
+
+func TestUpdateBaseURLSetting_RejectsUnsupportedScheme(t *testing.T) {
+	t.Parallel()
+
+	database := newTestDB(t)
+	body := `{"base_url":"javascript:alert(1)"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/admin/settings/base-url", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handlers.UpdateBaseURLSetting(database)(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	var count int64
+	require.NoError(t, database.Model(&models.AppSetting{}).Where("key = ?", "base_url").Count(&count).Error)
+	assert.Zero(t, count)
+}
+
+func TestUpdateBaseURLSetting_EmptyStringClears(t *testing.T) {
+	t.Parallel()
+
+	database := newTestDB(t)
+	// Pre-populate a base_url
+	require.NoError(t, database.Save(&models.AppSetting{Key: "base_url", Value: "https://old.example.com"}).Error)
+
+	body := `{"base_url":""}`
+	req := httptest.NewRequest(http.MethodPut, "/api/admin/settings/base-url", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handlers.UpdateBaseURLSetting(database)(w, req)
+
+	assert.Equal(t, http.StatusNoContent, w.Code)
+	var setting models.AppSetting
+	require.NoError(t, database.First(&setting, "key = ?", "base_url").Error)
+	assert.Equal(t, "", setting.Value)
+}
+
 func TestTestAISettings_Success(t *testing.T) {
 	t.Parallel()
 

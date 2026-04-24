@@ -62,10 +62,19 @@ func Init(path string) (*gorm.DB, error) {
 		&models.IncidentEntry{},
 		&models.SystemdUnitConfig{},
 		&models.NotificationDest{},
+		&models.ExcludedTarget{},
+		&models.AuditLog{},
+		&models.WebhookDelivery{},
 	); err != nil {
 		return nil, err
 	}
 	if err := ensureEntryIndexes(database); err != nil {
+		return nil, err
+	}
+	if err := ensureExcludedTargetIndexes(database); err != nil {
+		return nil, err
+	}
+	if err := EnsureEntriesFTS(database); err != nil {
 		return nil, err
 	}
 	return database, nil
@@ -83,6 +92,13 @@ func ensureEntryIndexes(database *gorm.DB) error {
 		}
 	}
 	return nil
+}
+
+func ensureExcludedTargetIndexes(database *gorm.DB) error {
+	return database.Exec(`
+CREATE UNIQUE INDEX IF NOT EXISTS idx_excluded_targets_type_lower_name
+ON excluded_targets(type, lower(name));
+`).Error
 }
 
 func ensureWritablePath(path string) error {

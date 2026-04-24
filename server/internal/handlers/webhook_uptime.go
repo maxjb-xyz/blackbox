@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strings"
@@ -29,11 +30,22 @@ type uptimePayload struct {
 
 func WebhookUptime(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry, shutdown <-chan struct{}) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+		if err != nil {
+			RecordWebhookDelivery(database, "uptime_kuma", "", "", "error", "failed to read payload")
+			writeError(w, http.StatusBadRequest, "failed to read request body")
+			return
+		}
+
 		var payload uptimePayload
-		if !decodeJSONBody(w, r, 1<<20, &payload) {
+		snippet := payloadSnippet(body)
+		if err := json.Unmarshal(body, &payload); err != nil {
+			RecordWebhookDelivery(database, "uptime_kuma", snippet, "", "error", "malformed JSON")
+			writeError(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
 		if payload.Monitor.Name == "" {
+			RecordWebhookDelivery(database, "uptime_kuma", snippet, "", "ignored", "monitor.name is required")
 			writeError(w, http.StatusBadRequest, "monitor.name is required")
 			return
 		}
@@ -41,6 +53,7 @@ func WebhookUptime(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry,
 		rawServiceName := strings.TrimSpace(payload.Monitor.Name)
 		serviceName := strings.ToLower(strings.TrimSpace(rawServiceName))
 		if serviceName == "" {
+			RecordWebhookDelivery(database, "uptime_kuma", snippet, "", "ignored", "service name is required")
 			writeError(w, http.StatusBadRequest, "service name is required")
 			return
 		}
@@ -124,6 +137,7 @@ func WebhookUptime(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry,
 			CorrelatedID: correlatedID,
 		}
 		if err := database.Create(&entry).Error; err != nil {
+			RecordWebhookDelivery(database, "uptime_kuma", snippet, "", "error", "failed to save entry")
 			writeError(w, http.StatusInternalServerError, "failed to save entry")
 			return
 		}
@@ -134,6 +148,7 @@ func WebhookUptime(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry,
 			}
 		}
 
+		RecordWebhookDelivery(database, "uptime_kuma", snippet, correlatedID, "processed", "")
 		w.WriteHeader(http.StatusCreated)
 	}
 }
