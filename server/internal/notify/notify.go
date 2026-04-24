@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"blackbox/server/internal/models"
@@ -26,12 +27,13 @@ const (
 	EventIncidentOpenedSuspected = "incident_opened_suspected"
 	EventIncidentConfirmed       = "incident_confirmed"
 	EventIncidentResolved        = "incident_resolved"
+	EventAIReviewGenerated       = "incident_ai_review_generated"
 )
 
 var (
-	discordSender = sendDiscord
-	slackSender   = sendSlack
-	ntfySender    = sendNtfy
+	discordSender func(ctx context.Context, webhookURL string, inc models.Incident, event string, incURL string, test bool) error = sendDiscord
+	slackSender   func(ctx context.Context, webhookURL string, inc models.Incident, event string, incURL string, test bool) error = sendSlack
+	ntfySender    func(ctx context.Context, topicURL string, inc models.Incident, event string, incURL string, test bool) error   = sendNtfy
 )
 
 // Dispatcher fans out incident events to enabled notification destinations.
@@ -58,6 +60,8 @@ func (d *Dispatcher) Send(ctx context.Context, event string, inc models.Incident
 		return
 	}
 
+	incURL := d.incidentURL(inc.ID)
+
 	for _, dest := range dests {
 		if !destWantsEvent(dest, event) {
 			continue
@@ -71,7 +75,7 @@ func (d *Dispatcher) Send(ctx context.Context, event string, inc models.Incident
 			sendCtx, cancel := context.WithTimeout(context.Background(), notifyTimeout)
 			defer cancel()
 
-			if err := sendTo(sendCtx, dest, inc, false); err != nil {
+			if err := sendTo(sendCtx, dest, inc, event, incURL, false); err != nil {
 				log.Printf("notify: send to %q (%s): %v", dest.Name, dest.Type, err)
 			}
 		}()
@@ -89,7 +93,19 @@ func (d *Dispatcher) SendTest(ctx context.Context, dest models.NotificationDest)
 	sendCtx, cancel := context.WithTimeout(sendCtx, notifyTimeout)
 	defer cancel()
 
-	return sendTo(sendCtx, dest, testIncident(), true)
+	return sendTo(sendCtx, dest, testIncident(), EventIncidentOpenedConfirmed, "", true)
+}
+
+func (d *Dispatcher) incidentURL(incidentID string) string {
+	var setting models.AppSetting
+	if err := d.db.First(&setting, "key = ?", "base_url").Error; err != nil {
+		return ""
+	}
+	base := strings.TrimRight(strings.TrimSpace(setting.Value), "/")
+	if base == "" {
+		return ""
+	}
+	return base + "/incidents/" + incidentID
 }
 
 func destWantsEvent(dest models.NotificationDest, event string) bool {
@@ -108,17 +124,36 @@ func destWantsEvent(dest models.NotificationDest, event string) bool {
 	return false
 }
 
-func sendTo(ctx context.Context, dest models.NotificationDest, inc models.Incident, test bool) error {
+func sendTo(ctx context.Context, dest models.NotificationDest, inc models.Incident, event string, incURL string, test bool) error {
 	switch dest.Type {
 	case "discord":
-		return discordSender(ctx, dest.URL, inc, test)
+		return discordSender(ctx, dest.URL, inc, event, incURL, test)
 	case "slack":
-		return slackSender(ctx, dest.URL, inc, test)
+		return slackSender(ctx, dest.URL, inc, event, incURL, test)
 	case "ntfy":
-		return ntfySender(ctx, dest.URL, inc, test)
+		return ntfySender(ctx, dest.URL, inc, event, incURL, test)
 	default:
 		return fmt.Errorf("unknown destination type: %s", dest.Type)
 	}
+}
+
+func extractAIAnalysis(inc models.Incident) string {
+	var meta map[string]interface{}
+	if err := json.Unmarshal([]byte(inc.Metadata), &meta); err != nil {
+		return ""
+	}
+	if v, ok := meta["ai_analysis"].(string); ok {
+		return v
+	}
+	return ""
+}
+
+func truncateAIAnalysis(s string, maxRunes int) string {
+	runes := []rune(s)
+	if len(runes) <= maxRunes {
+		return s
+	}
+	return string(runes[:maxRunes]) + "..."
 }
 
 func testIncident() models.Incident {

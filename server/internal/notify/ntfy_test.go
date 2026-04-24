@@ -24,7 +24,7 @@ func TestBuildNtfyMessage_ConfirmedOpen(t *testing.T) {
 		Metadata:   "{}",
 	}
 
-	title, body, priority, tags := BuildNtfyMessage(inc, false)
+	title, body, priority, tags := BuildNtfyMessage(inc, EventIncidentOpenedConfirmed, "", false)
 
 	assert.Equal(t, "nginx down", title)
 	assert.Equal(t, "urgent", priority)
@@ -43,7 +43,7 @@ func TestBuildNtfyMessage_SuspectedOpen(t *testing.T) {
 		Metadata:   "{}",
 	}
 
-	_, _, priority, tags := BuildNtfyMessage(inc, false)
+	_, _, priority, tags := BuildNtfyMessage(inc, EventIncidentOpenedConfirmed, "", false)
 
 	assert.Equal(t, "high", priority)
 	assert.Equal(t, "warning", tags)
@@ -62,16 +62,33 @@ func TestBuildNtfyMessage_Resolved(t *testing.T) {
 		Metadata:   "{}",
 	}
 
-	_, _, priority, tags := BuildNtfyMessage(inc, false)
+	_, _, priority, tags := BuildNtfyMessage(inc, EventIncidentOpenedConfirmed, "", false)
 
 	assert.Equal(t, "default", priority)
 	assert.Equal(t, "white_check_mark", tags)
 }
 
 func TestBuildNtfyMessage_Test(t *testing.T) {
-	title, _, _, _ := BuildNtfyMessage(models.Incident{}, true)
+	title, _, _, _ := BuildNtfyMessage(models.Incident{}, EventIncidentOpenedConfirmed, "", true)
 
 	assert.Equal(t, "Test Notification", title)
+}
+
+func TestBuildNtfyMessage_AIReviewGenerated_WithSummary(t *testing.T) {
+	_, body, priority, tags := BuildNtfyMessage(models.Incident{
+		ID:         "n3",
+		Status:     "open",
+		Confidence: "confirmed",
+		Title:      "nginx AI review",
+		Services:   `["nginx"]`,
+		NodeNames:  `["n1"]`,
+		OpenedAt:   time.Now(),
+		Metadata:   `{"ai_analysis":"Root cause: OOM kill."}`,
+	}, EventAIReviewGenerated, "", false)
+
+	assert.Equal(t, "default", priority)
+	assert.Equal(t, "robot", tags)
+	assert.Contains(t, body, "AI: Root cause: OOM kill.")
 }
 
 func TestSendNtfy_SetsHeaders(t *testing.T) {
@@ -102,7 +119,7 @@ func TestSendNtfy_SetsHeaders(t *testing.T) {
 		Metadata:   "{}",
 	}
 
-	err := ExportedSendNtfy(context.Background(), srv.URL, inc, false)
+	err := ExportedSendNtfy(context.Background(), srv.URL, inc, EventIncidentOpenedConfirmed, "", false)
 	require.NoError(t, err)
 
 	assert.Equal(t, "nginx down", capturedTitle)
@@ -121,7 +138,7 @@ func TestSendNtfy_ReturnsErrorOnNon2xx(t *testing.T) {
 		Services:  `[]`,
 		NodeNames: `[]`,
 		Metadata:  "{}",
-	}, false)
+	}, EventIncidentOpenedConfirmed, "", false)
 
 	assert.Error(t, err)
 }

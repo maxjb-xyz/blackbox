@@ -19,6 +19,7 @@ const aiURLKey = "ai_url"
 const aiModelKey = "ai_model"
 const aiAPIKeyKey = "ai_api_key"
 const aiModeKey = "ai_mode"
+const baseURLKey = "base_url"
 
 // Legacy keys — read-only fallback for existing installs
 const legacyOllamaURLKey = "ollama_url"
@@ -54,6 +55,11 @@ func AdminConfig(db *gorm.DB, webhookSecret string) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "failed to load admin config")
 			return
 		}
+		var baseURLSetting models.AppSetting
+		baseURL := ""
+		if err := db.First(&baseURLSetting, "key = ?", baseURLKey).Error; err == nil {
+			baseURL = strings.TrimSpace(baseURLSetting.Value)
+		}
 
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
@@ -67,9 +73,38 @@ func AdminConfig(db *gorm.DB, webhookSecret string) http.HandlerFunc {
 			"ai_model":                    ai.model,
 			"ai_api_key_set":              ai.apiKeySet,
 			"ai_mode":                     ai.mode,
+			"base_url":                    baseURL,
 		}); err != nil {
 			log.Printf("AdminConfig encode: %v", err)
 		}
+	}
+}
+
+func UpdateBaseURLSetting(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			BaseURL string `json:"base_url"`
+		}
+		if !decodeJSONBody(w, r, 4<<10, &req) {
+			return
+		}
+
+		value := strings.TrimSpace(req.BaseURL)
+		if value != "" {
+			parsed, err := url.ParseRequestURI(value)
+			if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+				writeError(w, http.StatusBadRequest, "base_url must be a valid absolute URL or empty")
+				return
+			}
+			value = strings.TrimRight(value, "/")
+		}
+
+		setting := models.AppSetting{Key: baseURLKey, Value: value, UpdatedAt: time.Now()}
+		if err := db.Save(&setting).Error; err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to save base_url")
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	}
 }
 

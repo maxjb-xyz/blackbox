@@ -29,7 +29,7 @@ func TestDispatcher_Send_RoutesToEnabledDest(t *testing.T) {
 	}).Error)
 
 	var hits atomic.Int32
-	restoreDiscordSender(t, func(ctx context.Context, webhookURL string, inc models.Incident, test bool) error {
+	restoreDiscordSender(t, func(ctx context.Context, webhookURL string, inc models.Incident, event string, incURL string, test bool) error {
 		hits.Add(1)
 		return nil
 	})
@@ -56,7 +56,7 @@ func TestDispatcher_Send_SkipsDisabledDest(t *testing.T) {
 	}).Error)
 
 	var hits atomic.Int32
-	restoreDiscordSender(t, func(ctx context.Context, webhookURL string, inc models.Incident, test bool) error {
+	restoreDiscordSender(t, func(ctx context.Context, webhookURL string, inc models.Incident, event string, incURL string, test bool) error {
 		hits.Add(1)
 		return nil
 	})
@@ -82,7 +82,7 @@ func TestDispatcher_Send_SkipsNonMatchingEvent(t *testing.T) {
 	}).Error)
 
 	var hits atomic.Int32
-	restoreDiscordSender(t, func(ctx context.Context, webhookURL string, inc models.Incident, test bool) error {
+	restoreDiscordSender(t, func(ctx context.Context, webhookURL string, inc models.Incident, event string, incURL string, test bool) error {
 		hits.Add(1)
 		return nil
 	})
@@ -97,7 +97,7 @@ func TestDispatcher_Send_SkipsNonMatchingEvent(t *testing.T) {
 func TestDispatcher_SendTest_ReturnsSenderError(t *testing.T) {
 	database := newTestDB(t)
 	expectedErr := errors.New("provider failed")
-	restoreDiscordSender(t, func(ctx context.Context, webhookURL string, inc models.Incident, test bool) error {
+	restoreDiscordSender(t, func(ctx context.Context, webhookURL string, inc models.Incident, event string, incURL string, test bool) error {
 		return expectedErr
 	})
 
@@ -112,6 +112,22 @@ func TestDispatcher_SendTest_ReturnsSenderError(t *testing.T) {
 	})
 
 	assert.ErrorIs(t, err, expectedErr)
+}
+
+func TestDispatcher_IncidentURL(t *testing.T) {
+	database := newTestDB(t)
+	require.NoError(t, database.Create(&models.AppSetting{Key: "base_url", Value: "https://blackbox.example.com/"}).Error)
+
+	d := NewDispatcher(database)
+
+	assert.Equal(t, "https://blackbox.example.com/incidents/inc-1", d.incidentURL("inc-1"))
+}
+
+func TestDispatcher_IncidentURL_EmptyWhenUnset(t *testing.T) {
+	database := newTestDB(t)
+	d := NewDispatcher(database)
+
+	assert.Equal(t, "", d.incidentURL("inc-1"))
 }
 
 func newTestDB(t *testing.T) *gorm.DB {
@@ -129,7 +145,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 	return database
 }
 
-func restoreDiscordSender(t *testing.T, fn func(context.Context, string, models.Incident, bool) error) {
+func restoreDiscordSender(t *testing.T, fn func(context.Context, string, models.Incident, string, string, bool) error) {
 	t.Helper()
 
 	previous := discordSender

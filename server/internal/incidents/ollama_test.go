@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -16,6 +17,67 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/require"
 )
+
+type mockNotifyCall struct {
+	event      string
+	incidentID string
+}
+
+type mockNotifier struct {
+	mu    sync.Mutex
+	calls []mockNotifyCall
+}
+
+func (m *mockNotifier) Send(_ context.Context, event string, inc models.Incident) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.calls = append(m.calls, mockNotifyCall{event: event, incidentID: inc.ID})
+}
+
+func TestAIEnricher_FiresNotificationAfterEnrich(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	originalCall := callGenerateFunc
+	callGenerateFunc = func(_ context.Context, _ LLMProvider, _, _ string, _ time.Duration) (string, error) {
+		return "Root cause: OOM kill.", nil
+	}
+	defer func() { callGenerateFunc = originalCall }()
+
+	notifier := &mockNotifier{}
+	enricher := NewAIEnricherWithNotifier(database, notifier, func(string) {})
+
+	now := time.Now().UTC()
+	inc := models.Incident{
+		ID:         ulid.Make().String(),
+		Status:     "open",
+		Confidence: "suspected",
+		Title:      "nginx crash",
+		Services:   `["nginx"]`,
+		NodeNames:  `["node-01"]`,
+		OpenedAt:   now,
+		Metadata:   "{}",
+	}
+	require.NoError(t, database.Create(&inc).Error)
+
+	enricher.enrich(aiDispatch{
+		incidentID: inc.ID,
+		mode:       "analysis",
+		linkedEntries: []enrichEntry{{
+			Role:    "trigger",
+			Content: "nginx exited",
+			Source:  "docker",
+			Event:   "die",
+		}},
+		model: "llama3.2",
+	})
+
+	notifier.mu.Lock()
+	defer notifier.mu.Unlock()
+	require.Len(t, notifier.calls, 1)
+	require.Equal(t, "incident_ai_review_generated", notifier.calls[0].event)
+	require.Equal(t, inc.ID, notifier.calls[0].incidentID)
+}
 
 func TestManager_SuspectedIncidentDispatchesAIAnalysisWithTriggerLogs(t *testing.T) {
 	database, err := db.Init(":memory:")

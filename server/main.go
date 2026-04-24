@@ -223,6 +223,7 @@ func main() {
 		r.Delete("/api/admin/users/{id}", handlers.DeleteAdminUser(database, eventHub))
 		r.Get("/api/admin/config", handlers.AdminConfig(database, webhookSecret))
 		r.Put("/api/admin/settings/file-watcher", handlers.UpdateFileWatcherSettings(database))
+		r.Put("/api/admin/settings/base-url", handlers.UpdateBaseURLSetting(database))
 		r.Get("/api/admin/settings/systemd", handlers.GetSystemdSettings(database))
 		r.Put("/api/admin/settings/systemd/{node_name}", handlers.UpdateSystemdSettings(database))
 		r.Put("/api/admin/settings/ai", handlers.UpdateAISettings(database))

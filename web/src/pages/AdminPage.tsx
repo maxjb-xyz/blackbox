@@ -20,6 +20,7 @@ import {
   testAISettings,
   testNotificationDest,
   updateAISettings,
+  updateBaseURL,
   updateFileWatcherSettings,
   updateAdminOIDCProvider,
   updateAdminUser,
@@ -69,6 +70,7 @@ const NOTIFICATION_EVENT_OPTIONS = [
   { value: 'incident_opened_suspected', label: 'INCIDENT OPENED / SUSPECTED' },
   { value: 'incident_confirmed', label: 'INCIDENT UPGRADED TO CONFIRMED' },
   { value: 'incident_resolved', label: 'INCIDENT RESOLVED' },
+  { value: 'incident_ai_review_generated', label: 'AI REVIEW GENERATED' },
 ] as const
 const ADMIN_TABS: Tab[] = ['invites', 'users', 'oidc', 'settings', 'systemd', 'notifications']
 
@@ -1562,6 +1564,11 @@ function SettingsTab() {
   const [aiTestResult, setAITestResult] = useState<{ ok: boolean; response?: string; error?: string } | null>(null)
   const [initialLoaded, setInitialLoaded] = useState(false)
   const aiSuccessTimerRef = useRef<number | null>(null)
+  const [baseURL, setBaseURL] = useState('')
+  const [baseURLSaving, setBaseURLSaving] = useState(false)
+  const [baseURLError, setBaseURLError] = useState<string | null>(null)
+  const [baseURLSuccess, setBaseURLSuccess] = useState(false)
+  const baseURLSuccessTimerRef = useRef<number | null>(null)
 
   const loadSettings = useCallback(async () => {
     setLoading(true)
@@ -1574,6 +1581,7 @@ function SettingsTab() {
       setAIModel(config.ai_model ?? '')
       setAIAPIKeySet(config.ai_api_key_set ?? false)
       setAIMode(config.ai_mode ?? 'analysis')
+      setBaseURL(config.base_url ?? '')
       setInitialLoaded(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load settings')
@@ -1590,6 +1598,9 @@ function SettingsTab() {
     return () => {
       if (aiSuccessTimerRef.current !== null) {
         window.clearTimeout(aiSuccessTimerRef.current)
+      }
+      if (baseURLSuccessTimerRef.current !== null) {
+        window.clearTimeout(baseURLSuccessTimerRef.current)
       }
     }
   }, [])
@@ -1634,6 +1645,29 @@ function SettingsTab() {
       setAIError(err instanceof Error ? err.message : 'Save failed')
     } finally {
       setAISaving(false)
+    }
+  }
+
+  async function saveBaseURL(e: React.FormEvent) {
+    e.preventDefault()
+    if (!initialLoaded) return
+    setBaseURLSaving(true)
+    setBaseURLError(null)
+    setBaseURLSuccess(false)
+    try {
+      await updateBaseURL(baseURL)
+      if (baseURLSuccessTimerRef.current !== null) {
+        window.clearTimeout(baseURLSuccessTimerRef.current)
+      }
+      setBaseURLSuccess(true)
+      baseURLSuccessTimerRef.current = window.setTimeout(() => {
+        setBaseURLSuccess(false)
+        baseURLSuccessTimerRef.current = null
+      }, 2500)
+    } catch (err) {
+      setBaseURLError(err instanceof Error ? err.message : 'Save failed')
+    } finally {
+      setBaseURLSaving(false)
     }
   }
 
@@ -1736,6 +1770,52 @@ function SettingsTab() {
               {saving ? 'SAVING...' : 'SAVE'}
             </button>
           </>
+        )}
+      </section>
+
+      <section style={panelStyle}>
+        <h3 style={{ fontSize: 11, color: 'var(--muted)', letterSpacing: '0.1em', margin: '0 0 12px 0' }}>
+          INSTANCE BASE URL
+        </h3>
+        {!initialLoaded ? (
+          <div style={{ color: loading ? 'var(--muted)' : 'var(--danger)', fontSize: 12 }}>
+            {loading ? 'loading...' : 'Load settings before editing the instance base URL.'}
+          </div>
+        ) : (
+          <form onSubmit={saveBaseURL} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <input
+              type="url"
+              value={baseURL}
+              onChange={e => {
+                setBaseURL(e.target.value)
+                setBaseURLSuccess(false)
+              }}
+              placeholder="https://blackbox.example.com"
+              disabled={loading || baseURLSaving}
+              style={inputStyle}
+            />
+            <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+              Used to generate clickable incident links in notifications. Leave blank to omit links.
+            </div>
+            {baseURLError && <div style={{ fontSize: 11, color: 'var(--danger)' }}>{baseURLError}</div>}
+            {baseURLSuccess && <div style={{ fontSize: 11, color: 'var(--success)' }}>saved</div>}
+            <button
+              type="submit"
+              disabled={loading || baseURLSaving || !initialLoaded}
+              style={{
+                alignSelf: 'flex-start',
+                background: 'transparent',
+                border: '1px solid var(--border)',
+                color: 'var(--muted)',
+                fontSize: 11,
+                padding: '4px 12px',
+                cursor: loading || baseURLSaving || !initialLoaded ? 'not-allowed' : 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >
+              {baseURLSaving ? 'SAVING...' : 'SAVE'}
+            </button>
+          </form>
         )}
       </section>
 
