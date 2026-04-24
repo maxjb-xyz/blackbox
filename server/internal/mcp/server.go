@@ -37,10 +37,8 @@ func (m *MCPManager) ApplySettings(enabled bool, port int, token string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if err := m.stopLocked(); err != nil {
-		return err
-	}
 	if !enabled {
+		_ = m.stopLocked()
 		return nil
 	}
 	if token == "" {
@@ -50,21 +48,27 @@ func (m *MCPManager) ApplySettings(enabled bool, port int, token string) error {
 		return errors.New("mcp port must be between 1024 and 65535")
 	}
 
+	// Phase 1: prove the new listener can bind BEFORE touching the running server.
+	addr := fmt.Sprintf(":%d", port)
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("mcp: bind %s: %w", addr, err)
+	}
+	// ln is valid — now safe to stop the old server and swap in the new one.
+
+	// Phase 2: stop old, start new.
+	_ = m.stopLocked()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	server := buildServer(m.db)
 	sseServer := mcpserver.NewSSEServer(server)
 	httpServer := &http.Server{
-		Addr:              fmt.Sprintf(":%d", port),
+		Addr:              addr,
 		Handler:           BearerTokenMiddleware(token, sseServer),
 		ReadHeaderTimeout: 10 * time.Second,
 		BaseContext: func(net.Listener) context.Context {
 			return ctx
 		},
-	}
-	ln, err := net.Listen("tcp", httpServer.Addr)
-	if err != nil {
-		cancel()
-		return err
 	}
 
 	m.running = httpServer

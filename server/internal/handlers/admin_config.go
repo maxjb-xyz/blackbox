@@ -133,12 +133,7 @@ func UpdateMCPSettings(db *gorm.DB, mcpMgr *mcppkg.MCPManager) http.HandlerFunc 
 			return
 		}
 
-		if mcpMgr != nil {
-			if err := mcpMgr.ApplySettings(req.Enabled, port, token); err != nil {
-				writeError(w, http.StatusInternalServerError, "failed to apply mcp settings")
-				return
-			}
-		}
+		// DB is the source of truth: write first, apply second.
 		now := time.Now()
 		settings := []models.AppSetting{
 			{Key: mcpEnabledKey, Value: strconv.FormatBool(req.Enabled), UpdatedAt: now},
@@ -157,6 +152,17 @@ func UpdateMCPSettings(db *gorm.DB, mcpMgr *mcppkg.MCPManager) http.HandlerFunc 
 		}); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to save mcp settings")
 			return
+		}
+
+		// Apply live — DB is already consistent; a failure here is a soft error.
+		// The next Blackbox restart will self-correct from DB.
+		if mcpMgr != nil {
+			if err := mcpMgr.ApplySettings(req.Enabled, port, token); err != nil {
+				log.Printf("mcp: ApplySettings failed after DB write: %v", err)
+				writeError(w, http.StatusInternalServerError,
+					"settings saved but failed to apply: "+err.Error()+" — restart Blackbox to apply")
+				return
+			}
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}
