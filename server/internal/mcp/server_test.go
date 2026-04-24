@@ -46,6 +46,33 @@ func TestMCPManagerRestart(t *testing.T) {
 	}
 }
 
+func TestMCPManagerSamePortRestart(t *testing.T) {
+	port := freePort(t)
+	mgr := NewMCPManager(nil)
+
+	// Start on port
+	if err := mgr.ApplySettings(true, port, "token1"); err != nil {
+		t.Fatalf("initial start: %v", err)
+	}
+	if !mgr.IsRunning() {
+		t.Fatal("expected running after start")
+	}
+
+	// Same-port restart with new token (simulates token rotation)
+	if err := mgr.ApplySettings(true, port, "token2"); err != nil {
+		t.Fatalf("same-port restart: %v", err)
+	}
+	if !mgr.IsRunning() {
+		t.Fatal("expected still running after same-port restart")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := mgr.Shutdown(ctx); err != nil {
+		t.Fatalf("shutdown: %v", err)
+	}
+}
+
 func freePort(t *testing.T) int {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")

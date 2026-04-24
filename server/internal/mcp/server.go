@@ -20,6 +20,7 @@ type MCPManager struct {
 	mu      sync.Mutex
 	running *http.Server
 	cancel  context.CancelFunc
+	port    int // currently bound port, 0 if not running
 	db      *gorm.DB
 }
 
@@ -39,6 +40,7 @@ func (m *MCPManager) ApplySettings(enabled bool, port int, token string) error {
 
 	if !enabled {
 		_ = m.stopLocked()
+		m.port = 0
 		return nil
 	}
 	if token == "" {
@@ -48,16 +50,27 @@ func (m *MCPManager) ApplySettings(enabled bool, port int, token string) error {
 		return errors.New("mcp port must be between 1024 and 65535")
 	}
 
-	// Phase 1: prove the new listener can bind BEFORE touching the running server.
 	addr := fmt.Sprintf(":%d", port)
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		return fmt.Errorf("mcp: bind %s: %w", addr, err)
-	}
-	// ln is valid — now safe to stop the old server and swap in the new one.
 
-	// Phase 2: stop old, start new.
-	_ = m.stopLocked()
+	var ln net.Listener
+	if m.running != nil && m.port == port {
+		// Same port: stop first to release the socket, then bind.
+		_ = m.stopLocked()
+		var err error
+		ln, err = net.Listen("tcp", addr)
+		if err != nil {
+			m.port = 0
+			return fmt.Errorf("mcp: bind %s: %w", addr, err)
+		}
+	} else {
+		// Different port (or not running): bind first to prove it works before stopping old server.
+		var err error
+		ln, err = net.Listen("tcp", addr)
+		if err != nil {
+			return fmt.Errorf("mcp: bind %s: %w", addr, err)
+		}
+		_ = m.stopLocked()
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	server := buildServer(m.db)
@@ -73,6 +86,7 @@ func (m *MCPManager) ApplySettings(enabled bool, port int, token string) error {
 
 	m.running = httpServer
 	m.cancel = cancel
+	m.port = port
 	go func() {
 		if serveErr := httpServer.Serve(ln); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
 			log.Printf("mcp: server error: %v", serveErr)
@@ -80,6 +94,7 @@ func (m *MCPManager) ApplySettings(enabled bool, port int, token string) error {
 			if m.running == httpServer {
 				m.running = nil
 				m.cancel = nil
+				m.port = 0
 			}
 			m.mu.Unlock()
 		}
@@ -110,6 +125,7 @@ func (m *MCPManager) stopLockedWithContext(ctx context.Context) error {
 	err := m.running.Shutdown(ctx)
 	m.running = nil
 	m.cancel = nil
+	m.port = 0
 	log.Printf("mcp: server stopped")
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
