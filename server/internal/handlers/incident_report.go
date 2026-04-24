@@ -15,7 +15,7 @@ import (
 	"blackbox/server/internal/models"
 	"blackbox/shared/types"
 	"github.com/go-chi/chi/v5"
-	"github.com/jung-kurt/gofpdf"
+	"github.com/phpdave11/gofpdf"
 	"gorm.io/gorm"
 )
 
@@ -152,13 +152,12 @@ func pdfHeader(pdf *gofpdf.Fpdf, data reportData) {
 	pageW, _, _ := pdf.PageSize(0)
 	usableW := pageW - 40
 
-	pdf.CellFormat(usableW, 7, label, "", 0, "L", false, 0, "")
-	pdf.SetX(20)
-	pdf.CellFormat(usableW, 7, idStr, "", 1, "R", false, 0, "")
+	pdf.CellFormat(usableW/2, 7, label, "", 0, "L", false, 0, "")
+	pdf.CellFormat(usableW/2, 7, idStr, "", 1, "R", false, 0, "")
 
 	pdf.SetFont("Courier", "B", 14)
 	pdf.SetTextColor(0, 0, 0)
-	pdf.MultiCell(0, 8, data.Incident.Title, "", "L", false)
+	pdf.MultiCell(0, 8, sanitizePDFString(data.Incident.Title), "", "L", false)
 	pdf.Ln(2)
 }
 
@@ -175,7 +174,7 @@ func pdfOverview(pdf *gofpdf.Fpdf, data reportData) {
 		pdf.SetTextColor(0x66, 0x66, 0x66)
 		pdf.CellFormat(keyW, 5, key, "", 0, "L", false, 0, "")
 		pdf.SetTextColor(0, 0, 0)
-		pdf.MultiCell(0, 5, value, "", "L", false)
+		pdf.MultiCell(0, 5, sanitizePDFString(value), "", "L", false)
 	}
 
 	row("Status:", strings.ToUpper(inc.Status))
@@ -213,12 +212,12 @@ func pdfAISection(pdf *gofpdf.Fpdf, data reportData) {
 	if data.AIModel != "" {
 		label = fmt.Sprintf("AI ANALYSIS  [%s]", data.AIModel)
 	}
-	pdf.CellFormat(0, 6, label, "", 1, "L", false, 0, "")
+	pdf.CellFormat(0, 6, sanitizePDFString(label), "", 1, "L", false, 0, "")
 	pdf.Ln(1)
 
 	pdf.SetFont("Courier", "", 9)
 	pdf.SetTextColor(0, 0, 0)
-	pdf.MultiCell(0, 5, data.AIAnalysis, "", "L", false)
+	pdf.MultiCell(0, 5, sanitizePDFString(data.AIAnalysis), "", "L", false)
 	pdf.Ln(2)
 	pdfRule(pdf)
 }
@@ -252,12 +251,12 @@ func pdfEventChain(pdf *gofpdf.Fpdf, entries []reportEntry) {
 		pdf.SetTextColor(0, 0, 0)
 		pdf.CellFormat(colRole, 5, roleLabel(link.Role), "", 0, "L", false, 0, "")
 		pdf.CellFormat(colTS, 5, entry.Timestamp.UTC().Format("2006-01-02 15:04:05"), "", 0, "L", false, 0, "")
-		pdf.CellFormat(colSrc, 5, entry.Source, "", 0, "L", false, 0, "")
-		pdf.CellFormat(colSvc, 5, entry.Service, "", 0, "L", false, 0, "")
-		pdf.CellFormat(colEvent, 5, entry.Event, "", 1, "L", false, 0, "")
+		pdf.CellFormat(colSrc, 5, sanitizePDFString(entry.Source), "", 0, "L", false, 0, "")
+		pdf.CellFormat(colSvc, 5, sanitizePDFString(entry.Service), "", 0, "L", false, 0, "")
+		pdf.CellFormat(colEvent, 5, sanitizePDFString(entry.Event), "", 1, "L", false, 0, "")
 
 		if entry.Content != "" {
-			content := truncateRunes(entry.Content, 120)
+			content := sanitizePDFString(truncateRunes(entry.Content, 120))
 			pdf.SetX(26)
 			pdf.SetFont("Courier", "", 8)
 			pdf.SetTextColor(0x66, 0x66, 0x66)
@@ -265,7 +264,7 @@ func pdfEventChain(pdf *gofpdf.Fpdf, entries []reportEntry) {
 		}
 
 		if link.Role == "ai_cause" && link.Reason != "" {
-			reason := "AI: " + truncateRunes(link.Reason, 120)
+			reason := sanitizePDFString("AI: " + truncateRunes(link.Reason, 120))
 			pdf.SetX(26)
 			pdf.SetFont("Courier", "I", 8)
 			pdf.SetTextColor(0x66, 0x66, 0x66)
@@ -329,4 +328,24 @@ func truncateRunes(value string, max int) string {
 		return value
 	}
 	return string(runes[:max]) + "..."
+}
+
+func sanitizePDFString(s string) string {
+	replacer := strings.NewReplacer(
+		"‘", "'", "’", "'", // curly single quotes
+		"“", "\"", "”", "\"", // curly double quotes
+		"–", "-", "—", "--", // en/em dash
+		"…", "...", // ellipsis
+		" ", " ", // non-breaking space
+	)
+	// Strip remaining non-Latin-1 chars
+	var b strings.Builder
+	for _, r := range replacer.Replace(s) {
+		if r <= 0xFF {
+			b.WriteRune(r)
+		} else {
+			b.WriteRune('?')
+		}
+	}
+	return b.String()
 }
