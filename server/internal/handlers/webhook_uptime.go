@@ -148,7 +148,7 @@ func WebhookUptime(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry,
 			}
 		}
 
-		RecordWebhookDelivery(database, "uptime_kuma", snippet, "", "processed", "")
+		RecordWebhookDelivery(database, "uptime_kuma", snippet, correlatedID, "processed", "")
 		w.WriteHeader(http.StatusCreated)
 	}
 }

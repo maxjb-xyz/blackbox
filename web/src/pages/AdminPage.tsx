@@ -1748,7 +1748,7 @@ function WebhookDeliveriesTab({
                   <th style={adminTableHeaderStyle}>TIME</th>
                   <th style={adminTableHeaderStyle}>SOURCE</th>
                   <th style={adminTableHeaderStyle}>STATUS</th>
-                  <th style={adminTableHeaderStyle}>INCIDENT</th>
+                  <th style={adminTableHeaderStyle}>CORRELATED ENTRY</th>
                   <th style={adminTableHeaderStyle}>SNIPPET</th>
                 </tr>
               </thead>
@@ -1766,9 +1766,9 @@ function WebhookDeliveriesTab({
                         <td style={{ ...adminTableCellStyle, ...webhookStatusStyle(item.status) }}>{item.status.toUpperCase()}</td>
                         <td style={adminTableCellStyle}>
                           {item.matched_incident_id ? (
-                            <Link to={`/incidents/${item.matched_incident_id}`} style={{ color: 'var(--accent)' }}>
+                            <span title={item.matched_incident_id} style={{ color: 'var(--accent)', fontFamily: 'monospace' }}>
                               {item.matched_incident_id.slice(0, 8)}
-                            </Link>
+                            </span>
                           ) : <span style={{ color: 'var(--muted)' }}>-</span>}
                         </td>
                         <td style={{ ...adminTableCellStyle, color: 'var(--muted)' }}>{truncateDisplayText(item.payload_snippet, 80)}</td>
