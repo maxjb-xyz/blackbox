@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
+import { Bug, ChevronDown, ChevronUp, ExternalLink, Lightbulb } from 'lucide-react'
 import { Navigate } from 'react-router-dom'
 import {
   createAdminOIDCProvider,
@@ -50,7 +51,16 @@ interface OIDCProviderFormState {
   enabled: boolean
 }
 
-type Tab = 'invites' | 'users' | 'oidc' | 'settings' | 'systemd' | 'notifications'
+interface GitHubRelease {
+  id: number
+  tag_name: string
+  name: string
+  published_at: string
+  body: string
+  html_url: string
+}
+
+type Tab = 'invites' | 'users' | 'oidc' | 'settings' | 'systemd' | 'notifications' | 'github'
 type OIDCPolicy = 'open' | 'existing_only' | 'invite_required'
 
 const UNIT_SUFFIXES = ['.service','.socket','.device','.mount','.automount',
@@ -70,7 +80,7 @@ const NOTIFICATION_EVENT_OPTIONS = [
   { value: 'incident_confirmed', label: 'INCIDENT UPGRADED TO CONFIRMED' },
   { value: 'incident_resolved', label: 'INCIDENT RESOLVED' },
 ] as const
-const ADMIN_TABS: Tab[] = ['invites', 'users', 'oidc', 'settings', 'systemd', 'notifications']
+const ADMIN_TABS: Tab[] = ['invites', 'users', 'oidc', 'settings', 'systemd', 'notifications', 'github']
 
 function normalizeInvite(invite: Record<string, unknown>): InviteCode {
   return {
@@ -766,6 +776,7 @@ export default function AdminPage() {
             </section>
           </div>
         )}
+        {tab === 'github' && <GitHubTab />}
       </div>
     </div>
   )
@@ -1921,6 +1932,166 @@ function SettingsTab() {
   )
 }
 
+function GitHubTab() {
+  const [releases, setReleases] = useState<GitHubRelease[]>([])
+  const [releasesLoading, setReleasesLoading] = useState(false)
+  const [releasesError, setReleasesError] = useState<string | null>(null)
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set())
+
+  useEffect(() => {
+    void (async () => {
+      setReleasesLoading(true)
+      setReleasesError(null)
+      try {
+        const res = await fetch('https://api.github.com/repos/maxjb-xyz/blackbox/releases')
+        if (!res.ok) throw new Error(`GitHub API returned ${res.status}`)
+        const data: GitHubRelease[] = await res.json()
+        setReleases(data)
+      } catch (err) {
+        setReleasesError(err instanceof Error ? err.message : 'Failed to fetch releases')
+      } finally {
+        setReleasesLoading(false)
+      }
+    })()
+  }, [])
+
+  function toggleExpanded(id: number) {
+    setExpandedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <section style={panelStyle}>
+        <div style={panelHeaderStyle}>
+          <span style={panelLabelStyle}>COMMUNITY</span>
+        </div>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          <a
+            href="https://github.com/maxjb-xyz/blackbox/issues/new?template=feature_request.md&labels=enhancement"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={githubActionBtnStyle}
+          >
+            <Lightbulb size={14} />
+            SUGGEST A FEATURE
+          </a>
+          <a
+            href="https://github.com/maxjb-xyz/blackbox/issues/new?template=bug_report.md&labels=bug"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={githubActionBtnStyle}
+          >
+            <Bug size={14} />
+            REPORT A BUG
+          </a>
+        </div>
+      </section>
+
+      <section style={panelStyle}>
+        <div style={panelHeaderStyle}>
+          <span style={panelLabelStyle}>RELEASES</span>
+        </div>
+        {releasesLoading && (
+          <div style={{ color: 'var(--muted)', fontSize: 12 }}>Loading releases...</div>
+        )}
+        {releasesError && (
+          <div style={{ color: 'var(--danger)', fontSize: 12 }}>
+            Failed to load releases from GitHub. Check your network connection.
+          </div>
+        )}
+        {!releasesLoading && !releasesError && releases.length === 0 && (
+          <div style={{ color: 'var(--muted)', fontSize: 12 }}>No releases found.</div>
+        )}
+        {!releasesLoading && !releasesError && releases.map((release, index) => {
+          const isExpanded = expandedIds.has(release.id)
+          const hasBody = Boolean(release.body && release.body.trim().length > 0)
+          const isLast = index === releases.length - 1
+
+          return (
+            <div
+              key={release.id}
+              style={{
+                padding: '12px 0',
+                borderBottom: isLast ? 'none' : '1px solid var(--border)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ color: 'var(--accent)', fontSize: 12, fontFamily: 'inherit' }}>
+                  {release.tag_name}
+                </span>
+                {release.name && (
+                  <span style={{ color: 'var(--text)', fontSize: 12 }}>
+                    - {release.name}
+                  </span>
+                )}
+                <span style={{ color: 'var(--muted)', fontSize: 11, marginLeft: 'auto' }}>
+                  {formatLocalDate(release.published_at)}
+                </span>
+                <a
+                  href={release.html_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    color: 'var(--muted)',
+                    fontSize: 11,
+                    textDecoration: 'none',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                  }}
+                >
+                  <ExternalLink size={12} />
+                  View on GitHub
+                </a>
+                {hasBody && (
+                  <button
+                    type="button"
+                    onClick={() => toggleExpanded(release.id)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      color: 'var(--muted)',
+                      padding: 0,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                    }}
+                    aria-label={isExpanded ? 'Collapse release notes' : 'Expand release notes'}
+                  >
+                    {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                  </button>
+                )}
+              </div>
+
+              {isExpanded && hasBody && (
+                <pre
+                  style={{
+                    whiteSpace: 'pre-wrap',
+                    fontSize: 11,
+                    color: 'var(--muted)',
+                    borderTop: '1px solid var(--border)',
+                    paddingTop: 8,
+                    marginTop: 8,
+                    fontFamily: 'inherit',
+                    margin: '8px 0 0 0',
+                  }}
+                >
+                  {release.body}
+                </pre>
+              )}
+            </div>
+          )
+        })}
+      </section>
+    </div>
+  )
+}
+
 const panelStyle: CSSProperties = {
   border: '1px solid var(--border)',
   padding: 16,
@@ -1985,4 +2156,21 @@ const actionBtnStyle: CSSProperties = {
   fontFamily: 'inherit',
   cursor: 'pointer',
   letterSpacing: '0.05em',
+}
+
+const githubActionBtnStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  flex: 1,
+  justifyContent: 'center',
+  background: 'none',
+  border: '1px solid var(--border)',
+  color: 'var(--text)',
+  fontSize: '11px',
+  letterSpacing: '0.08em',
+  padding: '10px 16px',
+  fontFamily: 'inherit',
+  cursor: 'pointer',
+  textDecoration: 'none',
 }
