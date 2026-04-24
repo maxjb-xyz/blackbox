@@ -611,9 +611,6 @@ The database is automatically migrated on startup — no manual schema managemen
 - [x] Mobile-friendly view
 - [x] Support OpenAI/Other AI Providers
 - [x] Webhook notification support
-- [x] Admin settings reorganization (Access / Integrations / System)
-- [x] Container and stack exclusion list
-- [x] FTS5 full-text timeline search
 - [ ] Timeline UI polish and interaction improvements
 - [ ] Grafana data source plugin
 - [ ] Bi-directional agent analysis
