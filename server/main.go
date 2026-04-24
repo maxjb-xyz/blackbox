@@ -239,6 +239,7 @@ func main() {
 		r.Put("/api/admin/notifications/{id}", handlers.UpdateNotificationDest(database))
 		r.Delete("/api/admin/notifications/{id}", handlers.DeleteNotificationDest(database))
 		r.Post("/api/admin/notifications/{id}/test", handlers.TestNotificationDest(database, notifier))
+		r.Get("/api/admin/github/releases", handlers.GetGitHubReleases(database))
 	})
 
 	r.Group(func(r chi.Router) {

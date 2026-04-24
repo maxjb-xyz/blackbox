@@ -1944,13 +1944,10 @@ function GitHubTab() {
       setReleasesLoading(true)
       setReleasesError(null)
       try {
-        const res = await fetch(
-          'https://api.github.com/repos/maxjb-xyz/blackbox/releases?per_page=100',
-          { signal: controller.signal },
-        )
-        if (!res.ok) throw new Error(`GitHub API returned ${res.status}`)
+        const res = await fetch('/api/admin/github/releases', { signal: controller.signal })
+        if (!res.ok) throw new Error(`Failed to fetch releases (${res.status})`)
         const raw: unknown = await res.json()
-        if (!Array.isArray(raw)) throw new Error('Unexpected response format from GitHub API')
+        if (!Array.isArray(raw)) throw new Error('Unexpected response format from releases API')
         setReleases(raw as GitHubRelease[])
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') return
