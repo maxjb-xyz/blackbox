@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -34,11 +35,15 @@ func extractClientIP(r *http.Request) string {
 }
 
 func isTrustedProxy(ip string) bool {
+	// Allow an explicit override for reverse proxies on different hosts
+	if trusted := os.Getenv("TRUSTED_PROXY_IP"); trusted != "" && ip == trusted {
+		return true
+	}
 	parsed := net.ParseIP(ip)
 	if parsed == nil {
 		return false
 	}
-	return parsed.IsLoopback() || parsed.IsPrivate() || parsed.IsLinkLocalUnicast()
+	return parsed.IsLoopback()
 }
 
 func pruneAuditLogs(db *gorm.DB) {
