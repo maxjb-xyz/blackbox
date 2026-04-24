@@ -2130,7 +2130,6 @@ function webhookStatusStyle(status: string): CSSProperties {
   if (status === 'error') return { color: 'var(--danger)' }
   return { color: 'var(--muted)' }
 }
-
 function SettingsTab({ section }: { section: 'ai' | 'filewatcher' }) {
   const [redactSecrets, setRedactSecrets] = useState(true)
   const [loading, setLoading] = useState(true)

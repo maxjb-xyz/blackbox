@@ -18,12 +18,13 @@ type SlackPayload struct {
 }
 
 type SlackAttachment struct {
-	Fallback string       `json:"fallback"`
-	Color    string       `json:"color"`
-	Title    string       `json:"title"`
-	Fields   []slackField `json:"fields,omitempty"`
-	Footer   string       `json:"footer,omitempty"`
-	Ts       int64        `json:"ts,omitempty"`
+	Fallback  string       `json:"fallback"`
+	Color     string       `json:"color"`
+	Title     string       `json:"title"`
+	TitleLink string       `json:"title_link,omitempty"`
+	Fields    []slackField `json:"fields,omitempty"`
+	Footer    string       `json:"footer,omitempty"`
+	Ts        int64        `json:"ts,omitempty"`
 }
 
 type slackField struct {
@@ -34,7 +35,7 @@ type slackField struct {
 
 var ExportedSendSlack = sendSlack
 
-func BuildSlackPayload(inc models.Incident, test bool) SlackPayload {
+func BuildSlackPayload(inc models.Incident, event string, incURL string, test bool) SlackPayload {
 	if test {
 		return SlackPayload{
 			Attachments: []SlackAttachment{{
@@ -74,11 +75,24 @@ func BuildSlackPayload(inc models.Incident, test bool) SlackPayload {
 		})
 	}
 
+	if incURL != "" {
+		attachment.TitleLink = incURL
+	}
+	if event == EventAIReviewGenerated {
+		if summary := extractAIAnalysis(inc); summary != "" {
+			attachment.Fields = append(attachment.Fields, slackField{
+				Title: "AI Analysis",
+				Value: truncateAIAnalysis(summary, maxSlackAIAnalysisChars),
+				Short: false,
+			})
+		}
+	}
+
 	return SlackPayload{Attachments: []SlackAttachment{attachment}}
 }
 
-func sendSlack(ctx context.Context, webhookURL string, inc models.Incident, test bool) error {
-	payload := BuildSlackPayload(inc, test)
+func sendSlack(ctx context.Context, webhookURL string, inc models.Incident, event string, incURL string, test bool) error {
+	payload := BuildSlackPayload(inc, event, incURL, test)
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("marshal slack payload: %w", err)

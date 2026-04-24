@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"blackbox/shared/types"
 	"github.com/go-chi/chi/v5"
@@ -37,7 +38,23 @@ func ListEntries(database *gorm.DB) http.HandlerFunc {
 			}
 		}
 
-		tx := database.Model(&types.Entry{}).Order("timestamp DESC").Order("id DESC").Limit(limit + 1)
+		usingFTS := false
+		tx := database.Model(&types.Entry{})
+		if q != "" {
+			if ftsQuery := buildEntryFTSQuery(q); ftsQuery != "" {
+				usingFTS = true
+				tx = database.Table("entries").Select("entries.*").
+					Joins("JOIN entries_fts ON entries.rowid = entries_fts.rowid").
+					Where("entries_fts MATCH ?", ftsQuery)
+			}
+		}
+		timestampColumn := "timestamp"
+		idColumn := "id"
+		if usingFTS {
+			timestampColumn = "entries.timestamp"
+			idColumn = "entries.id"
+		}
+		tx = tx.Order(timestampColumn + " DESC").Order(idColumn + " DESC").Limit(limit + 1)
 		if cursor != "" {
 			parsedCursor, err := parseEntryCursor(cursor)
 			if err != nil {
@@ -45,7 +62,7 @@ func ListEntries(database *gorm.DB) http.HandlerFunc {
 				return
 			}
 			tx = tx.Where(
-				"timestamp < ? OR (timestamp = ? AND id < ?)",
+				timestampColumn+" < ? OR ("+timestampColumn+" = ? AND "+idColumn+" < ?)",
 				parsedCursor.Timestamp,
 				parsedCursor.Timestamp,
 				parsedCursor.ID,
@@ -57,7 +74,7 @@ func ListEntries(database *gorm.DB) http.HandlerFunc {
 				writeError(w, http.StatusBadRequest, "invalid time_start")
 				return
 			}
-			tx = tx.Where("timestamp >= ?", parsedTimeStart)
+			tx = tx.Where(timestampColumn+" >= ?", parsedTimeStart)
 		}
 		if timeEndStr != "" {
 			parsedTimeEnd, err := time.Parse(time.RFC3339Nano, timeEndStr)
@@ -65,30 +82,39 @@ func ListEntries(database *gorm.DB) http.HandlerFunc {
 				writeError(w, http.StatusBadRequest, "invalid time_end")
 				return
 			}
-			tx = tx.Where("timestamp <= ?", parsedTimeEnd)
+			tx = tx.Where(timestampColumn+" <= ?", parsedTimeEnd)
 		}
 		if node != "" {
-			tx = tx.Where("node_name = ?", node)
+			tx = tx.Where(columnName("node_name", usingFTS)+" = ?", node)
 		}
 		if source != "" {
-			tx = tx.Where("source = ?", source)
+			tx = tx.Where(columnName("source", usingFTS)+" = ?", source)
 		}
 		if service != "" {
-			tx = tx.Where("service = ?", service)
+			tx = tx.Where(columnName("service", usingFTS)+" = ?", service)
 		}
-		if q != "" {
-			like := "%" + q + "%"
-			tx = tx.Where("content LIKE ? OR service LIKE ?", like, like)
+		if q != "" && !usingFTS {
+			like := "%" + escapeLike(q) + "%"
+			tx = tx.Where(columnName("content", usingFTS)+" LIKE ? ESCAPE '\\' OR "+columnName("service", usingFTS)+" LIKE ? ESCAPE '\\'", like, like)
 		}
 		hideHeartbeat := r.URL.Query().Get("hide_heartbeat") == "true"
 		if hideHeartbeat {
-			tx = tx.Where("NOT (source = 'agent' AND event = 'heartbeat')")
+			tx = tx.Where("NOT (" + columnName("source", usingFTS) + " = 'agent' AND " + columnName("event", usingFTS) + " = 'heartbeat')")
 		}
 
 		var entries []types.Entry
 		if err := tx.Find(&entries).Error; err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to fetch entries")
-			return
+			if usingFTS {
+				log.Printf("entries: FTS query failed, falling back to LIKE: %v", err)
+				entries, err = listEntriesFallback(database, cursor, limit, node, source, service, q, timeStartStr, timeEndStr, hideHeartbeat)
+				if err != nil {
+					writeError(w, http.StatusInternalServerError, "failed to fetch entries")
+					return
+				}
+			} else {
+				writeError(w, http.StatusInternalServerError, "failed to fetch entries")
+				return
+			}
 		}
 
 		type response struct {
@@ -110,6 +136,78 @@ func ListEntries(database *gorm.DB) http.HandlerFunc {
 			log.Printf("ListEntries encode: %v", err)
 		}
 	}
+}
+
+func columnName(name string, qualified bool) string {
+	if qualified {
+		return "entries." + name
+	}
+	return name
+}
+
+func escapeLike(s string) string {
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, "%", "\\%")
+	s = strings.ReplaceAll(s, "_", "\\_")
+	return s
+}
+
+func buildEntryFTSQuery(q string) string {
+	terms := strings.FieldsFunc(q, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+	cleaned := make([]string, 0, len(terms))
+	for _, term := range terms {
+		term = strings.TrimSpace(term)
+		if term == "" {
+			continue
+		}
+		cleaned = append(cleaned, term+"*")
+	}
+	return strings.Join(cleaned, " AND ")
+}
+
+func listEntriesFallback(database *gorm.DB, cursor string, limit int, node, source, service, q, timeStartStr, timeEndStr string, hideHeartbeat bool) ([]types.Entry, error) {
+	tx := database.Model(&types.Entry{}).Order("timestamp DESC").Order("id DESC").Limit(limit + 1)
+	if cursor != "" {
+		parsedCursor, err := parseEntryCursor(cursor)
+		if err != nil {
+			return nil, err
+		}
+		tx = tx.Where("timestamp < ? OR (timestamp = ? AND id < ?)", parsedCursor.Timestamp, parsedCursor.Timestamp, parsedCursor.ID)
+	}
+	if timeStartStr != "" {
+		parsed, err := time.Parse(time.RFC3339Nano, timeStartStr)
+		if err != nil {
+			return nil, err
+		}
+		tx = tx.Where("timestamp >= ?", parsed)
+	}
+	if timeEndStr != "" {
+		parsed, err := time.Parse(time.RFC3339Nano, timeEndStr)
+		if err != nil {
+			return nil, err
+		}
+		tx = tx.Where("timestamp <= ?", parsed)
+	}
+	if node != "" {
+		tx = tx.Where("node_name = ?", node)
+	}
+	if source != "" {
+		tx = tx.Where("source = ?", source)
+	}
+	if service != "" {
+		tx = tx.Where("service = ?", service)
+	}
+	if q != "" {
+		like := "%" + escapeLike(q) + "%"
+		tx = tx.Where("content LIKE ? ESCAPE '\\' OR service LIKE ? ESCAPE '\\'", like, like)
+	}
+	if hideHeartbeat {
+		tx = tx.Where("NOT (source = 'agent' AND event = 'heartbeat')")
+	}
+	var entries []types.Entry
+	return entries, tx.Find(&entries).Error
 }
 
 func ListEntryServices(database *gorm.DB) http.HandlerFunc {

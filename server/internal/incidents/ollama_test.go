@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -16,6 +17,203 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/require"
 )
+
+type mockNotifyCall struct {
+	event      string
+	incidentID string
+}
+
+type mockNotifier struct {
+	mu    sync.Mutex
+	calls []mockNotifyCall
+}
+
+func (m *mockNotifier) Send(_ context.Context, event string, inc models.Incident) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.calls = append(m.calls, mockNotifyCall{event: event, incidentID: inc.ID})
+}
+
+func TestAIEnricher_FiresNotificationAfterEnrich(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	originalCall := callGenerateFunc
+	callGenerateFunc = func(_ context.Context, _ LLMProvider, _, _ string, _ time.Duration) (string, error) {
+		return "Root cause: OOM kill.", nil
+	}
+	defer func() { callGenerateFunc = originalCall }()
+
+	notifier := &mockNotifier{}
+	enricher := NewAIEnricherWithNotifier(database, notifier, func(string) {})
+
+	now := time.Now().UTC()
+	inc := models.Incident{
+		ID:         ulid.Make().String(),
+		Status:     "open",
+		Confidence: "suspected",
+		Title:      "nginx crash",
+		Services:   `["nginx"]`,
+		NodeNames:  `["node-01"]`,
+		OpenedAt:   now,
+		Metadata:   "{}",
+	}
+	require.NoError(t, database.Create(&inc).Error)
+
+	enricher.enrich(aiDispatch{
+		incidentID: inc.ID,
+		mode:       "analysis",
+		linkedEntries: []enrichEntry{{
+			Role:    "trigger",
+			Content: "nginx exited",
+			Source:  "docker",
+			Event:   "die",
+		}},
+		model: "llama3.2",
+	})
+
+	notifier.mu.Lock()
+	defer notifier.mu.Unlock()
+	require.Len(t, notifier.calls, 1)
+	require.Equal(t, "incident_ai_review_generated", notifier.calls[0].event)
+	require.Equal(t, inc.ID, notifier.calls[0].incidentID)
+}
+
+func TestAIEnricher_FiresNotificationAfterCorrelate(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	originalCall := callCorrelateGenerateFunc
+	originalDelay := correlateDelay
+	candidateID := ulid.Make().String()
+	callCorrelateGenerateFunc = func(_ context.Context, _ LLMProvider, _, _ string, _ time.Duration) (string, error) {
+		return `{"summary":"nginx crashed due to OOM","verified":true,"causes":[{"entry_id":"` + candidateID + `","confidence":0.9,"reason":"Container OOM killed"}]}`, nil
+	}
+	correlateDelay = 0
+	defer func() {
+		callCorrelateGenerateFunc = originalCall
+		correlateDelay = originalDelay
+	}()
+
+	notifier := &mockNotifier{}
+	enricher := NewAIEnricherWithNotifier(database, notifier, func(string) {})
+
+	now := time.Now().UTC()
+	triggerEntry := types.Entry{
+		ID:        ulid.Make().String(),
+		Timestamp: now.Add(-2 * time.Minute),
+		NodeName:  "node-01",
+		Source:    "webhook",
+		Service:   "nginx",
+		Event:     "down",
+		Content:   "nginx monitor down",
+		Metadata:  `{}`,
+	}
+	require.NoError(t, database.Create(&triggerEntry).Error)
+	candidateEntry := types.Entry{
+		ID:        candidateID,
+		Timestamp: now.Add(-3 * time.Minute),
+		NodeName:  "node-01",
+		Source:    "docker",
+		Service:   "nginx",
+		Event:     "die",
+		Content:   "container OOM killed",
+		Metadata:  `{}`,
+	}
+	require.NoError(t, database.Create(&candidateEntry).Error)
+
+	inc := models.Incident{
+		ID:         ulid.Make().String(),
+		Status:     "open",
+		Confidence: "confirmed",
+		Title:      "nginx down",
+		Services:   `["nginx"]`,
+		NodeNames:  `["node-01"]`,
+		OpenedAt:   now,
+		Metadata:   "{}",
+	}
+	require.NoError(t, database.Create(&inc).Error)
+	require.NoError(t, database.Create(&models.IncidentEntry{
+		IncidentID: inc.ID,
+		EntryID:    triggerEntry.ID,
+		Role:       "trigger",
+		Score:      0,
+	}).Error)
+
+	enricher.correlate(aiDispatch{
+		incidentID: inc.ID,
+		mode:       "enhanced",
+		nodeName:   "node-01",
+		model:      "llama3.2",
+	})
+
+	notifier.mu.Lock()
+	defer notifier.mu.Unlock()
+	require.Len(t, notifier.calls, 1)
+	require.Equal(t, "incident_ai_review_generated", notifier.calls[0].event)
+	require.Equal(t, inc.ID, notifier.calls[0].incidentID)
+}
+
+func TestAIEnricher_NoNotificationWhenCorrelateSummaryEmpty(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	originalCall := callCorrelateGenerateFunc
+	originalDelay := correlateDelay
+	callCorrelateGenerateFunc = func(_ context.Context, _ LLMProvider, _, _ string, _ time.Duration) (string, error) {
+		return `{"summary":"","verified":true,"causes":[]}`, nil
+	}
+	correlateDelay = 0
+	defer func() {
+		callCorrelateGenerateFunc = originalCall
+		correlateDelay = originalDelay
+	}()
+
+	notifier := &mockNotifier{}
+	enricher := NewAIEnricherWithNotifier(database, notifier, func(string) {})
+
+	now := time.Now().UTC()
+	triggerEntry := types.Entry{
+		ID:        ulid.Make().String(),
+		Timestamp: now.Add(-2 * time.Minute),
+		NodeName:  "node-01",
+		Source:    "webhook",
+		Service:   "nginx",
+		Event:     "down",
+		Content:   "nginx monitor down",
+		Metadata:  `{}`,
+	}
+	require.NoError(t, database.Create(&triggerEntry).Error)
+
+	inc := models.Incident{
+		ID:         ulid.Make().String(),
+		Status:     "open",
+		Confidence: "confirmed",
+		Title:      "nginx down",
+		Services:   `["nginx"]`,
+		NodeNames:  `["node-01"]`,
+		OpenedAt:   now,
+		Metadata:   "{}",
+	}
+	require.NoError(t, database.Create(&inc).Error)
+	require.NoError(t, database.Create(&models.IncidentEntry{
+		IncidentID: inc.ID,
+		EntryID:    triggerEntry.ID,
+		Role:       "trigger",
+		Score:      0,
+	}).Error)
+
+	enricher.correlate(aiDispatch{
+		incidentID: inc.ID,
+		mode:       "enhanced",
+		nodeName:   "node-01",
+		model:      "llama3.2",
+	})
+
+	notifier.mu.Lock()
+	defer notifier.mu.Unlock()
+	require.Empty(t, notifier.calls, "notifier should not be called when summary is empty")
+}
 
 func TestManager_SuspectedIncidentDispatchesAIAnalysisWithTriggerLogs(t *testing.T) {
 	database, err := db.Init(":memory:")

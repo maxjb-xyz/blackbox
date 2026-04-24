@@ -53,6 +53,10 @@ func AgentPush(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry, shu
 			return
 		}
 		entry.Service = serviceName
+		if isExcluded(database, entry) {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 		if entry.Source == "docker" && entry.Event == "restart" {
 			res := replaceDockerRestartEntry(database, entry, nodeName, h, incidentCh, shutdown)
 			if res.Err != nil {

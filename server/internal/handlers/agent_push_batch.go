@@ -9,6 +9,7 @@ import (
 
 	"blackbox/server/internal/hub"
 	"blackbox/server/internal/middleware"
+	"blackbox/server/internal/models"
 	"blackbox/shared/types"
 	"gorm.io/gorm"
 )
@@ -55,6 +56,13 @@ func AgentPushBatch(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry
 			Failed:   make([]batchPushError, 0),
 		}
 
+		var excludedTargets []models.ExcludedTarget
+		if err := database.Find(&excludedTargets).Error; err != nil {
+			// fail closed — do not process batch without knowing the exclude list
+			writeError(w, http.StatusInternalServerError, "failed to load exclusion list")
+			return
+		}
+
 		nodeUpdated := false
 
 		for _, entry := range entries {
@@ -73,6 +81,10 @@ func AgentPushBatch(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry
 				continue
 			}
 			entry.Service = serviceName
+			if isExcludedInMemory(excludedTargets, entry) {
+				resp.Accepted = append(resp.Accepted, entry.ID)
+				continue
+			}
 
 			if entry.Source == "docker" && entry.Event == "restart" {
 				res := replaceDockerRestartEntry(database, entry, nodeName, h, incidentCh, shutdown)

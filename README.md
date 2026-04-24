@@ -136,6 +136,7 @@ docker compose up -d
 - **Event chain view** — The Incidents page shows open and resolved incidents, duration, linked trigger/cause/evidence/recovery events, AI-derived causes when enabled, and the chosen root-cause entry.
 - **Optional AI modes** — If Ollama or other AI provider is configured, Blackbox can run either plain AI analysis or an AI-enhanced correlation mode from the same Admin settings page.
 - **AI across suspected incidents too** — Suspected incidents get the same log-backed AI treatment as confirmed incidents, including crash-log context and the selected AI mode.
+- **Postmortem PDF reports** — Download a structured PDF report from any resolved incident. The report includes the incident timeline, root cause, AI summary (if available), and a chronological event chain. Accessible via the Download Report button on resolved incident cards.
 
 ### Timeline
 - Chronological, paginated event feed across all nodes
@@ -630,6 +631,7 @@ The database is automatically migrated on startup — no manual schema managemen
 - [x] FTS5 full-text timeline search
 - [x] Admin audit log
 - [x] Webhook delivery log
+- [x] Resolved incident PDF report export
 - [ ] Timeline UI polish and interaction improvements
 - [ ] Grafana data source plugin
 - [ ] Bi-directional agent analysis
