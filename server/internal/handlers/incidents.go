@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"blackbox/server/internal/incidents"
 	"blackbox/server/internal/models"
 	"blackbox/shared/types"
 	"github.com/go-chi/chi/v5"
@@ -44,8 +46,8 @@ func ListIncidents(database *gorm.DB) http.HandlerFunc {
 			tx = tx.Where(`services LIKE ? ESCAPE '\'`, "%\""+escapedService+"\"%")
 		}
 
-		var incidents []models.Incident
-		if err := tx.Find(&incidents).Error; err != nil {
+		var results []models.Incident
+		if err := tx.Find(&results).Error; err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to fetch incidents")
 			return
 		}
@@ -55,9 +57,9 @@ func ListIncidents(database *gorm.DB) http.HandlerFunc {
 			HasMore   bool              `json:"has_more"`
 		}
 
-		resp := response{Incidents: incidents}
-		if len(incidents) > limit {
-			resp.Incidents = incidents[:limit]
+		resp := response{Incidents: results}
+		if len(results) > limit {
+			resp.Incidents = results[:limit]
 			resp.HasMore = true
 		}
 		if resp.Incidents == nil {
@@ -221,14 +223,36 @@ func GetIncident(database *gorm.DB) http.HandlerFunc {
 			details = append(details, incidentEntryDetail{Link: link, Data: &entry})
 		}
 
+		playbooks := matchedPlaybooksForIncident(r.Context(), database, incident)
+
 		type response struct {
-			Incident models.Incident       `json:"incident"`
-			Entries  []incidentEntryDetail `json:"entries"`
+			Incident  models.Incident       `json:"incident"`
+			Entries   []incidentEntryDetail `json:"entries"`
+			Playbooks []models.Playbook     `json:"playbooks"`
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(response{Incident: incident, Entries: details}); err != nil {
+		if err := json.NewEncoder(w).Encode(response{Incident: incident, Entries: details, Playbooks: playbooks}); err != nil {
 			log.Printf("GetIncident encode: %v", err)
 		}
 	}
+}
+
+// matchedPlaybooksForIncident loads enabled playbooks and returns the
+// subset whose ServicePattern matches any of the incident's services.
+// Returns an empty slice on any DB error so incident fetches never fail
+// because of a playbook problem — a runbook is a nice-to-have, not a
+// correctness-critical piece of the response.
+func matchedPlaybooksForIncident(ctx context.Context, database *gorm.DB, incident models.Incident) []models.Playbook {
+	services := incident.ServiceList()
+	if len(services) == 0 {
+		return []models.Playbook{}
+	}
+
+	var playbooks []models.Playbook
+	if err := database.WithContext(ctx).Where("enabled = ?", true).Find(&playbooks).Error; err != nil {
+		log.Printf("matchedPlaybooksForIncident: failed to load playbooks: %v", err)
+		return []models.Playbook{}
+	}
+	return incidents.MatchPlaybooks(playbooks, services)
 }

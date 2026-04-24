@@ -109,6 +109,19 @@ func (i Incident) MarshalJSON() ([]byte, error) {
 	})
 }
 
+// ServiceList parses the Services JSON column into a slice. Returns an
+// empty (non-nil) slice on empty or malformed input.
+func (i Incident) ServiceList() []string {
+	if i.Services == "" {
+		return []string{}
+	}
+	var out []string
+	if err := json.Unmarshal([]byte(i.Services), &out); err != nil || out == nil {
+		return []string{}
+	}
+	return out
+}
+
 type IncidentEntry struct {
 	IncidentID string `gorm:"primaryKey;index" json:"incident_id"`
 	EntryID    string `gorm:"primaryKey;index" json:"entry_id"`

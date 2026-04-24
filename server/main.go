@@ -239,6 +239,10 @@ func main() {
 		r.Put("/api/admin/notifications/{id}", handlers.UpdateNotificationDest(database))
 		r.Delete("/api/admin/notifications/{id}", handlers.DeleteNotificationDest(database))
 		r.Post("/api/admin/notifications/{id}/test", handlers.TestNotificationDest(database, notifier))
+		r.Get("/api/admin/playbooks", handlers.ListPlaybooks(database))
+		r.Post("/api/admin/playbooks", handlers.CreatePlaybook(database))
+		r.Put("/api/admin/playbooks/{id}", handlers.UpdatePlaybook(database))
+		r.Delete("/api/admin/playbooks/{id}", handlers.DeletePlaybook(database))
 	})
 
 	r.Group(func(r chi.Router) {

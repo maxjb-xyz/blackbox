@@ -130,6 +130,7 @@ docker compose up -d
 - **Event chain view** — The Incidents page shows open and resolved incidents, duration, linked trigger/cause/evidence/recovery events, AI-derived causes when enabled, and the chosen root-cause entry.
 - **Optional AI modes** — If Ollama or other AI provider is configured, Blackbox can run either plain AI analysis or an AI-enhanced correlation mode from the same Admin settings page.
 - **AI across suspected incidents too** — Suspected incidents get the same log-backed AI treatment as confirmed incidents, including crash-log context and the selected AI mode.
+- **Incident runbooks** — Admin-curated markdown playbooks matched to incident services by glob pattern (`docker:nextcloud`, `qmstart:*`, `*:nextcloud`). Every matched playbook is returned inline on `GET /api/incidents/{id}` so the UI can show "when X breaks, here's how to fix it" alongside the event chain. Managed at `/api/admin/playbooks`.
 
 ### Timeline
 - Chronological, paginated event feed across all nodes
