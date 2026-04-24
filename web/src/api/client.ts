@@ -310,6 +310,11 @@ export interface AdminConfig {
   ai_model: string
   ai_api_key_set: boolean
   ai_mode: 'analysis' | 'enhanced'
+  mcp_enabled: boolean
+  mcp_port: number
+  mcp_auth_token_set: boolean
+  mcp_auth_token_suffix: string
+  mcp_running: boolean
 }
 
 export interface AISettingsInput {
@@ -324,6 +329,11 @@ export interface AISettingsInput {
 export interface AITestResult {
   ok: boolean
   response?: string
+}
+
+export interface MCPSettingsInput {
+  mcp_enabled: boolean
+  mcp_port: number
 }
 
 export async function fetchAdminConfig(): Promise<AdminConfig> {
@@ -373,6 +383,23 @@ export async function testAISettings(settings: AISettingsInput): Promise<AITestR
   })
   if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to test AI settings'))
   return res.json() as Promise<AITestResult>
+}
+
+export async function updateMCPSettings(input: MCPSettingsInput): Promise<void> {
+  const res = await apiFetch('/api/admin/settings/mcp', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to update MCP settings'))
+}
+
+export async function regenerateMCPToken(): Promise<{ mcp_auth_token_suffix: string }> {
+  const res = await apiFetch('/api/admin/settings/mcp/regenerate-token', {
+    method: 'POST',
+  })
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to regenerate MCP token'))
+  return res.json() as Promise<{ mcp_auth_token_suffix: string }>
 }
 
 export async function fetchSystemdSettings(): Promise<Record<string, string[]>> {

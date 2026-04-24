@@ -15,6 +15,7 @@ import {
   listAdminOIDCProviders,
   listAdminUsers,
   listNotificationDests,
+  regenerateMCPToken,
   revokeInvite,
   setOIDCPolicy,
   testAISettings,
@@ -23,10 +24,11 @@ import {
   updateFileWatcherSettings,
   updateAdminOIDCProvider,
   updateAdminUser,
+  updateMCPSettings,
   updateNotificationDest,
   updateSystemdSettings,
 } from '../api/client'
-import type { AISettingsInput, AdminUser, Node, NotificationDest, NotificationDestInput, OIDCProviderConfig } from '../api/client'
+import type { AISettingsInput, AdminUser, MCPSettingsInput, Node, NotificationDest, NotificationDestInput, OIDCProviderConfig } from '../api/client'
 import { readErrorMessage } from '../api/errorUtils'
 import { useSession } from '../session'
 import PageHeader from '../components/PageHeader'
@@ -1538,6 +1540,7 @@ function OIDCTab() {
           </>
         )}
       </section>
+
     </div>
   )
 }
@@ -1561,6 +1564,14 @@ function SettingsTab() {
   const [aiSuccess, setAISuccess] = useState(false)
   const [aiTestResult, setAITestResult] = useState<{ ok: boolean; response?: string; error?: string } | null>(null)
   const [initialLoaded, setInitialLoaded] = useState(false)
+  const [mcpEnabled, setMcpEnabled] = useState(false)
+  const [mcpPort, setMcpPort] = useState(3001)
+  const [mcpTokenSuffix, setMcpTokenSuffix] = useState('')
+  const [mcpTokenSet, setMcpTokenSet] = useState(false)
+  const [mcpRunning, setMcpRunning] = useState(false)
+  const [mcpSaving, setMcpSaving] = useState(false)
+  const [mcpRegenerating, setMcpRegenerating] = useState(false)
+  const [mcpError, setMcpError] = useState<string | null>(null)
   const aiSuccessTimerRef = useRef<number | null>(null)
 
   const loadSettings = useCallback(async () => {
@@ -1574,6 +1585,11 @@ function SettingsTab() {
       setAIModel(config.ai_model ?? '')
       setAIAPIKeySet(config.ai_api_key_set ?? false)
       setAIMode(config.ai_mode ?? 'analysis')
+      setMcpEnabled(config.mcp_enabled ?? false)
+      setMcpPort(config.mcp_port ?? 3001)
+      setMcpTokenSuffix(config.mcp_auth_token_suffix ?? '')
+      setMcpTokenSet(config.mcp_auth_token_set ?? false)
+      setMcpRunning(config.mcp_running ?? false)
       setInitialLoaded(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load settings')
@@ -1662,6 +1678,46 @@ function SettingsTab() {
       })
     } finally {
       setAITesting(false)
+    }
+  }
+
+  async function handleSaveMCP() {
+    if (!initialLoaded) return
+    const input: MCPSettingsInput = {
+      mcp_enabled: mcpEnabled,
+      mcp_port: mcpPort,
+    }
+    setMcpSaving(true)
+    setMcpError(null)
+    try {
+      await updateMCPSettings(input)
+      const config = await fetchAdminConfig()
+      setMcpEnabled(config.mcp_enabled ?? false)
+      setMcpPort(config.mcp_port ?? 3001)
+      setMcpTokenSuffix(config.mcp_auth_token_suffix ?? '')
+      setMcpTokenSet(config.mcp_auth_token_set ?? false)
+      setMcpRunning(config.mcp_running ?? false)
+    } catch (err) {
+      setMcpError(err instanceof Error ? err.message : 'Failed to save MCP settings')
+    } finally {
+      setMcpSaving(false)
+    }
+  }
+
+  async function handleRegenerateMCPToken() {
+    if (!initialLoaded) return
+    setMcpRegenerating(true)
+    setMcpError(null)
+    try {
+      const result = await regenerateMCPToken()
+      setMcpTokenSuffix(result.mcp_auth_token_suffix)
+      setMcpTokenSet(true)
+      const config = await fetchAdminConfig()
+      setMcpRunning(config.mcp_running ?? false)
+    } catch (err) {
+      setMcpError(err instanceof Error ? err.message : 'Failed to regenerate MCP token')
+    } finally {
+      setMcpRegenerating(false)
     }
   }
 
@@ -1915,6 +1971,99 @@ function SettingsTab() {
               </button>
             </div>
           </form>
+        )}
+      </section>
+
+      <section style={panelStyle}>
+        <div style={panelHeaderStyle}>
+          <span style={panelLabelStyle}>MCP SERVER</span>
+          <span
+            style={{
+              color: mcpRunning ? 'var(--success)' : 'var(--muted)',
+              fontSize: 11,
+              letterSpacing: '0.08em',
+            }}
+          >
+            {mcpRunning ? 'RUNNING' : 'STOPPED'}
+          </span>
+        </div>
+
+        {!initialLoaded ? (
+          <div style={{ color: loading ? 'var(--muted)' : 'var(--danger)', fontSize: 12 }}>
+            {loading ? 'loading...' : 'Load settings before editing MCP server configuration.'}
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {mcpError && <div style={{ color: 'var(--danger)', fontSize: 11 }}>{mcpError}</div>}
+            <label
+              style={{
+                display: 'flex',
+                gap: 10,
+                alignItems: 'center',
+                border: '1px solid var(--border)',
+                padding: '10px 12px',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={mcpEnabled}
+                onChange={e => setMcpEnabled(e.target.checked)}
+                disabled={mcpSaving || mcpRegenerating}
+              />
+              <span style={{ color: 'var(--text)', fontSize: 12 }}>ENABLE MCP SERVER</span>
+            </label>
+            <label style={{ color: 'var(--muted)', fontSize: 11, display: 'block' }}>
+              PORT
+              <input
+                type="number"
+                min={1024}
+                max={65535}
+                value={mcpPort}
+                onChange={e => setMcpPort(Number(e.target.value))}
+                disabled={mcpSaving || mcpRegenerating}
+                style={{ display: 'block', width: 160, marginTop: 4, ...FILTER_CONTROL_STYLE }}
+              />
+            </label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ color: 'var(--muted)', fontSize: 11 }}>TOKEN</span>
+              <span style={{ color: 'var(--text)', fontSize: 12 }}>
+                {mcpTokenSet ? `set, ending in ${mcpTokenSuffix}` : 'generated on first enable'}
+              </span>
+              <button
+                type="button"
+                onClick={() => void handleRegenerateMCPToken()}
+                disabled={mcpSaving || mcpRegenerating}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid var(--border)',
+                  color: 'var(--muted)',
+                  fontSize: 11,
+                  padding: '4px 12px',
+                  cursor: mcpSaving || mcpRegenerating ? 'not-allowed' : 'pointer',
+                  fontFamily: 'inherit',
+                }}
+              >
+                {mcpRegenerating ? 'REGENERATING...' : 'REGENERATE'}
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => void handleSaveMCP()}
+              disabled={mcpSaving || mcpRegenerating || mcpPort < 1024 || mcpPort > 65535}
+              style={{
+                alignSelf: 'flex-start',
+                background: 'transparent',
+                border: '1px solid var(--border)',
+                color: 'var(--muted)',
+                fontSize: 11,
+                padding: '4px 12px',
+                cursor: mcpSaving || mcpRegenerating ? 'not-allowed' : 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >
+              {mcpSaving ? 'SAVING...' : 'SAVE'}
+            </button>
+          </div>
         )}
       </section>
     </div>

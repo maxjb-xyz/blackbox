@@ -25,7 +25,7 @@ func TestAdminConfig_ReturnsWebhookSecret(t *testing.T) {
 	}))
 	w := httptest.NewRecorder()
 
-	handlers.AdminConfig(newTestDB(t), "my-secret-value")(w, req)
+	handlers.AdminConfig(newTestDB(t), "my-secret-value", nil)(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	var resp map[string]any
@@ -58,7 +58,7 @@ func TestAdminConfig_ReturnsAISettings(t *testing.T) {
 	require.NoError(t, database.Create(&models.AppSetting{Key: "ai_api_key", Value: "sk-secret"}).Error)
 	require.NoError(t, database.Create(&models.AppSetting{Key: "ai_mode", Value: " enhanced "}).Error)
 
-	handlers.AdminConfig(database, "")(w, req)
+	handlers.AdminConfig(database, "", nil)(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	var resp map[string]any
@@ -85,7 +85,7 @@ func TestAdminConfig_LegacyOllamaFallback(t *testing.T) {
 	require.NoError(t, database.Create(&models.AppSetting{Key: "ollama_model", Value: "llama3.2"}).Error)
 	require.NoError(t, database.Create(&models.AppSetting{Key: "ollama_mode", Value: "enhanced"}).Error)
 
-	handlers.AdminConfig(database, "")(w, req)
+	handlers.AdminConfig(database, "", nil)(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	var resp map[string]any

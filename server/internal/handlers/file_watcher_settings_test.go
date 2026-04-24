@@ -59,7 +59,7 @@ func TestUpdateFileWatcherSettings_PersistsValue(t *testing.T) {
 		IsAdmin: true,
 	}))
 	w2 := httptest.NewRecorder()
-	handlers.AdminConfig(database, "secret")(w2, req2)
+	handlers.AdminConfig(database, "secret", nil)(w2, req2)
 
 	assert.Equal(t, http.StatusOK, w2.Code)
 	var configResp map[string]any

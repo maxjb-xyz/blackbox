@@ -1,15 +1,19 @@
 package handlers
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	"blackbox/server/internal/incidents"
+	mcppkg "blackbox/server/internal/mcp"
 	"blackbox/server/internal/models"
 	"gorm.io/gorm"
 )
@@ -19,6 +23,10 @@ const aiURLKey = "ai_url"
 const aiModelKey = "ai_model"
 const aiAPIKeyKey = "ai_api_key"
 const aiModeKey = "ai_mode"
+const mcpEnabledKey = "mcp_enabled"
+const mcpPortKey = "mcp_port"
+const mcpAuthTokenKey = "mcp_auth_token"
+const defaultMCPPort = 3001
 
 // Legacy keys — read-only fallback for existing installs
 const legacyOllamaURLKey = "ollama_url"
@@ -42,7 +50,7 @@ type normalizedAISettings struct {
 	mode     string
 }
 
-func AdminConfig(db *gorm.DB, webhookSecret string) http.HandlerFunc {
+func AdminConfig(db *gorm.DB, webhookSecret string, mcpMgr *mcppkg.MCPManager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		redactSecrets, err := getFileWatcherRedactSecrets(db)
 		if err != nil {
@@ -53,6 +61,15 @@ func AdminConfig(db *gorm.DB, webhookSecret string) http.HandlerFunc {
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to load admin config")
 			return
+		}
+		mcpSettings, err := getMCPSettings(db)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to load admin config")
+			return
+		}
+		mcpRunning := false
+		if mcpMgr != nil {
+			mcpRunning = mcpMgr.IsRunning()
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -67,8 +84,111 @@ func AdminConfig(db *gorm.DB, webhookSecret string) http.HandlerFunc {
 			"ai_model":                    ai.model,
 			"ai_api_key_set":              ai.apiKeySet,
 			"ai_mode":                     ai.mode,
+			"mcp_enabled":                 mcpSettings.enabled,
+			"mcp_port":                    mcpSettings.port,
+			"mcp_auth_token_set":          mcpSettings.tokenSet,
+			"mcp_auth_token_suffix":       mcpSettings.tokenSuffix,
+			"mcp_running":                 mcpRunning,
 		}); err != nil {
 			log.Printf("AdminConfig encode: %v", err)
+		}
+	}
+}
+
+type mcpSettingsRequest struct {
+	Enabled bool `json:"mcp_enabled"`
+	Port    int  `json:"mcp_port"`
+}
+
+func UpdateMCPSettings(db *gorm.DB, mcpMgr *mcppkg.MCPManager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req mcpSettingsRequest
+		if !decodeJSONBody(w, r, 1<<20, &req) {
+			return
+		}
+		port := req.Port
+		if port == 0 {
+			port = defaultMCPPort
+		}
+		if port < 1024 || port > 65535 {
+			writeError(w, http.StatusBadRequest, "mcp_port must be between 1024 and 65535")
+			return
+		}
+
+		existing, err := getMCPSettings(db)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to load mcp settings")
+			return
+		}
+		token := existing.token
+		if req.Enabled && token == "" {
+			token, err = generateMCPToken()
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to generate token")
+				return
+			}
+		}
+		if req.Enabled && token == "" {
+			writeError(w, http.StatusBadRequest, "mcp_auth_token is required")
+			return
+		}
+
+		now := time.Now()
+		settings := []models.AppSetting{
+			{Key: mcpEnabledKey, Value: strconv.FormatBool(req.Enabled), UpdatedAt: now},
+			{Key: mcpPortKey, Value: strconv.Itoa(port), UpdatedAt: now},
+		}
+		if token != "" {
+			settings = append(settings, models.AppSetting{Key: mcpAuthTokenKey, Value: token, UpdatedAt: now})
+		}
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			for _, s := range settings {
+				if err := tx.Save(&s).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to save mcp settings")
+			return
+		}
+		if mcpMgr != nil {
+			if err := mcpMgr.ApplySettings(req.Enabled, port, token); err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to apply mcp settings")
+				return
+			}
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func RegenerateMCPToken(db *gorm.DB, mcpMgr *mcppkg.MCPManager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		newToken, err := generateMCPToken()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to generate token")
+			return
+		}
+		if err := db.Save(&models.AppSetting{Key: mcpAuthTokenKey, Value: newToken, UpdatedAt: time.Now()}).Error; err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to save token")
+			return
+		}
+
+		mcpCfg, err := getMCPSettings(db)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to load mcp settings")
+			return
+		}
+		if mcpCfg.enabled && mcpMgr != nil {
+			if err := mcpMgr.ApplySettings(true, mcpCfg.port, newToken); err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to restart mcp server with new token")
+				return
+			}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(map[string]string{"mcp_auth_token_suffix": tokenSuffix(newToken)}); err != nil {
+			log.Printf("RegenerateMCPToken encode: %v", err)
 		}
 	}
 }
@@ -242,6 +362,55 @@ type aiSettingsResult struct {
 	model     string
 	apiKeySet bool
 	mode      string
+}
+
+type mcpSettingsResult struct {
+	enabled     bool
+	port        int
+	tokenSet    bool
+	tokenSuffix string
+	token       string
+}
+
+func getMCPSettings(db *gorm.DB) (mcpSettingsResult, error) {
+	keys := []string{mcpEnabledKey, mcpPortKey, mcpAuthTokenKey}
+	var settings []models.AppSetting
+	if err := db.Where("key IN ?", keys).Find(&settings).Error; err != nil {
+		return mcpSettingsResult{}, err
+	}
+	m := make(map[string]string, len(settings))
+	for _, s := range settings {
+		m[s.Key] = strings.TrimSpace(s.Value)
+	}
+
+	result := mcpSettingsResult{
+		enabled: m[mcpEnabledKey] == "true",
+		port:    defaultMCPPort,
+		token:   m[mcpAuthTokenKey],
+	}
+	if portStr := m[mcpPortKey]; portStr != "" {
+		if p, err := strconv.Atoi(portStr); err == nil && p >= 1024 && p <= 65535 {
+			result.port = p
+		}
+	}
+	result.tokenSet = result.token != ""
+	result.tokenSuffix = tokenSuffix(result.token)
+	return result, nil
+}
+
+func generateMCPToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+func tokenSuffix(token string) string {
+	if len(token) < 8 {
+		return ""
+	}
+	return token[len(token)-8:]
 }
 
 func getAISettings(db *gorm.DB) (aiSettingsResult, error) {
