@@ -202,6 +202,7 @@ func main() {
 		r.Get("/api/incidents/summary", handlers.GetIncidentSummary(database))
 		r.Post("/api/incidents/membership", handlers.ListIncidentMembership(database))
 		r.Get("/api/incidents/{id}", handlers.GetIncident(database))
+		r.Get("/api/incidents/{id}/report.pdf", handlers.DownloadIncidentReport(database))
 		r.Get("/api/entries", handlers.ListEntries(database))
 		r.Get("/api/entries/services", handlers.ListEntryServices(database))
 		r.Post("/api/entries", handlers.CreateEntry(database, eventHub, incidentCh, managerCtx.Done()))
