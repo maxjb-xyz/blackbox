@@ -106,7 +106,7 @@ docker compose up -d
 
 **3. Open `http://your-server:8080` and complete the setup wizard.**
 
-**4. Optional: open Admin > Settings to configure file-diff redaction and Ollama-based incident analysis. Open Admin > Systemd to choose which units each node should watch when `WATCH_SYSTEMD=true` is enabled on that agent.**
+**4. Optional: open Admin > System to configure file-diff redaction and Ollama-based incident analysis. Open Admin > System > Systemd to choose which units each node should watch when `WATCH_SYSTEMD=true` is enabled on that agent.**
 
 ---
 
@@ -123,6 +123,7 @@ docker compose up -d
 - **Uptime Kuma webhooks** — Ingest Down/Up state changes. Down events open confirmed incidents and score likely causes from recent Docker, file, and webhook activity.
 - **Watchtower webhooks** — Ingest container image update events with version metadata and use them as incident evidence when a restart follows shortly after.
 - **Custom entries** — Post arbitrary events via the API.
+- **Container & stack exclusions** — Exclude specific Docker containers or Compose stacks from event ingestion entirely. Configured in Admin > Integrations > Excludes. Excluded events are silently dropped server-side — agents do not need reconfiguring.
 
 ### Notifications
 - **Webhook notification support** — Send outbound notifications to Discord, Slack, ntfy, and other targets when Blackbox events occur. Configure destinations in Admin > Integrations > Notifications.
@@ -135,10 +136,12 @@ docker compose up -d
 - **Event chain view** — The Incidents page shows open and resolved incidents, duration, linked trigger/cause/evidence/recovery events, AI-derived causes when enabled, and the chosen root-cause entry.
 - **Optional AI modes** — If Ollama or other AI provider is configured, Blackbox can run either plain AI analysis or an AI-enhanced correlation mode from the same Admin settings page.
 - **AI across suspected incidents too** — Suspected incidents get the same log-backed AI treatment as confirmed incidents, including crash-log context and the selected AI mode.
+- **Postmortem PDF reports** — Download a structured PDF report from any resolved incident. The report includes the incident timeline, root cause, AI summary (if available), and a chronological event chain. Accessible via the Download Report button on resolved incident cards.
 
 ### Timeline
 - Chronological, paginated event feed across all nodes
-- Filter by node, event source, or full-text search (content + service name)
+- Filter by node, event source, or full-text search
+- **Full-text search** — SQLite FTS5 powered search across all entry content and service names with term highlighting
 - ULID-based IDs for guaranteed sort-order correctness
 - Annotate any event with notes — with user attribution
 
@@ -256,7 +259,7 @@ Notes:
 
 - Systemd monitoring is Linux-only. On non-Linux hosts the watcher is a no-op.
 - Set `WATCH_SYSTEMD=true` on the agent to enable journal monitoring.
-- Configure the watched units from **Admin > Systemd**. Settings are stored per node and the agent refreshes them from the server every minute.
+- Configure the watched units from **Admin > System > Systemd**. Settings are stored per node and the agent refreshes them from the server every minute.
 - The watcher emits `started`, `stopped`, `restart`, and `failed` events for configured units, plus `oom_kill` events from the kernel journal.
 - Failed unit entries include a recent journal snippet in entry metadata, which Blackbox also uses as a correlation scoring bonus.
 - A watched unit `failed` or `oom_kill` opens a suspected incident immediately. Repeated watched `restart`/`failed` events within 5 minutes also open a suspected incident, while a lone `restart` does not.
@@ -273,12 +276,12 @@ volumes:
 
 - Incident detection works without extra configuration. Confirmed incidents come from Uptime Kuma Down/Up pairs; suspected incidents come from Docker crash loops and non-zero exits, watched systemd `failed` and `oom_kill` events, watched systemd restart/failure loops, and watchtower-triggered restarts.
 - Systemd-sourced suspected incidents resolve immediately on matching monitor `up` events, or automatically after a watched unit emits `started` and stays stable for 2 minutes without another failure/restart.
-- Ollama is optional and configured in **Admin > Settings** with an absolute base URL such as `http://192.168.1.10:11434`, a model name such as `llama3.2`, and an AI mode.
+- Ollama is optional and configured in **Admin > System** with an absolute base URL such as `http://192.168.1.10:11434`, a model name such as `llama3.2`, and an AI mode.
 - `analysis` mode stores a concise AI-written incident summary in incident metadata.
 - `enhanced` mode asks Ollama to analyze the deterministic incident chain plus recent same-node events, then writes validated `ai_cause` links and an AI summary back onto the incident.
 - AI mode applies to both confirmed and suspected incidents. Suspected incidents still pull in captured crash logs and run the same selected Ollama path.
 - Leaving the Ollama URL or model blank disables all optional AI behavior while keeping the incident engine and deterministic correlation active.
-- The same Admin settings page also controls whether newly captured file diffs redact obvious secret-bearing keys before upload.
+- The same Admin > System page also controls whether newly captured file diffs redact obvious secret-bearing keys before upload.
 - When AI analysis completes, Blackbox fires an `AI Review Generated` notification event. Subscribe notification destinations to this event to receive the summary via Discord, Slack, or ntfy without opening the UI.
 - To include a direct link to the incident in notification payloads, set **Instance Base URL** in Admin > Integrations > Notifications (e.g., `https://blackbox.myserver.com`). Leave blank to omit links.
 
@@ -418,7 +421,7 @@ Blackbox will log every image update with the container name and new image versi
 
 ## OIDC / SSO Setup
 
-Blackbox supports multiple OIDC providers configured from the Admin panel under **Settings > OIDC**.
+Blackbox supports multiple OIDC providers configured from the Admin panel under **Admin > Access > OIDC**.
 
 Each provider entry requires:
 
@@ -564,7 +567,7 @@ TZ=America/New_York JWT_SECRET=dev AGENT_TOKENS="local=devtoken" WEBHOOK_SECRET=
 TZ=America/New_York SERVER_URL=http://localhost:8080 AGENT_TOKEN=devtoken NODE_NAME=local ./agent/blackbox-agent
 ```
 
-To test systemd monitoring locally on Linux, add `WATCH_SYSTEMD=true` and make sure the agent can read the host journal. Then configure units from **Admin > Systemd** after the node registers.
+To test systemd monitoring locally on Linux, add `WATCH_SYSTEMD=true` and make sure the agent can read the host journal. Then configure units from **Admin > System > Systemd** after the node registers.
 
 **Build Docker images:**
 
@@ -617,6 +620,9 @@ The database is automatically migrated on startup — no manual schema managemen
 - [x] Support OpenAI/Other AI Providers
 - [x] Webhook notification support
 - [x] AI review notifications — notify subscribed destinations when Ollama completes incident analysis
+- [x] Container and stack exclusion list
+- [x] FTS5 full-text timeline search
+- [x] Resolved incident PDF report export
 - [ ] Timeline UI polish and interaction improvements
 - [ ] Grafana data source plugin
 - [ ] Bi-directional agent analysis
