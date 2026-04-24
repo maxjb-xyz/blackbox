@@ -57,7 +57,11 @@ func AgentPushBatch(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry
 		}
 
 		var excludedTargets []models.ExcludedTarget
-		database.Find(&excludedTargets)
+		if err := database.Find(&excludedTargets).Error; err != nil {
+			// fail closed — do not process batch without knowing the exclude list
+			writeError(w, http.StatusInternalServerError, "failed to load exclusion list")
+			return
+		}
 
 		nodeUpdated := false
 
