@@ -26,6 +26,7 @@ var validNotifyEvents = map[string]struct{}{
 	notify.EventIncidentOpenedSuspected: {},
 	notify.EventIncidentConfirmed:       {},
 	notify.EventIncidentResolved:        {},
+	notify.EventAIReviewGenerated:       {},
 }
 
 func ListNotificationDests(db *gorm.DB) http.HandlerFunc {
