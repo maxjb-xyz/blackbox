@@ -1,7 +1,7 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ChevronDown, ChevronRight, ExternalLink, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, ExternalLink, FileDown, X } from 'lucide-react'
 import {
   fetchIncident,
   fetchIncidents,
@@ -851,6 +851,31 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
                       AI reviewed the event chain and found no additional causes beyond the deterministic links.
                     </div>
                   )}
+                </div>
+              )}
+              {incident.status === 'resolved' && detail && (
+                <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
+                  <a
+                    href={`/api/incidents/${incident.id}/report.pdf`}
+                    download={`incident-${incident.id}-report.pdf`}
+                    style={{
+                      background: 'none',
+                      border: '1px solid var(--muted)',
+                      color: 'var(--muted)',
+                      padding: '5px 10px',
+                      fontFamily: 'inherit',
+                      fontSize: 11,
+                      letterSpacing: '0.08em',
+                      cursor: 'pointer',
+                      textDecoration: 'none',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 5,
+                    }}
+                  >
+                    <FileDown size={12} />
+                    DOWNLOAD REPORT
+                  </a>
                 </div>
               )}
             </>
