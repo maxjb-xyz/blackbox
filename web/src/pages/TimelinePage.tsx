@@ -295,6 +295,25 @@ function matchesEntryFilters(
   return true
 }
 
+function highlightText(value: string, query: string): React.ReactNode {
+  const q = query.trim()
+  if (!q) return value
+  const terms = q.split(/\s+/).filter(Boolean)
+  if (terms.length === 0) return value
+  const escaped = terms.map(term => term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  const re = new RegExp(`(${escaped.join('|')})`, 'ig')
+  const parts = value.split(re)
+  return parts.map((part, index) => {
+    if (!part) return null
+    const match = terms.some(term => part.toLowerCase() === term.toLowerCase())
+    return match ? (
+      <mark key={`${part}-${index}`} style={{ background: 'rgba(255, 51, 51, 0.22)', color: 'inherit', padding: 0 }}>
+        {part}
+      </mark>
+    ) : part
+  })
+}
+
 interface SearchableSelectProps {
   value: string
   options: string[]
@@ -591,6 +610,7 @@ export default function TimelinePage() {
   const sourceFilter = searchParams.get('source') ?? ''
   const serviceFilter = searchParams.get('service') ?? ''
   const qFilter = searchParams.get('q') ?? ''
+  const [searchInput, setSearchInput] = useState(qFilter)
   const focusEntry = (() => {
     const state = location.state
     if (
@@ -666,6 +686,19 @@ export default function TimelinePage() {
       return next
     })
   }
+
+  useEffect(() => {
+    setSearchInput(qFilter)
+  }, [qFilter])
+
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      if (searchInput !== qFilter) {
+        setFilter('q', searchInput)
+      }
+    }, 300)
+    return () => window.clearTimeout(id)
+  }, [searchInput, qFilter])
 
   function selectViewMode(mode: ViewMode) {
     localStorage.setItem('timeline_view', mode)
@@ -779,8 +812,8 @@ export default function TimelinePage() {
             className="timeline-filter-search"
             type="text"
             placeholder="SEARCH..."
-            value={qFilter}
-            onChange={e => setFilter('q', e.target.value)}
+            value={searchInput}
+            onChange={e => setSearchInput(e.target.value)}
             style={{ ...FILTER_CONTROL_STYLE, color: 'var(--text)', padding: '2px 8px', width: 160 }}
           />
 
@@ -805,6 +838,7 @@ export default function TimelinePage() {
                   next.delete('source')
                   next.delete('service')
                   next.delete('q')
+                  setSearchInput('')
                   return next
                 })
               }}
@@ -1229,6 +1263,7 @@ function TimelineFeed({
                   onClick={() => handleRowClick(entry)}
                   onTooltip={setTooltip}
                   onTooltipClear={() => setTooltip(null)}
+                  qFilter={qFilter}
                 />
               ))}
             </AnimatePresence>
@@ -1246,6 +1281,7 @@ function TimelineFeed({
                 onClick={() => handleRowClick(entry)}
                 onTooltip={setTooltip}
                 onTooltipClear={() => setTooltip(null)}
+                qFilter={qFilter}
               />
             ))}
           </AnimatePresence>
@@ -1291,6 +1327,7 @@ interface EntryProps {
   onClick: () => void
   onTooltip: (tooltip: TooltipState) => void
   onTooltipClear: () => void
+  qFilter: string
 }
 
 function ExpandableSection({ isOpen, children }: { isOpen: boolean, children: React.ReactNode }) {
@@ -1595,7 +1632,7 @@ function DiffModal({ entry, diff, open, onClose }: { entry: Entry; diff: FileDif
   )
 }
 
-function TimelineCard({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip, onTooltipClear }: EntryProps) {
+function TimelineCard({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip, onTooltipClear, qFilter }: EntryProps) {
   const possibleCause = entry.correlated_id ? parsePossibleCause(entry.metadata) : null
   const composeService = extractComposeService(entry)
   const sourceLabel = webhookProviderLabel(entry) ?? entry.source
@@ -1731,7 +1768,7 @@ function TimelineCard({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip
               lineHeight: 1.5,
             }}
           >
-            {entry.content}
+            {highlightText(entry.content, qFilter)}
           </span>
         )}
       </div>
@@ -1746,7 +1783,7 @@ function TimelineCard({ entry, isExpanded, isDimmed, isGhost, onClick, onTooltip
   )
 }
 
-function TimelineRow({ entry, isExpanded, isDimmed, isGhost, incident, onClick, onTooltip, onTooltipClear }: EntryProps) {
+function TimelineRow({ entry, isExpanded, isDimmed, isGhost, incident, onClick, onTooltip, onTooltipClear, qFilter }: EntryProps) {
   const navigate = useNavigate()
   const possibleCause = entry.correlated_id ? parsePossibleCause(entry.metadata) : null
   const composeService = extractComposeService(entry)
@@ -1876,7 +1913,7 @@ function TimelineRow({ entry, isExpanded, isDimmed, isGhost, incident, onClick, 
           whiteSpace: isExpanded ? 'normal' : 'nowrap',
           display: 'block',
         }}>
-          {entry.content}
+          {highlightText(entry.content, qFilter)}
           {isGhost && (
             <span style={{ marginLeft: 8, color: 'var(--accent)', fontSize: '10px', letterSpacing: '0.05em' }}>[LINKED]</span>
           )}

@@ -73,6 +73,10 @@ func AgentPushBatch(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry
 				continue
 			}
 			entry.Service = serviceName
+			if isExcluded(database, entry) {
+				resp.Accepted = append(resp.Accepted, entry.ID)
+				continue
+			}
 
 			if entry.Source == "docker" && entry.Event == "restart" {
 				res := replaceDockerRestartEntry(database, entry, nodeName, h, incidentCh, shutdown)
