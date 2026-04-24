@@ -63,6 +63,8 @@ func Init(path string) (*gorm.DB, error) {
 		&models.SystemdUnitConfig{},
 		&models.NotificationDest{},
 		&models.ExcludedTarget{},
+		&models.AuditLog{},
+		&models.WebhookDelivery{},
 	); err != nil {
 		return nil, err
 	}

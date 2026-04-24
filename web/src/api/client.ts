@@ -782,3 +782,65 @@ export async function deleteExcludedTarget(id: string): Promise<void> {
     throw new Error(await readErrorMessage(res, 'Failed to delete excluded target'))
   }
 }
+
+export interface AuditLogEntry {
+  id: string
+  actor_user_id: string
+  actor_email: string
+  action: string
+  target_type: string
+  target_id: string
+  metadata: Record<string, unknown>
+  ip_address: string
+  created_at: string
+}
+
+export interface AuditLogPage {
+  total: number
+  page: number
+  per_page: number
+  items: AuditLogEntry[]
+}
+
+export interface WebhookDelivery {
+  id: string
+  source: string
+  received_at: string
+  payload_snippet: string
+  matched_incident_id: string
+  status: string
+  error_message: string
+}
+
+export interface WebhookDeliveryPage {
+  total: number
+  page: number
+  per_page: number
+  items: WebhookDelivery[]
+}
+
+export async function listAuditLogs(page = 1, perPage = 50, action?: string): Promise<AuditLogPage> {
+  const url = new URL('/api/admin/audit-logs', window.location.origin)
+  url.searchParams.set('page', String(page))
+  url.searchParams.set('per_page', String(perPage))
+  if (action) url.searchParams.set('action', action)
+  const res = await apiFetch(url.toString())
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to list audit logs'))
+  return res.json()
+}
+
+export async function listWebhookDeliveries(
+  page = 1,
+  perPage = 50,
+  source?: string,
+  status?: string,
+): Promise<WebhookDeliveryPage> {
+  const url = new URL('/api/admin/webhook-deliveries', window.location.origin)
+  url.searchParams.set('page', String(page))
+  url.searchParams.set('per_page', String(perPage))
+  if (source) url.searchParams.set('source', source)
+  if (status) url.searchParams.set('status', status)
+  const res = await apiFetch(url.toString())
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to list webhook deliveries'))
+  return res.json()
+}

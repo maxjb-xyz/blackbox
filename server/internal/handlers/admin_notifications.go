@@ -88,6 +88,12 @@ func CreateNotificationDest(db *gorm.DB) http.HandlerFunc {
 			return
 		}
 
+		claims, _ := auth.ClaimsFromContext(r.Context())
+		WriteAuditLog(db, r, claims, "notification.create", "notification_dest", dest.ID, map[string]interface{}{
+			"name": dest.Name,
+			"type": dest.Type,
+		})
+
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(dest)
@@ -148,6 +154,12 @@ func UpdateNotificationDest(db *gorm.DB) http.HandlerFunc {
 			return
 		}
 
+		claims, _ := auth.ClaimsFromContext(r.Context())
+		WriteAuditLog(db, r, claims, "notification.update", "notification_dest", id, map[string]interface{}{
+			"name": dest.Name,
+			"type": dest.Type,
+		})
+
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(dest)
 	}
@@ -169,6 +181,9 @@ func DeleteNotificationDest(db *gorm.DB) http.HandlerFunc {
 			writeError(w, http.StatusNotFound, "notification destination not found")
 			return
 		}
+
+		claims, _ := auth.ClaimsFromContext(r.Context())
+		WriteAuditLog(db, r, claims, "notification.delete", "notification_dest", id, map[string]interface{}{})
 
 		w.WriteHeader(http.StatusNoContent)
 	}

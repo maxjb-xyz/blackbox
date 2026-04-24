@@ -244,6 +244,8 @@ func main() {
 		r.Get("/api/admin/excluded-targets", handlers.ListExcludedTargets(database))
 		r.Post("/api/admin/excluded-targets", handlers.CreateExcludedTarget(database))
 		r.Delete("/api/admin/excluded-targets/{id}", handlers.DeleteExcludedTarget(database))
+		r.Get("/api/admin/audit-logs", handlers.ListAuditLogs(database))
+		r.Get("/api/admin/webhook-deliveries", handlers.ListWebhookDeliveries(database))
 	})
 
 	r.Group(func(r chi.Router) {
