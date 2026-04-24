@@ -54,9 +54,9 @@ interface OIDCProviderFormState {
 interface GitHubRelease {
   id: number
   tag_name: string
-  name: string
-  published_at: string
-  body: string
+  name: string | null
+  published_at: string | null
+  body: string | null
   html_url: string
 }
 
@@ -81,6 +81,7 @@ const NOTIFICATION_EVENT_OPTIONS = [
   { value: 'incident_resolved', label: 'INCIDENT RESOLVED' },
 ] as const
 const ADMIN_TABS: Tab[] = ['invites', 'users', 'oidc', 'settings', 'systemd', 'notifications', 'github']
+const GITHUB_REPO_SLUG = 'maxjb-xyz/blackbox'
 
 function normalizeInvite(invite: Record<string, unknown>): InviteCode {
   return {
@@ -1976,7 +1977,7 @@ function GitHubTab() {
         </div>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <a
-            href="https://github.com/maxjb-xyz/blackbox/issues/new?template=feature_request.md&labels=enhancement"
+            href={`https://github.com/${GITHUB_REPO_SLUG}/issues/new?template=feature_request.md&labels=enhancement`}
             target="_blank"
             rel="noopener noreferrer"
             style={githubActionBtnStyle}
@@ -1985,7 +1986,7 @@ function GitHubTab() {
             SUGGEST A FEATURE
           </a>
           <a
-            href="https://github.com/maxjb-xyz/blackbox/issues/new?template=bug_report.md&labels=bug"
+            href={`https://github.com/${GITHUB_REPO_SLUG}/issues/new?template=bug_report.md&labels=bug`}
             target="_blank"
             rel="noopener noreferrer"
             style={githubActionBtnStyle}
@@ -2034,7 +2035,7 @@ function GitHubTab() {
                   </span>
                 )}
                 <span style={{ color: 'var(--muted)', fontSize: 11, marginLeft: 'auto' }}>
-                  {formatLocalDate(release.published_at)}
+                  {release.published_at ? formatLocalDate(release.published_at) || '-' : '-'}
                 </span>
                 <a
                   href={release.html_url}
@@ -2049,7 +2050,7 @@ function GitHubTab() {
                     gap: 4,
                   }}
                 >
-                  <ExternalLink size={12} />
+                  <ExternalLink size={14} />
                   View on GitHub
                 </a>
                 {hasBody && (
@@ -2067,7 +2068,7 @@ function GitHubTab() {
                     }}
                     aria-label={isExpanded ? 'Collapse release notes' : 'Expand release notes'}
                   >
-                    {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                    {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                   </button>
                 )}
               </div>
