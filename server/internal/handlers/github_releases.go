@@ -48,7 +48,11 @@ func GetGitHubReleases(database *gorm.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadGateway, "failed to reach GitHub")
 			return
 		}
-		defer resp.Body.Close()
+		defer func() {
+			if closeErr := resp.Body.Close(); closeErr != nil {
+				log.Printf("GetGitHubReleases close body: %v", closeErr)
+			}
+		}()
 		body, err := io.ReadAll(io.LimitReader(resp.Body, 512*1024))
 		if err != nil || resp.StatusCode != http.StatusOK {
 			writeError(w, http.StatusBadGateway, "GitHub API error")
