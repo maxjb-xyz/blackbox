@@ -301,7 +301,7 @@ func (e *AIEnricher) enrich(dispatch aiDispatch) {
 
 	if !e.updateIncidentMetadata(dispatch.incidentID, func(meta map[string]interface{}) {
 		delete(meta, "ai_pending")
-		meta["ai_analysis"] = result
+		meta["ai_analysis"] = sanitizeExternalText(result)
 		meta["ai_model"] = dispatch.model
 		meta["ai_mode"] = dispatch.mode
 		meta["ai_enriched_at"] = time.Now().UTC().Format(time.RFC3339)
