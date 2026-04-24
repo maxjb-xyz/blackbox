@@ -120,14 +120,23 @@ func TestDispatcher_IncidentURL(t *testing.T) {
 
 	d := NewDispatcher(database)
 
-	assert.Equal(t, "https://blackbox.example.com/incidents/inc-1", d.incidentURL("inc-1"))
+	assert.Equal(t, "https://blackbox.example.com/incidents/inc-1", d.incidentURL(context.Background(), "inc-1"))
+}
+
+func TestDispatcher_IncidentURL_NoTrailingSlash(t *testing.T) {
+	database := newTestDB(t)
+	require.NoError(t, database.Create(&models.AppSetting{Key: "base_url", Value: "https://blackbox.example.com"}).Error)
+
+	d := NewDispatcher(database)
+
+	assert.Equal(t, "https://blackbox.example.com/incidents/inc-1", d.incidentURL(context.Background(), "inc-1"))
 }
 
 func TestDispatcher_IncidentURL_EmptyWhenUnset(t *testing.T) {
 	database := newTestDB(t)
 	d := NewDispatcher(database)
 
-	assert.Equal(t, "", d.incidentURL("inc-1"))
+	assert.Equal(t, "", d.incidentURL(context.Background(), "inc-1"))
 }
 
 func newTestDB(t *testing.T) *gorm.DB {

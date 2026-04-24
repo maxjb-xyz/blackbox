@@ -15,6 +15,8 @@ import (
 
 const notifyTimeout = 10 * time.Second
 const maxConcurrentSends = 8
+const baseURLKey = "base_url"
+const maxSlackAIAnalysisChars = 2000
 
 // Shared HTTP client used by all provider send functions.
 var httpClient = &http.Client{Timeout: notifyTimeout}
@@ -60,7 +62,7 @@ func (d *Dispatcher) Send(ctx context.Context, event string, inc models.Incident
 		return
 	}
 
-	incURL := d.incidentURL(inc.ID)
+	incURL := d.incidentURL(ctx, inc.ID)
 
 	for _, dest := range dests {
 		if !destWantsEvent(dest, event) {
@@ -96,9 +98,13 @@ func (d *Dispatcher) SendTest(ctx context.Context, dest models.NotificationDest)
 	return sendTo(sendCtx, dest, testIncident(), EventIncidentOpenedConfirmed, "", true)
 }
 
-func (d *Dispatcher) incidentURL(incidentID string) string {
+func (d *Dispatcher) incidentURL(ctx context.Context, incidentID string) string {
+	query := d.db
+	if ctx != nil {
+		query = query.WithContext(ctx)
+	}
 	var setting models.AppSetting
-	if err := d.db.First(&setting, "key = ?", "base_url").Error; err != nil {
+	if err := query.First(&setting, "key = ?", baseURLKey).Error; err != nil {
 		return ""
 	}
 	base := strings.TrimRight(strings.TrimSpace(setting.Value), "/")

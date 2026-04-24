@@ -82,7 +82,7 @@ func BuildSlackPayload(inc models.Incident, event string, incURL string, test bo
 		if summary := extractAIAnalysis(inc); summary != "" {
 			attachment.Fields = append(attachment.Fields, slackField{
 				Title: "AI Analysis",
-				Value: truncateAIAnalysis(summary, 2000),
+				Value: truncateAIAnalysis(summary, maxSlackAIAnalysisChars),
 				Short: false,
 			})
 		}

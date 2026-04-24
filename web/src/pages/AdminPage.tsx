@@ -1774,7 +1774,7 @@ function SettingsTab() {
       </section>
 
       <section style={panelStyle}>
-        <h3 style={{ fontSize: 11, color: 'var(--muted)', letterSpacing: '0.1em', margin: '0 0 12px 0' }}>
+        <h3 id="instance-base-url-heading" style={{ fontSize: 11, color: 'var(--muted)', letterSpacing: '0.1em', margin: '0 0 12px 0' }}>
           INSTANCE BASE URL
         </h3>
         {!initialLoaded ? (
@@ -1786,8 +1786,10 @@ function SettingsTab() {
             <input
               type="url"
               value={baseURL}
+              aria-labelledby="instance-base-url-heading"
               onChange={e => {
                 setBaseURL(e.target.value)
+                setBaseURLError(null)
                 setBaseURLSuccess(false)
               }}
               placeholder="https://blackbox.example.com"

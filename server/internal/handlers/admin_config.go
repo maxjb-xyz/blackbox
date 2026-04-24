@@ -92,7 +92,7 @@ func UpdateBaseURLSetting(db *gorm.DB) http.HandlerFunc {
 		value := strings.TrimSpace(req.BaseURL)
 		if value != "" {
 			parsed, err := url.ParseRequestURI(value)
-			if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+			if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 				writeError(w, http.StatusBadRequest, "base_url must be a valid absolute URL or empty")
 				return
 			}
