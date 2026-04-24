@@ -61,6 +61,10 @@ func CreateInvite(database *gorm.DB) http.HandlerFunc {
 		}
 		events.LogSystem(database, "auth", "invite.created", "invite created by "+adminName)
 
+		WriteAuditLog(database, r, claims, "invite.create", "invite", invite.ID, map[string]interface{}{
+			"expires_at": expiresAt.UTC().Format(time.RFC3339),
+		})
+
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(map[string]string{
@@ -122,6 +126,8 @@ func RevokeInvite(database *gorm.DB) http.HandlerFunc {
 		}
 
 		events.LogSystem(database, "auth", "invite.revoked", "invite "+inviteID+" revoked")
+
+		WriteAuditLog(database, r, claims, "invite.revoke", "invite", inviteID, map[string]interface{}{})
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})

@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Link, Navigate } from 'react-router-dom'
 import {
   createAdminOIDCProvider,
   createNotificationDest,
@@ -14,7 +14,9 @@ import {
   getOIDCPolicy,
   listAdminOIDCProviders,
   listAdminUsers,
+  listAuditLogs,
   listNotificationDests,
+  listWebhookDeliveries,
   revokeInvite,
   setOIDCPolicy,
   testAISettings,
@@ -26,7 +28,7 @@ import {
   updateNotificationDest,
   updateSystemdSettings,
 } from '../api/client'
-import type { AISettingsInput, AdminUser, Node, NotificationDest, NotificationDestInput, OIDCProviderConfig } from '../api/client'
+import type { AISettingsInput, AdminUser, AuditLogPage, Node, NotificationDest, NotificationDestInput, OIDCProviderConfig, WebhookDeliveryPage } from '../api/client'
 import { readErrorMessage } from '../api/errorUtils'
 import { useSession } from '../session'
 import PageHeader from '../components/PageHeader'
@@ -50,7 +52,7 @@ interface OIDCProviderFormState {
   enabled: boolean
 }
 
-type Tab = 'invites' | 'users' | 'oidc' | 'settings' | 'systemd' | 'notifications'
+type Tab = 'invites' | 'users' | 'oidc' | 'settings' | 'systemd' | 'notifications' | 'audit' | 'webhooks'
 type OIDCPolicy = 'open' | 'existing_only' | 'invite_required'
 
 const UNIT_SUFFIXES = ['.service','.socket','.device','.mount','.automount',
@@ -70,7 +72,7 @@ const NOTIFICATION_EVENT_OPTIONS = [
   { value: 'incident_confirmed', label: 'INCIDENT UPGRADED TO CONFIRMED' },
   { value: 'incident_resolved', label: 'INCIDENT RESOLVED' },
 ] as const
-const ADMIN_TABS: Tab[] = ['invites', 'users', 'oidc', 'settings', 'systemd', 'notifications']
+const ADMIN_TABS: Tab[] = ['invites', 'users', 'oidc', 'settings', 'systemd', 'notifications', 'audit', 'webhooks']
 
 function normalizeInvite(invite: Record<string, unknown>): InviteCode {
   return {
@@ -149,6 +151,19 @@ export default function AdminPage() {
   const [notificationSaveError, setNotificationSaveError] = useState<string | null>(null)
   const [notificationTestResults, setNotificationTestResults] = useState<Record<string, { ok: boolean; error?: string } | undefined>>({})
   const notificationTestTimeoutsRef = useRef<Record<string, number>>({})
+  const [auditLogs, setAuditLogs] = useState<AuditLogPage | null>(null)
+  const [auditLoading, setAuditLoading] = useState(false)
+  const [auditError, setAuditError] = useState<string | null>(null)
+  const [auditPage, setAuditPage] = useState(1)
+  const [auditActionInput, setAuditActionInput] = useState('')
+  const [auditActionFilter, setAuditActionFilter] = useState('')
+  const [webhookDeliveries, setWebhookDeliveries] = useState<WebhookDeliveryPage | null>(null)
+  const [webhooksLoading, setWebhooksLoading] = useState(false)
+  const [webhooksError, setWebhooksError] = useState<string | null>(null)
+  const [webhooksPage, setWebhooksPage] = useState(1)
+  const [webhookSourceFilter, setWebhookSourceFilter] = useState('')
+  const [webhookStatusFilter, setWebhookStatusFilter] = useState('')
+  const [expandedWebhookRow, setExpandedWebhookRow] = useState<string | null>(null)
   const adminTabRefs = useRef<Array<HTMLButtonElement | null>>([])
 
   const handleAddUnit = useCallback((nodeName: string) => {
@@ -203,6 +218,26 @@ export default function AdminPage() {
     if (tab !== 'notifications') return
     void loadNotificationDests()
   }, [loadNotificationDests, tab])
+
+  useEffect(() => {
+    if (tab !== 'audit') return
+    setAuditLoading(true)
+    setAuditError(null)
+    listAuditLogs(auditPage, 50, auditActionFilter || undefined)
+      .then(setAuditLogs)
+      .catch((err: unknown) => setAuditError(err instanceof Error ? err.message : 'Failed to load audit logs'))
+      .finally(() => setAuditLoading(false))
+  }, [tab, auditPage, auditActionFilter])
+
+  useEffect(() => {
+    if (tab !== 'webhooks') return
+    setWebhooksLoading(true)
+    setWebhooksError(null)
+    listWebhookDeliveries(webhooksPage, 50, webhookSourceFilter || undefined, webhookStatusFilter || undefined)
+      .then(setWebhookDeliveries)
+      .catch((err: unknown) => setWebhooksError(err instanceof Error ? err.message : 'Failed to load webhook deliveries'))
+      .finally(() => setWebhooksLoading(false))
+  }, [tab, webhooksPage, webhookSourceFilter, webhookStatusFilter])
 
   useEffect(() => {
     return () => {
@@ -765,6 +800,42 @@ export default function AdminPage() {
               )}
             </section>
           </div>
+        )}
+        {tab === 'audit' && (
+          <AuditLogTab
+            logs={auditLogs}
+            loading={auditLoading}
+            error={auditError}
+            page={auditPage}
+            actionInput={auditActionInput}
+            onActionInputChange={setAuditActionInput}
+            onFilter={() => {
+              setAuditPage(1)
+              setAuditActionFilter(auditActionInput)
+            }}
+            onPageChange={setAuditPage}
+          />
+        )}
+        {tab === 'webhooks' && (
+          <WebhookDeliveriesTab
+            deliveries={webhookDeliveries}
+            loading={webhooksLoading}
+            error={webhooksError}
+            page={webhooksPage}
+            sourceFilter={webhookSourceFilter}
+            statusFilter={webhookStatusFilter}
+            expandedRow={expandedWebhookRow}
+            onSourceChange={value => {
+              setWebhookSourceFilter(value)
+              setWebhooksPage(1)
+            }}
+            onStatusChange={value => {
+              setWebhookStatusFilter(value)
+              setWebhooksPage(1)
+            }}
+            onPageChange={setWebhooksPage}
+            onRowClick={id => setExpandedWebhookRow(prev => prev === id ? null : id)}
+          />
         )}
       </div>
     </div>
@@ -1542,6 +1613,215 @@ function OIDCTab() {
   )
 }
 
+function AuditLogTab({
+  logs,
+  loading,
+  error,
+  page,
+  actionInput,
+  onActionInputChange,
+  onFilter,
+  onPageChange,
+}: {
+  logs: AuditLogPage | null
+  loading: boolean
+  error: string | null
+  page: number
+  actionInput: string
+  onActionInputChange: (value: string) => void
+  onFilter: () => void
+  onPageChange: (page: number) => void
+}) {
+  const totalPages = logs ? Math.max(1, Math.ceil(logs.total / logs.per_page)) : 1
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <input
+          type="text"
+          placeholder="Filter by action"
+          value={actionInput}
+          onChange={event => onActionInputChange(event.target.value)}
+          onKeyDown={event => { if (event.key === 'Enter') onFilter() }}
+          style={{ ...inputStyle, width: 280 }}
+        />
+        <button type="button" onClick={onFilter} style={actionBtnStyle}>FILTER</button>
+      </div>
+
+      {loading && <div style={{ color: 'var(--muted)', fontSize: 12 }}>loading...</div>}
+      {error && <div style={{ color: 'var(--danger)', fontSize: 12 }}>{error}</div>}
+
+      {!loading && !error && logs && (
+        <>
+          {logs.items.length === 0 ? (
+            <div style={{ color: 'var(--muted)', fontSize: 12 }}>No audit log entries.</div>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr style={{ color: 'var(--muted)', fontSize: 11, letterSpacing: '0.08em' }}>
+                  <th style={adminTableHeaderStyle}>TIME</th>
+                  <th style={adminTableHeaderStyle}>ACTOR</th>
+                  <th style={adminTableHeaderStyle}>ACTION</th>
+                  <th style={adminTableHeaderStyle}>TARGET</th>
+                  <th style={adminTableHeaderStyle}>IP</th>
+                </tr>
+              </thead>
+              <tbody>
+                {logs.items.map(entry => {
+                  const target = `${entry.target_type} ${entry.target_id}`.trim()
+                  return (
+                    <tr key={entry.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <td style={adminTableCellStyle}>{formatLocalTimestamp(new Date(entry.created_at))}</td>
+                      <td style={adminTableCellStyle}>{entry.actor_email || entry.actor_user_id}</td>
+                      <td style={adminTableCellStyle}>{entry.action}</td>
+                      <td style={{ ...adminTableCellStyle, color: 'var(--muted)' }} title={target}>
+                        {truncateDisplayText(target, 32)}
+                      </td>
+                      <td style={{ ...adminTableCellStyle, color: 'var(--muted)' }}>{entry.ip_address || '-'}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+          <AdminPagination page={page} totalPages={totalPages} onPageChange={onPageChange} />
+        </>
+      )}
+    </div>
+  )
+}
+
+function WebhookDeliveriesTab({
+  deliveries,
+  loading,
+  error,
+  page,
+  sourceFilter,
+  statusFilter,
+  expandedRow,
+  onSourceChange,
+  onStatusChange,
+  onPageChange,
+  onRowClick,
+}: {
+  deliveries: WebhookDeliveryPage | null
+  loading: boolean
+  error: string | null
+  page: number
+  sourceFilter: string
+  statusFilter: string
+  expandedRow: string | null
+  onSourceChange: (value: string) => void
+  onStatusChange: (value: string) => void
+  onPageChange: (page: number) => void
+  onRowClick: (id: string) => void
+}) {
+  const totalPages = deliveries ? Math.max(1, Math.ceil(deliveries.total / deliveries.per_page)) : 1
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <select value={sourceFilter} onChange={event => onSourceChange(event.target.value)} style={FILTER_CONTROL_STYLE}>
+          <option value="">All Sources</option>
+          <option value="uptime_kuma">Uptime Kuma</option>
+          <option value="watchtower">Watchtower</option>
+        </select>
+        <select value={statusFilter} onChange={event => onStatusChange(event.target.value)} style={FILTER_CONTROL_STYLE}>
+          <option value="">All Statuses</option>
+          <option value="processed">Processed</option>
+          <option value="ignored">Ignored</option>
+          <option value="error">Error</option>
+        </select>
+      </div>
+
+      {loading && <div style={{ color: 'var(--muted)', fontSize: 12 }}>loading...</div>}
+      {error && <div style={{ color: 'var(--danger)', fontSize: 12 }}>{error}</div>}
+
+      {!loading && !error && deliveries && (
+        <>
+          {deliveries.items.length === 0 ? (
+            <div style={{ color: 'var(--muted)', fontSize: 12 }}>No webhook deliveries recorded.</div>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr style={{ color: 'var(--muted)', fontSize: 11, letterSpacing: '0.08em' }}>
+                  <th style={adminTableHeaderStyle}>TIME</th>
+                  <th style={adminTableHeaderStyle}>SOURCE</th>
+                  <th style={adminTableHeaderStyle}>STATUS</th>
+                  <th style={adminTableHeaderStyle}>INCIDENT</th>
+                  <th style={adminTableHeaderStyle}>SNIPPET</th>
+                </tr>
+              </thead>
+              <tbody>
+                {deliveries.items.map(item => {
+                  const expanded = expandedRow === item.id
+                  return (
+                    <Fragment key={item.id}>
+                      <tr
+                        onClick={() => onRowClick(item.id)}
+                        style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                      >
+                        <td style={adminTableCellStyle}>{formatLocalTimestamp(new Date(item.received_at))}</td>
+                        <td style={adminTableCellStyle}>{sourceLabel(item.source)}</td>
+                        <td style={{ ...adminTableCellStyle, ...webhookStatusStyle(item.status) }}>{item.status.toUpperCase()}</td>
+                        <td style={adminTableCellStyle}>
+                          {item.matched_incident_id ? (
+                            <Link to={`/incidents/${item.matched_incident_id}`} style={{ color: 'var(--accent)' }}>
+                              {item.matched_incident_id.slice(0, 8)}
+                            </Link>
+                          ) : <span style={{ color: 'var(--muted)' }}>-</span>}
+                        </td>
+                        <td style={{ ...adminTableCellStyle, color: 'var(--muted)' }}>{truncateDisplayText(item.payload_snippet, 80)}</td>
+                      </tr>
+                      {expanded && (
+                        <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface)' }}>
+                          <td colSpan={5} style={{ padding: '8px 12px' }}>
+                            {item.error_message && (
+                              <div style={{ marginBottom: 6, color: 'var(--danger)', fontSize: 11 }}>
+                                ERROR: {item.error_message}
+                              </div>
+                            )}
+                            <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--muted)', fontFamily: 'inherit', fontSize: 11 }}>
+                              {item.payload_snippet}
+                            </pre>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+          <AdminPagination page={page} totalPages={totalPages} onPageChange={onPageChange} />
+        </>
+      )}
+    </div>
+  )
+}
+
+function AdminPagination({ page, totalPages, onPageChange }: { page: number; totalPages: number; onPageChange: (page: number) => void }) {
+  return (
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12 }}>
+      <button type="button" disabled={page <= 1} onClick={() => onPageChange(page - 1)} style={actionBtnStyle}>PREV</button>
+      <span style={{ color: 'var(--muted)' }}>PAGE {page} OF {totalPages}</span>
+      <button type="button" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)} style={actionBtnStyle}>NEXT</button>
+    </div>
+  )
+}
+
+function sourceLabel(source: string) {
+  if (source === 'uptime_kuma') return 'UPTIME KUMA'
+  if (source === 'watchtower') return 'WATCHTOWER'
+  return source.toUpperCase()
+}
+
+function webhookStatusStyle(status: string): CSSProperties {
+  if (status === 'processed') return { color: 'var(--success)' }
+  if (status === 'error') return { color: 'var(--danger)' }
+  return { color: 'var(--muted)' }
+}
+
 function SettingsTab() {
   const [redactSecrets, setRedactSecrets] = useState(true)
   const [loading, setLoading] = useState(true)
@@ -1985,4 +2265,16 @@ const actionBtnStyle: CSSProperties = {
   fontFamily: 'inherit',
   cursor: 'pointer',
   letterSpacing: '0.05em',
+}
+
+const adminTableHeaderStyle: CSSProperties = {
+  textAlign: 'left',
+  padding: '4px 8px',
+  borderBottom: '1px solid var(--border)',
+}
+
+const adminTableCellStyle: CSSProperties = {
+  padding: '6px 8px',
+  color: 'var(--text)',
+  verticalAlign: 'top',
 }

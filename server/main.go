@@ -239,6 +239,8 @@ func main() {
 		r.Put("/api/admin/notifications/{id}", handlers.UpdateNotificationDest(database))
 		r.Delete("/api/admin/notifications/{id}", handlers.DeleteNotificationDest(database))
 		r.Post("/api/admin/notifications/{id}/test", handlers.TestNotificationDest(database, notifier))
+		r.Get("/api/admin/audit-logs", handlers.ListAuditLogs(database))
+		r.Get("/api/admin/webhook-deliveries", handlers.ListWebhookDeliveries(database))
 	})
 
 	r.Group(func(r chi.Router) {

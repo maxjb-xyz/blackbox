@@ -108,6 +108,11 @@ func UpdateAdminUser(database *gorm.DB, h *hub.Hub) http.HandlerFunc {
 			h.InvalidateUser(targetID)
 		}
 
+		WriteAuditLog(database, r, callerClaims, "user.update_role", "user", targetID, map[string]interface{}{
+			"is_admin":     *req.IsAdmin,
+			"role_changed": roleChanged,
+		})
+
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(toAdminUserResponse(user)); err != nil {
 			log.Printf("UpdateAdminUser encode: %v", err)
@@ -137,6 +142,11 @@ func ForceLogoutUser(database *gorm.DB, h *hub.Hub) http.HandlerFunc {
 			h.InvalidateUser(targetID)
 		}
 
+		callerClaims, _ := auth.ClaimsFromContext(r.Context())
+		WriteAuditLog(database, r, callerClaims, "user.force_logout", "user", targetID, map[string]interface{}{
+			"username": user.Username,
+		})
+
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 	}
@@ -164,6 +174,8 @@ func DeleteAdminUser(database *gorm.DB, h *hub.Hub) http.HandlerFunc {
 		if h != nil {
 			h.InvalidateUser(targetID)
 		}
+
+		WriteAuditLog(database, r, callerClaims, "user.delete", "user", targetID, map[string]interface{}{})
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})

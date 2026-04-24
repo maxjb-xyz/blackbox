@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"regexp"
@@ -24,12 +25,23 @@ var watchtowerParensPattern = regexp.MustCompile(`\([^)]*\)`)
 
 func WebhookWatchtower(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry, shutdown <-chan struct{}) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+		if err != nil {
+			RecordWebhookDelivery(database, "watchtower", "", "", "error", "failed to read payload")
+			writeError(w, http.StatusBadRequest, "failed to read request body")
+			return
+		}
+
 		var payload watchtowerPayload
-		if !decodeJSONBody(w, r, 1<<20, &payload) {
+		snippet := payloadSnippet(body)
+		if err := json.Unmarshal(body, &payload); err != nil {
+			RecordWebhookDelivery(database, "watchtower", snippet, "", "error", "malformed JSON")
+			writeError(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
 
 		if payload.Message == "" {
+			RecordWebhookDelivery(database, "watchtower", snippet, "", "ignored", "Message is required")
 			writeError(w, http.StatusBadRequest, "Message is required")
 			return
 		}
@@ -65,6 +77,7 @@ func WebhookWatchtower(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.En
 			Metadata:  string(metaBytes),
 		}
 		if err := database.Create(&entry).Error; err != nil {
+			RecordWebhookDelivery(database, "watchtower", snippet, "", "error", "failed to save entry")
 			writeError(w, http.StatusInternalServerError, "failed to save entry")
 			return
 		}
@@ -75,6 +88,7 @@ func WebhookWatchtower(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.En
 			}
 		}
 
+		RecordWebhookDelivery(database, "watchtower", snippet, "", "processed", "")
 		w.WriteHeader(http.StatusCreated)
 	}
 }
