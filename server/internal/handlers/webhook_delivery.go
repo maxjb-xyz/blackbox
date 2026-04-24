@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"blackbox/server/internal/models"
@@ -13,24 +14,14 @@ import (
 
 const webhookDeliveryRetention = 1_000
 
-func RecordWebhookDelivery(
-	db *gorm.DB,
-	source, payloadSnippet, matchedIncidentID, status, errorMessage string,
-) {
-	row := models.WebhookDelivery{
-		ID:                ulid.Make().String(),
-		Source:            source,
-		ReceivedAt:        time.Now().UTC(),
-		PayloadSnippet:    payloadSnippet,
-		MatchedIncidentID: matchedIncidentID,
-		Status:            status,
-		ErrorMessage:      errorMessage,
-	}
-	if err := db.Create(&row).Error; err != nil {
-		log.Printf("RecordWebhookDelivery insert failed: %v", err)
+var webhookPruneInFlight atomic.Bool
+
+func pruneWebhookDeliveries(db *gorm.DB) {
+	if !webhookPruneInFlight.CompareAndSwap(false, true) {
 		return
 	}
 	go func() {
+		defer webhookPruneInFlight.Store(false)
 		if err := db.Exec(
 			"DELETE FROM webhook_deliveries WHERE id NOT IN (SELECT id FROM webhook_deliveries ORDER BY received_at DESC LIMIT ?)",
 			webhookDeliveryRetention,
@@ -38,6 +29,28 @@ func RecordWebhookDelivery(
 			log.Printf("RecordWebhookDelivery prune failed: %v", err)
 		}
 	}()
+}
+
+func RecordWebhookDelivery(
+	db *gorm.DB,
+	source, payloadSnippet, matchedIncidentID, status, errorMessage string,
+) {
+	row := models.WebhookDelivery{
+		ID:             ulid.Make().String(),
+		Source:         source,
+		ReceivedAt:     time.Now().UTC(),
+		PayloadSnippet: payloadSnippet,
+		Status:         status,
+		ErrorMessage:   errorMessage,
+	}
+	if matchedIncidentID != "" {
+		row.MatchedIncidentID = &matchedIncidentID
+	}
+	if err := db.Create(&row).Error; err != nil {
+		log.Printf("RecordWebhookDelivery insert failed: %v", err)
+		return
+	}
+	pruneWebhookDeliveries(db)
 }
 
 func ListWebhookDeliveries(db *gorm.DB) http.HandlerFunc {

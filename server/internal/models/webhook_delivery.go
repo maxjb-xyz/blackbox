@@ -7,7 +7,7 @@ type WebhookDelivery struct {
 	Source            string    `gorm:"not null;index" json:"source"`
 	ReceivedAt        time.Time `gorm:"not null;index" json:"received_at"`
 	PayloadSnippet    string    `gorm:"not null;default:''" json:"payload_snippet"`
-	MatchedIncidentID string    `gorm:"not null;default:''" json:"matched_incident_id"`
+	MatchedIncidentID *string   `gorm:"index" json:"matched_incident_id"`
 	Status            string    `gorm:"not null;index" json:"status"`
 	ErrorMessage      string    `gorm:"not null;default:''" json:"error_message"`
 }

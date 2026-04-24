@@ -12,7 +12,6 @@ import (
 
 	"blackbox/server/internal/correlation"
 	"blackbox/server/internal/hub"
-	"blackbox/server/internal/models"
 	"blackbox/shared/types"
 	"github.com/oklog/ulid/v2"
 	"gorm.io/gorm"
@@ -149,20 +148,9 @@ func WebhookUptime(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry,
 			}
 		}
 
-		RecordWebhookDelivery(database, "uptime_kuma", snippet, matchedIncidentID(database, correlatedID), "processed", "")
+		RecordWebhookDelivery(database, "uptime_kuma", snippet, "", "processed", "")
 		w.WriteHeader(http.StatusCreated)
 	}
-}
-
-func matchedIncidentID(database *gorm.DB, entryID string) string {
-	if entryID == "" {
-		return ""
-	}
-	var link models.IncidentEntry
-	if err := database.First(&link, "entry_id = ?", entryID).Error; err != nil {
-		return ""
-	}
-	return link.IncidentID
 }
 
 func parseWebhookTime(value string) (time.Time, bool) {

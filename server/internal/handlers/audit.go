@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"blackbox/server/internal/auth"
@@ -16,6 +17,44 @@ import (
 )
 
 const auditLogRetention = 10_000
+
+var auditPruneInFlight atomic.Bool
+
+func extractClientIP(r *http.Request) string {
+	remoteIP, _, _ := net.SplitHostPort(r.RemoteAddr)
+	if isTrustedProxy(remoteIP) {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			if idx := strings.Index(xff, ","); idx >= 0 {
+				return strings.TrimSpace(xff[:idx])
+			}
+			return strings.TrimSpace(xff)
+		}
+	}
+	return remoteIP
+}
+
+func isTrustedProxy(ip string) bool {
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return false
+	}
+	return parsed.IsLoopback() || parsed.IsPrivate() || parsed.IsLinkLocalUnicast()
+}
+
+func pruneAuditLogs(db *gorm.DB) {
+	if !auditPruneInFlight.CompareAndSwap(false, true) {
+		return
+	}
+	go func() {
+		defer auditPruneInFlight.Store(false)
+		if err := db.Exec(
+			"DELETE FROM audit_logs WHERE id NOT IN (SELECT id FROM audit_logs ORDER BY created_at DESC LIMIT ?)",
+			auditLogRetention,
+		).Error; err != nil {
+			log.Printf("WriteAuditLog prune failed: %v", err)
+		}
+	}()
+}
 
 func WriteAuditLog(
 	db *gorm.DB,
@@ -41,14 +80,6 @@ func WriteAuditLog(
 		metaBytes = []byte("{}")
 	}
 
-	ip := r.Header.Get("X-Forwarded-For")
-	if idx := strings.Index(ip, ","); idx >= 0 {
-		ip = strings.TrimSpace(ip[:idx])
-	}
-	if ip == "" {
-		ip, _, _ = net.SplitHostPort(r.RemoteAddr)
-	}
-
 	entry := models.AuditLog{
 		ID:          ulid.Make().String(),
 		ActorUserID: claims.UserID,
@@ -57,7 +88,7 @@ func WriteAuditLog(
 		TargetType:  targetType,
 		TargetID:    targetID,
 		Metadata:    string(metaBytes),
-		IPAddress:   ip,
+		IPAddress:   extractClientIP(r),
 		CreatedAt:   time.Now().UTC(),
 	}
 
@@ -66,14 +97,7 @@ func WriteAuditLog(
 		return
 	}
 
-	go func() {
-		if err := db.Exec(
-			"DELETE FROM audit_logs WHERE id NOT IN (SELECT id FROM audit_logs ORDER BY created_at DESC LIMIT ?)",
-			auditLogRetention,
-		).Error; err != nil {
-			log.Printf("WriteAuditLog prune failed: %v", err)
-		}
-	}()
+	pruneAuditLogs(db)
 }
 
 func ListAuditLogs(db *gorm.DB) http.HandlerFunc {

@@ -46,9 +46,16 @@ func Register(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 
 		userID := ulid.Make().String()
 		user := models.User{}
+		var invite models.InviteCode
 		var token string
 
 		txErr := database.Transaction(func(tx *gorm.DB) error {
+			// Load the invite first so we can record its ID in the audit log.
+			if err := tx.Where("code = ? AND used_by = '' AND expires_at > ?", req.InviteCode, time.Now()).
+				First(&invite).Error; err != nil {
+				return errInvalidInvite
+			}
+
 			// Atomically claim the invite: conditional UPDATE checks used_by = '' and
 			// expiry in one step. RowsAffected == 0 means already used, not found, or expired.
 			result := tx.Model(&models.InviteCode{}).
@@ -91,6 +98,7 @@ func Register(database *gorm.DB, jwtSecret string) http.HandlerFunc {
 		setSessionCookie(w, r, token, jwtTTL())
 
 		events.LogSystem(database, "auth", "user.register", "user "+req.Username+" registered via invite")
+		WriteAuditLog(database, r, &auth.Claims{UserID: user.ID, Email: user.Email}, "user.register", "user", user.ID, map[string]any{"invite_id": invite.ID})
 
 		writeSessionResponse(w, &auth.Claims{
 			UserID:       userID,
