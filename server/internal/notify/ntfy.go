@@ -13,13 +13,18 @@ import (
 
 var ExportedSendNtfy = sendNtfy
 
-func BuildNtfyMessage(inc models.Incident, test bool) (title, body, priority, tags string) {
+func BuildNtfyMessage(inc models.Incident, event string, incURL string, test bool) (title, body, priority, tags string) {
 	if test {
 		return "Test Notification", "This is a test notification from Blackbox.", "default", "white_check_mark"
 	}
 
 	title = inc.Title
-	priority, tags = ntfyAttributesForIncident(inc)
+	if event == EventAIReviewGenerated {
+		priority = "default"
+		tags = "robot"
+	} else {
+		priority, tags = ntfyAttributesForIncident(inc)
+	}
 
 	lines := []string{inc.Title}
 
@@ -32,13 +37,18 @@ func BuildNtfyMessage(inc models.Incident, test bool) (title, body, priority, ta
 	if len(nodes) > 0 {
 		lines = append(lines, "Nodes: "+strings.Join(nodes, ", "))
 	}
+	if event == EventAIReviewGenerated {
+		if summary := extractAIAnalysis(inc); summary != "" {
+			lines = append(lines, "AI: "+truncateAIAnalysis(summary, 500))
+		}
+	}
 
 	body = strings.Join(lines, "\n")
 	return title, body, priority, tags
 }
 
-func sendNtfy(ctx context.Context, topicURL string, inc models.Incident, test bool) error {
-	title, body, priority, tags := BuildNtfyMessage(inc, test)
+func sendNtfy(ctx context.Context, topicURL string, inc models.Incident, event string, incURL string, test bool) error {
+	title, body, priority, tags := BuildNtfyMessage(inc, event, incURL, test)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, topicURL, bytes.NewBufferString(body))
 	if err != nil {
@@ -48,6 +58,9 @@ func sendNtfy(ctx context.Context, topicURL string, inc models.Incident, test bo
 	req.Header.Set("Title", title)
 	req.Header.Set("Priority", priority)
 	req.Header.Set("Tags", tags)
+	if incURL != "" {
+		req.Header.Set("Click", incURL)
+	}
 
 	resp, err := httpClient.Do(req)
 	if err != nil {

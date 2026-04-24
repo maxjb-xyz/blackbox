@@ -81,7 +81,11 @@ func NewManager(db *gorm.DB, h *hub.Hub, notifier *notify.Dispatcher) *Manager {
 		recentDies:          make(map[string][]time.Time),
 		recentSystemdEvents: make(map[string][]time.Time),
 	}
-	m.enricher = NewAIEnricher(db, m.broadcastUpdated)
+	if notifier != nil {
+		m.enricher = NewAIEnricherWithNotifier(db, notifier, m.broadcastUpdated)
+	} else {
+		m.enricher = NewAIEnricher(db, m.broadcastUpdated)
+	}
 	return m
 }
 

@@ -44,7 +44,7 @@ type discordPayload struct {
 
 var ExportedSendDiscord = sendDiscord
 
-func BuildDiscordEmbed(inc models.Incident, test bool) DiscordEmbed {
+func BuildDiscordEmbed(inc models.Incident, event string, incURL string, test bool) DiscordEmbed {
 	if test {
 		return DiscordEmbed{
 			Title:     "Test Notification",
@@ -58,9 +58,13 @@ func BuildDiscordEmbed(inc models.Incident, test bool) DiscordEmbed {
 		Title:     inc.Title,
 		Color:     discordColorForIncident(inc),
 		Timestamp: inc.OpenedAt.UTC().Format(time.RFC3339),
-		Fields:    make([]discordField, 0, 3),
-		Footer:    &discordFooter{Text: "Blackbox - " + incidentStatusLabel(inc)},
+		Fields:    make([]discordField, 0, 5),
 	}
+	footerText := "Blackbox - " + incidentStatusLabel(inc)
+	if event == EventAIReviewGenerated {
+		footerText = "Blackbox - AI Review"
+	}
+	embed.Footer = &discordFooter{Text: footerText}
 
 	services := parseIncidentStringList(inc.Services)
 	if len(services) > 0 {
@@ -88,11 +92,28 @@ func BuildDiscordEmbed(inc models.Incident, test bool) DiscordEmbed {
 		})
 	}
 
+	if event == EventAIReviewGenerated {
+		if summary := extractAIAnalysis(inc); summary != "" {
+			embed.Fields = append(embed.Fields, discordField{
+				Name:   "AI Analysis",
+				Value:  truncateAIAnalysis(summary, 1000),
+				Inline: false,
+			})
+		}
+	}
+	if incURL != "" {
+		embed.Fields = append(embed.Fields, discordField{
+			Name:   "View Incident",
+			Value:  incURL,
+			Inline: false,
+		})
+	}
+
 	return embed
 }
 
-func sendDiscord(ctx context.Context, webhookURL string, inc models.Incident, test bool) error {
-	payload := discordPayload{Embeds: []DiscordEmbed{BuildDiscordEmbed(inc, test)}}
+func sendDiscord(ctx context.Context, webhookURL string, inc models.Incident, event string, incURL string, test bool) error {
+	payload := discordPayload{Embeds: []DiscordEmbed{BuildDiscordEmbed(inc, event, incURL, test)}}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("marshal discord payload: %w", err)

@@ -23,6 +23,7 @@ import {
   testAISettings,
   testNotificationDest,
   updateAISettings,
+  updateBaseURL,
   updateFileWatcherSettings,
   updateAdminOIDCProvider,
   updateAdminUser,
@@ -73,6 +74,7 @@ const NOTIFICATION_EVENT_OPTIONS = [
   { value: 'incident_opened_suspected', label: 'INCIDENT OPENED / SUSPECTED' },
   { value: 'incident_confirmed', label: 'INCIDENT UPGRADED TO CONFIRMED' },
   { value: 'incident_resolved', label: 'INCIDENT RESOLVED' },
+  { value: 'incident_ai_review_generated', label: 'AI REVIEW GENERATED' },
 ] as const
 const ADMIN_GROUPS: Record<AdminGroup, { label: string; tabs: Tab[] }> = {
   access: { label: 'ACCESS', tabs: ['users', 'invites', 'oidc'] },
@@ -159,6 +161,11 @@ export default function AdminPage() {
   const [notificationSaveError, setNotificationSaveError] = useState<string | null>(null)
   const [notificationTestResults, setNotificationTestResults] = useState<Record<string, { ok: boolean; error?: string } | undefined>>({})
   const notificationTestTimeoutsRef = useRef<Record<string, number>>({})
+  const [baseURL, setBaseURL] = useState('')
+  const [baseURLSaving, setBaseURLSaving] = useState(false)
+  const [baseURLError, setBaseURLError] = useState<string | null>(null)
+  const [baseURLSuccess, setBaseURLSuccess] = useState(false)
+  const baseURLSuccessTimerRef = useRef<number | null>(null)
   const adminTabRefs = useRef<Array<HTMLButtonElement | null>>([])
 
   const handleAddUnit = useCallback((nodeName: string) => {
@@ -182,6 +189,16 @@ export default function AdminPage() {
       setNotificationsError(err instanceof Error ? err.message : 'Failed to load notification destinations')
     } finally {
       setNotificationsLoading(false)
+    }
+  }, [])
+
+  const loadNotificationSettings = useCallback(async () => {
+    setBaseURLError(null)
+    try {
+      const config = await fetchAdminConfig()
+      setBaseURL(config.base_url ?? '')
+    } catch (err) {
+      setBaseURLError(err instanceof Error ? err.message : 'Failed to load instance base URL')
     }
   }, [])
 
@@ -212,13 +229,17 @@ export default function AdminPage() {
   useEffect(() => {
     if (tab !== 'notifications') return
     void loadNotificationDests()
-  }, [loadNotificationDests, tab])
+    void loadNotificationSettings()
+  }, [loadNotificationDests, loadNotificationSettings, tab])
 
   useEffect(() => {
     return () => {
       Object.values(notificationTestTimeoutsRef.current).forEach(timeoutID => {
         window.clearTimeout(timeoutID)
       })
+      if (baseURLSuccessTimerRef.current !== null) {
+        window.clearTimeout(baseURLSuccessTimerRef.current)
+      }
     }
   }, [])
 
@@ -234,6 +255,28 @@ export default function AdminPage() {
     const normalizedIndex = (index + tabs.length) % tabs.length
     setTab(tabs[normalizedIndex])
     adminTabRefs.current[normalizedIndex]?.focus()
+  }
+
+  async function saveBaseURL(e: React.FormEvent) {
+    e.preventDefault()
+    setBaseURLSaving(true)
+    setBaseURLError(null)
+    setBaseURLSuccess(false)
+    try {
+      await updateBaseURL(baseURL)
+      if (baseURLSuccessTimerRef.current !== null) {
+        window.clearTimeout(baseURLSuccessTimerRef.current)
+      }
+      setBaseURLSuccess(true)
+      baseURLSuccessTimerRef.current = window.setTimeout(() => {
+        setBaseURLSuccess(false)
+        baseURLSuccessTimerRef.current = null
+      }, 2500)
+    } catch (err) {
+      setBaseURLError(err instanceof Error ? err.message : 'Save failed')
+    } finally {
+      setBaseURLSaving(false)
+    }
   }
 
   return (
@@ -499,6 +542,48 @@ export default function AdminPage() {
         )}
         {tab === 'notifications' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <section style={panelStyle}>
+              <div style={panelHeaderStyle}>
+                <span id="instance-base-url-heading" style={panelLabelStyle}>INSTANCE BASE URL</span>
+              </div>
+              <form onSubmit={saveBaseURL} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <input
+                  type="url"
+                  value={baseURL}
+                  aria-labelledby="instance-base-url-heading"
+                  onChange={e => {
+                    setBaseURL(e.target.value)
+                    setBaseURLError(null)
+                    setBaseURLSuccess(false)
+                  }}
+                  placeholder="https://blackbox.example.com"
+                  disabled={notificationsLoading || baseURLSaving}
+                  style={inputStyle}
+                />
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                  Used to generate clickable incident links in notifications. Leave blank to omit links.
+                </div>
+                {baseURLError && <div style={{ fontSize: 11, color: 'var(--danger)' }}>{baseURLError}</div>}
+                {baseURLSuccess && <div style={{ fontSize: 11, color: 'var(--success)' }}>saved</div>}
+                <button
+                  type="submit"
+                  disabled={notificationsLoading || baseURLSaving}
+                  style={{
+                    alignSelf: 'flex-start',
+                    background: 'transparent',
+                    border: '1px solid var(--border)',
+                    color: 'var(--muted)',
+                    fontSize: 11,
+                    padding: '4px 12px',
+                    cursor: notificationsLoading || baseURLSaving ? 'not-allowed' : 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  {baseURLSaving ? 'SAVING...' : 'SAVE'}
+                </button>
+              </form>
+            </section>
+
             <section style={panelStyle}>
               <div style={panelHeaderStyle}>
                 <span style={panelLabelStyle}>DESTINATIONS</span>

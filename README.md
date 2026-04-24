@@ -125,6 +125,11 @@ docker compose up -d
 - **Custom entries** — Post arbitrary events via the API.
 - **Container & stack exclusions** — Exclude specific Docker containers or Compose stacks from event ingestion entirely. Configured in Admin > Integrations > Excludes. Excluded events are silently dropped server-side — agents do not need reconfiguring.
 
+### Notifications
+- **Webhook notification support** — Send outbound notifications to Discord, Slack, ntfy, and other targets when Blackbox events occur. Configure destinations in Admin > Integrations > Notifications.
+  - **AI review notifications** — When Ollama completes an incident analysis, all subscribed notification destinations receive the event with the AI summary embedded in the payload.
+  - **Incident deep-links** — Configure a **Base URL** in Admin > Integrations > Notifications so notification payloads include a direct link to the incident in Blackbox.
+
 ### Incidents & Correlation
 - **Incident lifecycle** — Blackbox opens confirmed incidents from monitor-down events and suspected incidents from crash loops, unexpected container exits, watched systemd failures/OOM kills/restart loops, and update-triggered restarts.
 - **Weighted cause scoring** — Likely causes are ranked from recent Docker, file, systemd, and update entries using event-specific lookback windows, same-node bonuses, and log-snippet bonuses.
@@ -277,6 +282,8 @@ volumes:
 - AI mode applies to both confirmed and suspected incidents. Suspected incidents still pull in captured crash logs and run the same selected Ollama path.
 - Leaving the Ollama URL or model blank disables all optional AI behavior while keeping the incident engine and deterministic correlation active.
 - The same Admin > System page also controls whether newly captured file diffs redact obvious secret-bearing keys before upload.
+- When AI analysis completes, Blackbox fires an `AI Review Generated` notification event. Subscribe notification destinations to this event to receive the summary via Discord, Slack, or ntfy without opening the UI.
+- To include a direct link to the incident in notification payloads, set **Instance Base URL** in Admin > Integrations > Notifications (e.g., `https://blackbox.myserver.com`). Leave blank to omit links.
 
 ### Agent Tokens
 
@@ -612,12 +619,10 @@ The database is automatically migrated on startup — no manual schema managemen
 - [x] Mobile-friendly view
 - [x] Support OpenAI/Other AI Providers
 - [x] Webhook notification support
-<<<<<<< feature/core-app-improvements
+- [x] AI review notifications — notify subscribed destinations when Ollama completes incident analysis
 - [x] Container and stack exclusion list
 - [x] FTS5 full-text timeline search
-=======
 - [x] Resolved incident PDF report export
->>>>>>> main
 - [ ] Timeline UI polish and interaction improvements
 - [ ] Grafana data source plugin
 - [ ] Bi-directional agent analysis
