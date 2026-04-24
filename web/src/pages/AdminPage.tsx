@@ -244,12 +244,14 @@ export default function AdminPage() {
           <div className="admin-title-actions">
             <span className="admin-title-divider" aria-hidden="true" />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+              <div role="tablist" style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
                 {ALL_ADMIN_GROUPS.map((g, index) => (
                   <Fragment key={g}>
                     {index > 0 ? <span className="admin-tab-divider" aria-hidden="true">/</span> : null}
                     <button
                       type="button"
+                      role="tab"
+                      aria-selected={group === g}
                       onClick={() => selectGroup(g)}
                       style={{
                         background: 'none',

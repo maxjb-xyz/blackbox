@@ -9,6 +9,7 @@ import (
 
 	"blackbox/server/internal/hub"
 	"blackbox/server/internal/middleware"
+	"blackbox/server/internal/models"
 	"blackbox/shared/types"
 	"gorm.io/gorm"
 )
@@ -55,6 +56,9 @@ func AgentPushBatch(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry
 			Failed:   make([]batchPushError, 0),
 		}
 
+		var excludedTargets []models.ExcludedTarget
+		database.Find(&excludedTargets)
+
 		nodeUpdated := false
 
 		for _, entry := range entries {
@@ -73,7 +77,7 @@ func AgentPushBatch(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry
 				continue
 			}
 			entry.Service = serviceName
-			if isExcluded(database, entry) {
+			if isExcludedInMemory(excludedTargets, entry) {
 				resp.Accepted = append(resp.Accepted, entry.ID)
 				continue
 			}

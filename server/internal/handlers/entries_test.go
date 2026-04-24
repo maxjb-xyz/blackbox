@@ -312,3 +312,44 @@ func TestGetEntry_Found(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &got))
 	assert.Equal(t, entry.ID, got.ID)
 }
+
+func TestListEntries_FTSSearch(t *testing.T) {
+	// newTestDB calls db.Init which runs EnsureEntriesFTS, so FTS is ready.
+	database := newTestDB(t)
+
+	entry := types.Entry{
+		ID:        ulid.Make().String(),
+		Timestamp: time.Now().UTC(),
+		NodeName:  "homelab-01",
+		Source:    "docker",
+		Event:     "start",
+		Service:   "webapp",
+		Content:   "uniquecontentword started successfully",
+	}
+	require.NoError(t, database.Create(&entry).Error)
+
+	// Matching term — entry should be returned.
+	req := httptest.NewRequest(http.MethodGet, "/api/entries?q=uniquecontentword", nil)
+	rr := httptest.NewRecorder()
+	handlers.ListEntries(database)(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	var resp struct {
+		Entries []types.Entry `json:"entries"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	require.Len(t, resp.Entries, 1)
+	assert.Equal(t, entry.ID, resp.Entries[0].ID)
+
+	// Non-matching term — no results.
+	req = httptest.NewRequest(http.MethodGet, "/api/entries?q=termthatdoesnotexist", nil)
+	rr = httptest.NewRecorder()
+	handlers.ListEntries(database)(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	var resp2 struct {
+		Entries []types.Entry `json:"entries"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp2))
+	assert.Len(t, resp2.Entries, 0)
+}

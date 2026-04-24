@@ -105,6 +105,7 @@ func ListEntries(database *gorm.DB) http.HandlerFunc {
 		var entries []types.Entry
 		if err := tx.Find(&entries).Error; err != nil {
 			if usingFTS {
+				log.Printf("entries: FTS query failed, falling back to LIKE: %v", err)
 				entries, err = listEntriesFallback(database, cursor, limit, node, source, service, q, timeStartStr, timeEndStr, hideHeartbeat)
 				if err != nil {
 					writeError(w, http.StatusInternalServerError, "failed to fetch entries")

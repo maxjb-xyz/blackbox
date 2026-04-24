@@ -42,14 +42,17 @@ func extractComposeProject(metadata string) string {
 		"composeProject",
 		"stack",
 	} {
-		if found := findStringValue(value, key); found != "" {
+		if found := findStringValue(value, key, 0); found != "" {
 			return found
 		}
 	}
 	return ""
 }
 
-func findStringValue(value any, key string) string {
+func findStringValue(value any, key string, depth int) string {
+	if depth > 6 {
+		return ""
+	}
 	switch v := value.(type) {
 	case map[string]any:
 		for k, child := range v {
@@ -58,16 +61,39 @@ func findStringValue(value any, key string) string {
 					return strings.TrimSpace(s)
 				}
 			}
-			if found := findStringValue(child, key); found != "" {
+			if found := findStringValue(child, key, depth+1); found != "" {
 				return found
 			}
 		}
 	case []any:
 		for _, child := range v {
-			if found := findStringValue(child, key); found != "" {
+			if found := findStringValue(child, key, depth+1); found != "" {
 				return found
 			}
 		}
 	}
 	return ""
+}
+
+// isExcludedInMemory checks whether entry matches any of the pre-fetched
+// excluded targets. Use this inside batch loops to avoid N DB queries.
+func isExcludedInMemory(excludedTargets []models.ExcludedTarget, entry types.Entry) bool {
+	if entry.Source != "docker" {
+		return false
+	}
+	service := strings.ToLower(strings.TrimSpace(entry.Service))
+	stack := strings.ToLower(strings.TrimSpace(extractComposeProject(entry.Metadata)))
+	if service == "" && stack == "" {
+		return false
+	}
+	for _, t := range excludedTargets {
+		name := strings.ToLower(t.Name)
+		if t.Type == "container" && name == service {
+			return true
+		}
+		if t.Type == "stack" && name == stack {
+			return true
+		}
+	}
+	return false
 }
