@@ -1939,20 +1939,27 @@ function GitHubTab() {
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set())
 
   useEffect(() => {
+    const controller = new AbortController()
     void (async () => {
       setReleasesLoading(true)
       setReleasesError(null)
       try {
-        const res = await fetch('https://api.github.com/repos/maxjb-xyz/blackbox/releases')
+        const res = await fetch(
+          'https://api.github.com/repos/maxjb-xyz/blackbox/releases?per_page=100',
+          { signal: controller.signal },
+        )
         if (!res.ok) throw new Error(`GitHub API returned ${res.status}`)
-        const data: GitHubRelease[] = await res.json()
-        setReleases(data)
+        const raw: unknown = await res.json()
+        if (!Array.isArray(raw)) throw new Error('Unexpected response format from GitHub API')
+        setReleases(raw as GitHubRelease[])
       } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') return
         setReleasesError(err instanceof Error ? err.message : 'Failed to fetch releases')
       } finally {
         setReleasesLoading(false)
       }
     })()
+    return () => controller.abort()
   }, [])
 
   function toggleExpanded(id: number) {
@@ -2001,7 +2008,7 @@ function GitHubTab() {
         )}
         {releasesError && (
           <div style={{ color: 'var(--danger)', fontSize: 12 }}>
-            Failed to load releases from GitHub. Check your network connection.
+            {releasesError || 'Failed to load releases from GitHub. Check your network connection.'}
           </div>
         )}
         {!releasesLoading && !releasesError && releases.length === 0 && (
@@ -2076,7 +2083,6 @@ function GitHubTab() {
                     color: 'var(--muted)',
                     borderTop: '1px solid var(--border)',
                     paddingTop: 8,
-                    marginTop: 8,
                     fontFamily: 'inherit',
                     margin: '8px 0 0 0',
                   }}
