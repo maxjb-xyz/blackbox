@@ -14,6 +14,8 @@ import (
 const githubReleasesURL = "https://api.github.com/repos/maxjb-xyz/blackbox/releases?per_page=100"
 const githubCacheTTL = time.Hour
 
+var githubHTTPClient = &http.Client{Timeout: 10 * time.Second}
+
 func GetGitHubReleases(database *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Check cache
@@ -36,7 +38,12 @@ func GetGitHubReleases(database *gorm.DB) http.HandlerFunc {
 		}
 
 		// Fetch from GitHub
-		resp, err := http.Get(githubReleasesURL) //nolint:noctx
+		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, githubReleasesURL, nil)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to build request")
+			return
+		}
+		resp, err := githubHTTPClient.Do(req)
 		if err != nil {
 			writeError(w, http.StatusBadGateway, "failed to reach GitHub")
 			return
