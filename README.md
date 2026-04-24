@@ -149,6 +149,9 @@ docker compose up -d
 - Admin bootstrap wizard on first launch
 - Invite-code-based user registration
 
+### MCP Server (optional)
+- **Model Context Protocol server** — Expose your Blackbox data to AI assistants (Claude Desktop, claude.ai, and any MCP-compatible client). Toggle on/off from Admin > System > MCP Server. When enabled, serves an HTTP/SSE MCP endpoint with five tools: `list_incidents`, `get_incident`, `list_entries`, `search_entries`, and `list_nodes`.
+
 ### Security
 - Non-root container images — server runs distroless (no shell, UID 65532), agent runs as configurable `PUID`/`PGID` (default 65532), drops all capabilities then adds only `SETUID`/`SETGID` for identity switching, with a read-only filesystem
 - Constant-time token comparison for all shared secrets
@@ -409,6 +412,57 @@ Blackbox will log every image update with the container name and new image versi
 
 ---
 
+## MCP Server
+
+Blackbox includes an optional MCP (Model Context Protocol) server that lets AI assistants query your incident history, timeline, and node status conversationally.
+
+### Enabling
+
+1. Go to **Admin > System > MCP Server**
+2. Toggle **Enabled**
+3. Set the port (default: `3001`)
+4. Copy the generated auth token
+
+### Connecting Claude Desktop
+
+Add to your `claude_desktop_config.json` (on macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "blackbox": {
+      "url": "http://your-server:3001/sse",
+      "headers": {
+        "Authorization": "Bearer <your-token>"
+      }
+    }
+  }
+}
+```
+
+Restart Claude Desktop. Blackbox will appear as a connected server and Claude can answer questions like:
+- *"What incidents happened in the last 24 hours?"*
+- *"What was the root cause of the nginx incident?"*
+- *"Search my timeline for OOM kills"*
+
+### Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `list_incidents` | List incidents, filterable by status and confidence |
+| `get_incident` | Get full incident detail including AI analysis and event chain |
+| `list_entries` | List timeline entries with optional filters and cursor pagination |
+| `search_entries` | Full-text search across entry content |
+| `list_nodes` | List registered nodes and their status |
+
+### Security
+
+The MCP server requires a Bearer token on every request. The token is auto-generated on first enable and can be regenerated at any time from the admin panel. The full token is never shown after generation — only the last 8 characters are displayed for identification.
+
+> **Note:** If you run Blackbox behind a reverse proxy, ensure the MCP port (`3001` by default) is also proxied or accessible to your AI client. The MCP port is separate from the main Blackbox port.
+
+---
+
 ## OIDC / SSO Setup
 
 Blackbox supports multiple OIDC providers configured from the Admin panel under **Settings > OIDC**.
@@ -609,6 +663,7 @@ The database is automatically migrated on startup — no manual schema managemen
 - [x] Mobile-friendly view
 - [x] Support OpenAI/Other AI Providers
 - [x] Webhook notification support
+- [x] MCP server for AI assistant integration
 - [ ] Timeline UI polish and interaction improvements
 - [ ] Grafana data source plugin
 - [ ] Bi-directional agent analysis
