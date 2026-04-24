@@ -463,6 +463,8 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
   const [expanded, setExpanded] = useState(defaultOpen)
   const [detail, setDetail] = useState<IncidentDetail | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
+  const prevStatusRef = useRef<string>(incident.status)
+  const [resolvedFlash, setResolvedFlash] = useState(false)
 
   useEffect(() => {
     if (!detail) return
@@ -493,6 +495,16 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
       cancelled = true
     }
   }, [detail, expanded, incident])
+
+  useEffect(() => {
+    if (prevStatusRef.current !== 'resolved' && incident.status === 'resolved' && expanded) {
+      setResolvedFlash(true)
+      const id = window.setTimeout(() => setResolvedFlash(false), 1500)
+      prevStatusRef.current = incident.status
+      return () => window.clearTimeout(id)
+    }
+    prevStatusRef.current = incident.status
+  }, [incident.status, expanded])
 
   const detailIncident = detail?.incident ?? incident
   const services = parseIncidentServices(detailIncident)
@@ -540,6 +552,9 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
     <div
       style={{
         borderLeft: `2px solid ${borderColor}`,
+        outline: resolvedFlash ? '1px solid var(--success)' : '1px solid transparent',
+        boxShadow: resolvedFlash ? '0 0 0 1px var(--success)' : 'none',
+        transition: resolvedFlash ? 'none' : 'outline 0.6s ease, box-shadow 0.6s ease',
         opacity: incident.status === 'resolved' ? 0.7 : 1,
         background: 'var(--surface)',
         marginBottom: 4,

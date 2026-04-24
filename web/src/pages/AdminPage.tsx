@@ -3,8 +3,10 @@ import type { CSSProperties } from 'react'
 import { Navigate } from 'react-router-dom'
 import {
   createAdminOIDCProvider,
+  createExcludedTarget,
   createNotificationDest,
   deleteAdminOIDCProvider,
+  deleteExcludedTarget,
   deleteNotificationDest,
   deleteAdminUser,
   fetchAdminConfig,
@@ -13,6 +15,7 @@ import {
   forceLogoutUser,
   getOIDCPolicy,
   listAdminOIDCProviders,
+  listExcludedTargets,
   listAdminUsers,
   listNotificationDests,
   revokeInvite,
@@ -26,7 +29,7 @@ import {
   updateNotificationDest,
   updateSystemdSettings,
 } from '../api/client'
-import type { AISettingsInput, AdminUser, Node, NotificationDest, NotificationDestInput, OIDCProviderConfig } from '../api/client'
+import type { AISettingsInput, AdminUser, ExcludedTarget, Node, NotificationDest, NotificationDestInput, OIDCProviderConfig } from '../api/client'
 import { readErrorMessage } from '../api/errorUtils'
 import { useSession } from '../session'
 import PageHeader from '../components/PageHeader'
@@ -50,7 +53,8 @@ interface OIDCProviderFormState {
   enabled: boolean
 }
 
-type Tab = 'invites' | 'users' | 'oidc' | 'settings' | 'systemd' | 'notifications'
+type AdminGroup = 'access' | 'integrations' | 'system'
+type Tab = 'invites' | 'users' | 'oidc' | 'notifications' | 'webhooks' | 'agents' | 'excludes' | 'ai' | 'systemd' | 'filewatcher'
 type OIDCPolicy = 'open' | 'existing_only' | 'invite_required'
 
 const UNIT_SUFFIXES = ['.service','.socket','.device','.mount','.automount',
@@ -70,7 +74,12 @@ const NOTIFICATION_EVENT_OPTIONS = [
   { value: 'incident_confirmed', label: 'INCIDENT UPGRADED TO CONFIRMED' },
   { value: 'incident_resolved', label: 'INCIDENT RESOLVED' },
 ] as const
-const ADMIN_TABS: Tab[] = ['invites', 'users', 'oidc', 'settings', 'systemd', 'notifications']
+const ADMIN_GROUPS: Record<AdminGroup, { label: string; tabs: Tab[] }> = {
+  access: { label: 'ACCESS', tabs: ['users', 'invites', 'oidc'] },
+  integrations: { label: 'INTEGRATIONS', tabs: ['notifications', 'webhooks', 'agents', 'excludes'] },
+  system: { label: 'SYSTEM', tabs: ['ai', 'systemd', 'filewatcher'] },
+}
+const ALL_ADMIN_GROUPS: AdminGroup[] = ['access', 'integrations', 'system']
 
 function normalizeInvite(invite: Record<string, unknown>): InviteCode {
   return {
@@ -131,7 +140,8 @@ function oidcCallbackURL(providerID: string): string {
 export default function AdminPage() {
   const { user } = useSession()
   const isAdmin = user?.is_admin === true
-  const [tab, setTab] = useState<Tab>('invites')
+  const [group, setGroup] = useState<AdminGroup>('access')
+  const [tab, setTab] = useState<Tab>('users')
   const [nodes, setNodes] = useState<Node[]>([])
   const [systemdSettings, setSystemdSettings] = useState<Record<string, string[]>>({})
   const [systemdInputs, setSystemdInputs] = useState<Record<string, string>>({})
@@ -214,9 +224,15 @@ export default function AdminPage() {
 
   if (!isAdmin) return <Navigate to="/timeline" replace />
 
+  function selectGroup(nextGroup: AdminGroup) {
+    setGroup(nextGroup)
+    setTab(ADMIN_GROUPS[nextGroup].tabs[0])
+  }
+
   function selectAdminTabAt(index: number) {
-    const normalizedIndex = (index + ADMIN_TABS.length) % ADMIN_TABS.length
-    setTab(ADMIN_TABS[normalizedIndex])
+    const tabs = ADMIN_GROUPS[group].tabs
+    const normalizedIndex = (index + tabs.length) % tabs.length
+    setTab(tabs[normalizedIndex])
     adminTabRefs.current[normalizedIndex]?.focus()
   }
 
@@ -227,57 +243,86 @@ export default function AdminPage() {
         titleActions={(
           <div className="admin-title-actions">
             <span className="admin-title-divider" aria-hidden="true" />
-            <div className="admin-tab-list" role="tablist" aria-label="Admin sections">
-              {ADMIN_TABS.map((t, index) => (
-                <Fragment key={t}>
-                  {index > 0 ? <span className="admin-tab-divider" aria-hidden="true">/</span> : null}
-                  <button
-                    ref={element => { adminTabRefs.current[index] = element }}
-                    className="admin-tab-button"
-                    id={`admin-tab-${t}`}
-                    role="tab"
-                    aria-selected={tab === t}
-                    aria-controls={`admin-panel-${t}`}
-                    tabIndex={tab === t ? 0 : -1}
-                    onClick={() => setTab(t)}
-                    onKeyDown={event => {
-                      if (event.key === 'ArrowRight') {
-                        event.preventDefault()
-                        selectAdminTabAt(index + 1)
-                        return
-                      }
-                      if (event.key === 'ArrowLeft') {
-                        event.preventDefault()
-                        selectAdminTabAt(index - 1)
-                        return
-                      }
-                      if (event.key === 'Home') {
-                        event.preventDefault()
-                        selectAdminTabAt(0)
-                        return
-                      }
-                      if (event.key === 'End') {
-                        event.preventDefault()
-                        selectAdminTabAt(ADMIN_TABS.length - 1)
-                      }
-                    }}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: tab === t ? 'var(--accent)' : '#F0F0F0',
-                      fontSize: '18px',
-                      fontWeight: 700,
-                      letterSpacing: '0.12em',
-                      cursor: 'pointer',
-                      fontFamily: 'inherit',
-                      lineHeight: 1,
-                      padding: 0,
-                    }}
-                  >
-                    {t.toUpperCase()}
-                  </button>
-                </Fragment>
-              ))}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div role="tablist" style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+                {ALL_ADMIN_GROUPS.map((g, index) => (
+                  <Fragment key={g}>
+                    {index > 0 ? <span className="admin-tab-divider" aria-hidden="true">/</span> : null}
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={group === g}
+                      onClick={() => selectGroup(g)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: group === g ? 'var(--accent)' : '#F0F0F0',
+                        fontSize: '18px',
+                        fontWeight: 700,
+                        letterSpacing: '0.12em',
+                        cursor: 'pointer',
+                        fontFamily: 'inherit',
+                        lineHeight: 1,
+                        padding: 0,
+                      }}
+                    >
+                      {ADMIN_GROUPS[g].label}
+                    </button>
+                  </Fragment>
+                ))}
+              </div>
+              <div className="admin-tab-list" role="tablist" aria-label={`${ADMIN_GROUPS[group].label} sections`}>
+                {ADMIN_GROUPS[group].tabs.map((t, index) => (
+                  <Fragment key={t}>
+                    {index > 0 ? <span className="admin-tab-divider" aria-hidden="true">/</span> : null}
+                    <button
+                      ref={element => { adminTabRefs.current[index] = element }}
+                      className="admin-tab-button"
+                      id={`admin-tab-${t}`}
+                      role="tab"
+                      aria-selected={tab === t}
+                      aria-controls={`admin-panel-${t}`}
+                      tabIndex={tab === t ? 0 : -1}
+                      onClick={() => setTab(t)}
+                      onKeyDown={event => {
+                        if (event.key === 'ArrowRight') {
+                          event.preventDefault()
+                          selectAdminTabAt(index + 1)
+                          return
+                        }
+                        if (event.key === 'ArrowLeft') {
+                          event.preventDefault()
+                          selectAdminTabAt(index - 1)
+                          return
+                        }
+                        if (event.key === 'Home') {
+                          event.preventDefault()
+                          selectAdminTabAt(0)
+                          return
+                        }
+                        if (event.key === 'End') {
+                          event.preventDefault()
+                          selectAdminTabAt(ADMIN_GROUPS[group].tabs.length - 1)
+                        }
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: tab === t ? 'var(--accent)' : 'var(--muted)',
+                        fontSize: '14px',
+                        fontWeight: tab === t ? 700 : 400,
+                        letterSpacing: '0.1em',
+                        cursor: 'pointer',
+                        fontFamily: 'inherit',
+                        lineHeight: 1,
+                        padding: 0,
+                      }}
+                    >
+                      {t.toUpperCase()}
+                    </button>
+                  </Fragment>
+                ))}
+              </div>
             </div>
           </div>
         )}
@@ -293,7 +338,11 @@ export default function AdminPage() {
         {tab === 'invites' && <InvitesTab />}
         {tab === 'users' && <UsersTab currentUserId={user?.user_id ?? ''} />}
         {tab === 'oidc' && <OIDCTab />}
-        {tab === 'settings' && <SettingsTab />}
+        {tab === 'webhooks' && <WebhooksTab />}
+        {tab === 'agents' && <AgentsTab />}
+        {tab === 'excludes' && <ExcludedTargetsTab />}
+        {tab === 'ai' && <SettingsTab section="ai" />}
+        {tab === 'filewatcher' && <SettingsTab section="filewatcher" />}
         {tab === 'systemd' && (
           <div>
             <div
@@ -1542,7 +1591,175 @@ function OIDCTab() {
   )
 }
 
-function SettingsTab() {
+function WebhooksTab() {
+  const origin = window.location.origin
+  const endpoints = [
+    { method: 'POST', path: '/api/webhooks/uptime', description: 'Uptime monitor events' },
+    { method: 'POST', path: '/api/webhooks/watchtower', description: 'Watchtower update notifications' },
+  ]
+  const [copied, setCopied] = useState<string | null>(null)
+
+  function copyURL(path: string) {
+    void navigator.clipboard.writeText(`${origin}${path}`)
+    setCopied(path)
+    window.setTimeout(() => setCopied(null), 1500)
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ fontSize: 11, color: 'var(--muted)', letterSpacing: '0.08em', marginBottom: 8, textTransform: 'uppercase' }}>
+        Inbound Webhook Endpoints
+      </div>
+      {endpoints.map(endpoint => (
+        <div key={endpoint.path} style={{ border: '1px solid var(--border)', padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 700 }}>{endpoint.method}</span>
+          <span style={{ fontSize: 12, color: 'var(--text)', flex: 1, wordBreak: 'break-all' }}>{origin}{endpoint.path}</span>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{endpoint.description}</span>
+          <button type="button" onClick={() => copyURL(endpoint.path)} style={actionBtnStyle}>
+            {copied === endpoint.path ? 'COPIED' : 'COPY'}
+          </button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function AgentsTab() {
+  const [nodes, setNodes] = useState<Node[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    void fetchNodes()
+      .then(data => setNodes(data))
+      .catch(err => setError(err instanceof Error ? err.message : 'Failed to fetch nodes'))
+      .finally(() => setLoading(false))
+  }, [])
+
+  if (loading) return <div style={{ fontSize: 12, color: 'var(--muted)' }}>loading...</div>
+  if (error) return <div style={{ fontSize: 12, color: 'var(--danger)' }}>{error}</div>
+  if (nodes.length === 0) return <div style={{ fontSize: 12, color: 'var(--muted)' }}>No nodes registered yet.</div>
+
+  return (
+    <div>
+      <div style={{ fontSize: 11, color: 'var(--muted)', letterSpacing: '0.08em', marginBottom: 12, textTransform: 'uppercase' }}>Registered Agents</div>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+        <thead>
+          <tr style={{ color: 'var(--muted)', fontSize: 11, letterSpacing: '0.08em' }}>
+            {['NAME', 'STATUS', 'VERSION', 'IP', 'OS', 'LAST SEEN'].map(header => (
+              <th key={header} style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid var(--border)' }}>{header}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {[...nodes].sort((a, b) => a.name.localeCompare(b.name)).map(node => (
+            <tr key={node.id} style={{ borderBottom: '1px solid var(--border)' }}>
+              <td style={{ padding: '6px 8px', color: 'var(--text)' }}>{node.name}</td>
+              <td style={{ padding: '6px 8px', color: node.status === 'online' ? 'var(--success)' : 'var(--muted)' }}>{node.status.toUpperCase()}</td>
+              <td style={{ padding: '6px 8px', color: 'var(--muted)' }}>{node.agent_version || '-'}</td>
+              <td style={{ padding: '6px 8px', color: 'var(--muted)' }}>{node.ip_address || '-'}</td>
+              <td style={{ padding: '6px 8px', color: 'var(--muted)' }}>{node.os_info || '-'}</td>
+              <td style={{ padding: '6px 8px', color: 'var(--muted)' }}>{node.last_seen ? formatLocalTimestamp(new Date(node.last_seen)) : '-'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function ExcludedTargetsTab() {
+  const [targets, setTargets] = useState<ExcludedTarget[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [containerInput, setContainerInput] = useState('')
+  const [stackInput, setStackInput] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      setTargets(await listExcludedTargets())
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load excluded targets')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { void load() }, [load])
+
+  async function handleAdd(type: ExcludedTarget['type']) {
+    const name = (type === 'container' ? containerInput : stackInput).trim()
+    if (!name || saving) return
+    setSaving(true)
+    setSaveError(null)
+    try {
+      await createExcludedTarget(type, name)
+      if (type === 'container') setContainerInput('')
+      else setStackInput('')
+      await load()
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to add exclusion')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDelete(id: string) {
+    setSaveError(null)
+    try {
+      await deleteExcludedTarget(id)
+      await load()
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to delete exclusion')
+    }
+  }
+
+  function renderPanel(label: string, items: ExcludedTarget[], input: string, setInput: (value: string) => void, type: ExcludedTarget['type']) {
+    return (
+      <section style={panelStyle}>
+        <div style={panelHeaderStyle}>
+          <span style={panelLabelStyle}>{label}</span>
+        </div>
+        {items.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>No exclusions configured.</div>}
+        {items.map(item => (
+          <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <span style={{ fontSize: 12, color: 'var(--text)', flex: 1 }}>{item.name}</span>
+            <span style={{ fontSize: 11, color: 'var(--muted)' }}>{formatLocalDate(new Date(item.created_at))}</span>
+            <button type="button" onClick={() => void handleDelete(item.id)} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}>x</button>
+          </div>
+        ))}
+        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          <input
+            type="text"
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') void handleAdd(type) }}
+            placeholder={type === 'container' ? 'e.g. health-sidecar' : 'e.g. ci-runners'}
+            style={{ flex: 1, ...inputStyle }}
+          />
+          <button type="button" onClick={() => void handleAdd(type)} disabled={saving || !input.trim()} style={actionBtnStyle}>ADD</button>
+        </div>
+      </section>
+    )
+  }
+
+  if (loading) return <div style={{ fontSize: 12, color: 'var(--muted)' }}>loading...</div>
+  if (error) return <div style={{ fontSize: 12, color: 'var(--danger)' }}>{error}</div>
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {saveError && <div style={{ color: 'var(--danger)', fontSize: 11 }}>{saveError}</div>}
+      {renderPanel('CONTAINER EXCLUDES', targets.filter(t => t.type === 'container'), containerInput, setContainerInput, 'container')}
+      {renderPanel('STACK EXCLUDES', targets.filter(t => t.type === 'stack'), stackInput, setStackInput, 'stack')}
+    </div>
+  )
+}
+
+function SettingsTab({ section }: { section: 'ai' | 'filewatcher' }) {
   const [redactSecrets, setRedactSecrets] = useState(true)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -1673,7 +1890,7 @@ function SettingsTab() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-      <section style={panelStyle}>
+      {section === 'filewatcher' && <section style={panelStyle}>
         <div style={panelHeaderStyle}>
           <span style={panelLabelStyle}>FILE WATCHER</span>
         </div>
@@ -1737,9 +1954,9 @@ function SettingsTab() {
             </button>
           </>
         )}
-      </section>
+      </section>}
 
-      <section style={panelStyle}>
+      {section === 'ai' && <section style={panelStyle}>
         <h3 style={{ fontSize: 11, color: 'var(--muted)', letterSpacing: '0.1em', margin: '0 0 12px 0' }}>
           AI PROVIDER
         </h3>
@@ -1916,7 +2133,7 @@ function SettingsTab() {
             </div>
           </form>
         )}
-      </section>
+      </section>}
     </div>
   )
 }

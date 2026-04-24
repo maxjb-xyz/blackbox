@@ -240,6 +240,9 @@ func main() {
 		r.Put("/api/admin/notifications/{id}", handlers.UpdateNotificationDest(database))
 		r.Delete("/api/admin/notifications/{id}", handlers.DeleteNotificationDest(database))
 		r.Post("/api/admin/notifications/{id}/test", handlers.TestNotificationDest(database, notifier))
+		r.Get("/api/admin/excluded-targets", handlers.ListExcludedTargets(database))
+		r.Post("/api/admin/excluded-targets", handlers.CreateExcludedTarget(database))
+		r.Delete("/api/admin/excluded-targets/{id}", handlers.DeleteExcludedTarget(database))
 	})
 
 	r.Group(func(r chi.Router) {
