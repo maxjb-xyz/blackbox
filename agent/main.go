@@ -19,6 +19,7 @@ import (
 	"blackbox/agent/internal/client"
 	"blackbox/agent/internal/docker"
 	"blackbox/agent/internal/files"
+	"blackbox/agent/internal/proxmox"
 	"blackbox/agent/internal/queue"
 	"blackbox/agent/internal/sender"
 	"blackbox/agent/internal/systemd"
@@ -116,6 +117,28 @@ func main() {
 		}
 	} else {
 		log.Println("systemd watcher: WATCH_SYSTEMD not set, systemd watching disabled")
+	}
+
+	if pveURL := strings.TrimSpace(os.Getenv("PROXMOX_URL")); pveURL != "" {
+		pveToken := strings.TrimSpace(os.Getenv("PROXMOX_API_TOKEN"))
+		if pveToken == "" {
+			log.Println("proxmox watcher: PROXMOX_URL set but PROXMOX_API_TOKEN empty, disabling Proxmox watcher")
+		} else {
+			pveClient, err := proxmox.New(proxmox.Config{
+				BaseURL:            pveURL,
+				APIToken:           pveToken,
+				InsecureSkipVerify: os.Getenv("PROXMOX_INSECURE_SKIP_VERIFY") == "true",
+			})
+			if err != nil {
+				log.Printf("proxmox watcher: init failed: %v", err)
+			} else {
+				pveWatcher := proxmox.NewWatcher(pveClient, nodeName)
+				go pveWatcher.Run(ctx, out)
+				log.Printf("proxmox watcher: started, polling %s", pveURL)
+			}
+		}
+	} else {
+		log.Println("proxmox watcher: PROXMOX_URL not set, Proxmox watching disabled")
 	}
 
 	out <- types.Entry{

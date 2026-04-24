@@ -181,6 +181,9 @@ docker compose up -d
 | `WATCH_PATHS` | No | — | Colon-separated list of directories to watch for file changes as seen inside the agent container (e.g., `/watch/etc:/watch/appdata`). |
 | `WATCH_IGNORE` | No | — | Colon-separated glob patterns to exclude from file watching. |
 | `WATCH_SYSTEMD` | No | `false` | Set to `true` on Linux agents to enable journal-based systemd monitoring for the units configured in the Admin UI. |
+| `PROXMOX_URL` | No | - | Proxmox VE API base URL (e.g. `https://pve01.example.com:8006`). When set with `PROXMOX_API_TOKEN`, the agent polls `/api2/json/cluster/tasks` every 10s and emits entries for VM lifecycle, backups, and migrations. |
+| `PROXMOX_API_TOKEN` | No | - | PVE API token in the form `user@realm!tokenid=uuid`. Required alongside `PROXMOX_URL`. See [Proxmox API Tokens](https://pve.proxmox.com/wiki/Proxmox_VE_API#API_Tokens). |
+| `PROXMOX_INSECURE_SKIP_VERIFY` | No | `false` | Set to `true` to skip TLS verification when the Proxmox UI uses a self-signed certificate. |
 | `QUEUE_DB_PATH` | No | `/data/queue.db` | Path to the agent's persistent event queue database. |
 | `PUID` | No | `65532` | UID the agent process runs as. Set to your host user's UID (`id -u`) when you own the watched paths. |
 | `PGID` | No | `65532` | GID the agent process runs as. Set to your host user's GID (`id -g`) when you own the watched paths. |
