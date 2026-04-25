@@ -34,6 +34,54 @@ type reportEntry struct {
 	Entry types.Entry
 }
 
+// pdfTheme drives all colors so the same functions produce a dark (default)
+// or print-friendly (white background, dark ink) PDF.
+type pdfTheme struct{ print bool }
+
+func (t pdfTheme) label(pdf *gofpdf.Fpdf) {
+	if t.print {
+		pdf.SetTextColor(0x99, 0x00, 0x00)
+	} else {
+		pdf.SetTextColor(0xCC, 0x22, 0x22)
+	}
+}
+
+func (t pdfTheme) body(pdf *gofpdf.Fpdf) {
+	if t.print {
+		pdf.SetTextColor(0x00, 0x00, 0x00)
+	} else {
+		pdf.SetTextColor(0xE8, 0xE8, 0xE8)
+	}
+}
+
+func (t pdfTheme) dim(pdf *gofpdf.Fpdf) {
+	if t.print {
+		pdf.SetTextColor(0x44, 0x44, 0x44)
+	} else {
+		pdf.SetTextColor(0xA0, 0xA0, 0xA0)
+	}
+}
+
+func (t pdfTheme) ruleColor(pdf *gofpdf.Fpdf) {
+	if t.print {
+		pdf.SetDrawColor(0xCC, 0xCC, 0xCC)
+	} else {
+		pdf.SetDrawColor(0x44, 0x08, 0x08)
+	}
+}
+
+// fillBackground fills the current page. In print mode no fill is drawn
+// (white is the default) and dimensions are derived dynamically from the
+// PDF so they always match the actual page format.
+func (t pdfTheme) fillBackground(pdf *gofpdf.Fpdf) {
+	if t.print {
+		return
+	}
+	w, h, _ := pdf.PageSize(0)
+	pdf.SetFillColor(0, 0, 0)
+	pdf.Rect(0, 0, w, h, "F")
+}
+
 func DownloadIncidentReport(database *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
@@ -83,7 +131,8 @@ func DownloadIncidentReport(database *gorm.DB) http.HandlerFunc {
 			GeneratedAt: time.Now().UTC(),
 		}
 
-		pdfBytes, err := generateIncidentPDF(data)
+		printMode := r.URL.Query().Get("print") == "1"
+		pdfBytes, err := generateIncidentPDF(data, pdfTheme{print: printMode})
 		if err != nil {
 			log.Printf("DownloadIncidentReport PDF generation failed for incident %s: %v", id, err)
 			writeError(w, http.StatusInternalServerError, "failed to generate PDF")
@@ -122,27 +171,25 @@ func decodeStringList(value string) []string {
 	return items
 }
 
-func generateIncidentPDF(data reportData) ([]byte, error) {
+func generateIncidentPDF(data reportData, theme pdfTheme) ([]byte, error) {
 	pdf := gofpdf.New("P", "mm", "A4", "")
 	pdf.SetMargins(20, 20, 20)
 
-	// Fill each page with black background before any content is drawn.
 	pdf.SetHeaderFunc(func() {
-		pdf.SetFillColor(0, 0, 0)
-		pdf.Rect(0, 0, 210, 297, "F")
+		theme.fillBackground(pdf)
 		pdf.SetXY(20, 20)
 	})
 
 	pdf.AddPage()
 
-	pdfHeader(pdf, data)
-	pdfRule(pdf)
-	pdfOverview(pdf, data)
-	pdfRule(pdf)
-	pdfAISection(pdf, data)
-	pdfEventChain(pdf, data.Entries)
-	pdfRule(pdf)
-	pdfFooter(pdf, data.GeneratedAt)
+	pdfHeader(pdf, data, theme)
+	pdfRule(pdf, theme)
+	pdfOverview(pdf, data, theme)
+	pdfRule(pdf, theme)
+	pdfAISection(pdf, data, theme)
+	pdfEventChain(pdf, data.Entries, theme)
+	pdfRule(pdf, theme)
+	pdfFooter(pdf, data.GeneratedAt, theme)
 
 	var buf bytes.Buffer
 	if err := pdf.Output(&buf); err != nil {
@@ -151,18 +198,9 @@ func generateIncidentPDF(data reportData) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// pdfRed sets the text color to the report accent red.
-func pdfRed(pdf *gofpdf.Fpdf) { pdf.SetTextColor(0xCC, 0x22, 0x22) }
-
-// pdfWhite sets the text color to near-white for body content.
-func pdfWhite(pdf *gofpdf.Fpdf) { pdf.SetTextColor(0xE8, 0xE8, 0xE8) }
-
-// pdfDim sets the text color to a dimmer gray for secondary content.
-func pdfDim(pdf *gofpdf.Fpdf) { pdf.SetTextColor(0xA0, 0xA0, 0xA0) }
-
-func pdfHeader(pdf *gofpdf.Fpdf, data reportData) {
+func pdfHeader(pdf *gofpdf.Fpdf, data reportData, theme pdfTheme) {
 	pdf.SetFont("Courier", "", 12)
-	pdfRed(pdf)
+	theme.label(pdf)
 
 	label := "BLACKBOX INCIDENT REPORT"
 	idStr := fmt.Sprintf("#%s", data.Incident.ID)
@@ -173,24 +211,24 @@ func pdfHeader(pdf *gofpdf.Fpdf, data reportData) {
 	pdf.CellFormat(usableW/2, 7, idStr, "", 1, "R", false, 0, "")
 
 	pdf.SetFont("Courier", "B", 16)
-	pdfWhite(pdf)
+	theme.body(pdf)
 	pdf.MultiCell(0, 9, sanitizePDFString(data.Incident.Title), "", "L", false)
 	pdf.Ln(2)
 }
 
-func pdfOverview(pdf *gofpdf.Fpdf, data reportData) {
+func pdfOverview(pdf *gofpdf.Fpdf, data reportData, theme pdfTheme) {
 	inc := data.Incident
 	pdf.SetFont("Courier", "", 11)
-	pdfRed(pdf)
+	theme.label(pdf)
 	pdf.CellFormat(0, 6, "OVERVIEW", "", 1, "L", false, 0, "")
 	pdf.Ln(1)
 
 	keyW := 34.0
 	row := func(key, value string) {
 		pdf.SetFont("Courier", "", 11)
-		pdfRed(pdf)
+		theme.label(pdf)
 		pdf.CellFormat(keyW, 6, key, "", 0, "L", false, 0, "")
-		pdfWhite(pdf)
+		theme.body(pdf)
 		pdf.MultiCell(0, 6, sanitizePDFString(value), "", "L", false)
 	}
 
@@ -218,13 +256,13 @@ func joinOrDash(items []string) string {
 	return strings.Join(items, ", ")
 }
 
-func pdfAISection(pdf *gofpdf.Fpdf, data reportData) {
+func pdfAISection(pdf *gofpdf.Fpdf, data reportData, theme pdfTheme) {
 	if data.AIAnalysis == "" {
 		return
 	}
 
 	pdf.SetFont("Courier", "", 11)
-	pdfRed(pdf)
+	theme.label(pdf)
 	label := "AI ANALYSIS"
 	if data.AIModel != "" {
 		label = fmt.Sprintf("AI ANALYSIS  [%s]", data.AIModel)
@@ -233,20 +271,20 @@ func pdfAISection(pdf *gofpdf.Fpdf, data reportData) {
 	pdf.Ln(1)
 
 	pdf.SetFont("Courier", "", 11)
-	pdfWhite(pdf)
+	theme.body(pdf)
 	pdf.MultiCell(0, 6, sanitizePDFString(data.AIAnalysis), "", "L", false)
 	pdf.Ln(2)
-	pdfRule(pdf)
+	pdfRule(pdf, theme)
 }
 
-func pdfEventChain(pdf *gofpdf.Fpdf, entries []reportEntry) {
+func pdfEventChain(pdf *gofpdf.Fpdf, entries []reportEntry, theme pdfTheme) {
 	pdf.SetFont("Courier", "", 11)
-	pdfRed(pdf)
+	theme.label(pdf)
 	pdf.CellFormat(0, 6, fmt.Sprintf("EVENT CHAIN  (%d entries)", len(entries)), "", 1, "L", false, 0, "")
 	pdf.Ln(1)
 
 	pdf.SetFont("Courier", "", 10)
-	pdfRed(pdf)
+	theme.label(pdf)
 	pageW, _, _ := pdf.PageSize(0)
 	usableW := pageW - 40
 	colRole := 24.0
@@ -265,7 +303,7 @@ func pdfEventChain(pdf *gofpdf.Fpdf, entries []reportEntry) {
 		link := re.Link
 		entry := re.Entry
 		pdf.SetFont("Courier", "", 10)
-		pdfWhite(pdf)
+		theme.body(pdf)
 		pdf.CellFormat(colRole, 5, roleLabel(link.Role), "", 0, "L", false, 0, "")
 		pdf.CellFormat(colTS, 5, entry.Timestamp.UTC().Format("2006-01-02 15:04:05"), "", 0, "L", false, 0, "")
 		pdf.CellFormat(colSrc, 5, sanitizePDFString(entry.Source), "", 0, "L", false, 0, "")
@@ -276,7 +314,7 @@ func pdfEventChain(pdf *gofpdf.Fpdf, entries []reportEntry) {
 			content := sanitizePDFString(truncateRunes(entry.Content, 120))
 			pdf.SetX(26)
 			pdf.SetFont("Courier", "", 10)
-			pdfDim(pdf)
+			theme.dim(pdf)
 			pdf.MultiCell(usableW-6, 4, content, "", "L", false)
 		}
 
@@ -284,22 +322,22 @@ func pdfEventChain(pdf *gofpdf.Fpdf, entries []reportEntry) {
 			reason := sanitizePDFString("AI: " + truncateRunes(link.Reason, 120))
 			pdf.SetX(26)
 			pdf.SetFont("Courier", "I", 10)
-			pdfDim(pdf)
+			theme.dim(pdf)
 			pdf.MultiCell(usableW-6, 4, reason, "", "L", false)
 		}
 	}
 	pdf.Ln(2)
 }
 
-func pdfFooter(pdf *gofpdf.Fpdf, generatedAt time.Time) {
+func pdfFooter(pdf *gofpdf.Fpdf, generatedAt time.Time, theme pdfTheme) {
 	pdf.SetFont("Courier", "", 10)
-	pdfDim(pdf)
+	theme.dim(pdf)
 	pdf.CellFormat(0, 6, fmt.Sprintf("Generated by Blackbox on %s", generatedAt.UTC().Format("2006-01-02")), "", 1, "C", false, 0, "")
 }
 
-func pdfRule(pdf *gofpdf.Fpdf) {
+func pdfRule(pdf *gofpdf.Fpdf, theme pdfTheme) {
 	pdf.Ln(2)
-	pdf.SetDrawColor(0x44, 0x08, 0x08)
+	theme.ruleColor(pdf)
 	pdf.SetLineWidth(0.3)
 	x := pdf.GetX()
 	y := pdf.GetY()

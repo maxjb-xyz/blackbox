@@ -552,6 +552,7 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
     <motion.div
       layout
       layoutId={incident.id}
+      exit={{ opacity: 0, y: -6, transition: { duration: 0.2 } }}
       transition={{ layout: { duration: 0.42, ease: [0.25, 0.46, 0.45, 0.94] } }}
       style={{
         borderLeft: `2px solid ${borderColor}`,
@@ -1021,17 +1022,24 @@ export default function IncidentsPage() {
               )}
               <div style={{ flex: 1, height: 1, background: '#1E1E1E' }} />
             </div>
-            {openIncidents.length === 0 ? (
-              <div style={{ fontSize: 12, color: 'var(--muted)', padding: '8px 0' }}>
-                No open incidents.
-              </div>
-            ) : (
-              <AnimatePresence mode="popLayout">
-                {openIncidents.map(inc => (
+            <AnimatePresence mode="popLayout">
+              {openIncidents.length === 0 ? (
+                <motion.div
+                  key="empty-open"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  style={{ fontSize: 12, color: 'var(--muted)', padding: '8px 0' }}
+                >
+                  No open incidents.
+                </motion.div>
+              ) : (
+                openIncidents.map(inc => (
                   <IncidentCard key={inc.id} incident={inc} onSelectEntry={setSelectedEntry} />
-                ))}
-              </AnimatePresence>
-            )}
+                ))
+              )}
+            </AnimatePresence>
           </motion.div>
 
           {resolvedIncidents.length > 0 && (
