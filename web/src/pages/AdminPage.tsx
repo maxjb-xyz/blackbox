@@ -93,8 +93,8 @@ const NOTIFICATION_EVENT_OPTIONS = [
 const GITHUB_REPO_SLUG = 'maxjb-xyz/blackbox'
 const ADMIN_GROUPS: Record<AdminGroup, { label: string; tabs: Tab[] }> = {
   access: { label: 'ACCESS', tabs: ['users', 'invites', 'oidc', 'audit'] },
-  integrations: { label: 'INTEGRATIONS', tabs: ['notifications', 'webhooks', 'agents', 'excludes', 'github'] },
-  system: { label: 'SYSTEM', tabs: ['ai', 'systemd', 'filewatcher'] },
+  integrations: { label: 'INTEGRATIONS', tabs: ['notifications', 'webhooks', 'agents', 'excludes'] },
+  system: { label: 'SYSTEM', tabs: ['ai', 'systemd', 'filewatcher', 'github'] },
 }
 const ALL_ADMIN_GROUPS: AdminGroup[] = ['access', 'integrations', 'system']
 

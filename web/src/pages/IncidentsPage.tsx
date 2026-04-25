@@ -1,6 +1,6 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, LayoutGroup, motion } from 'framer-motion'
 import { ChevronDown, ChevronRight, ExternalLink, FileDown, X } from 'lucide-react'
 import {
   fetchIncident,
@@ -497,14 +497,14 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
   }, [detail, expanded, incident])
 
   useEffect(() => {
-    if (prevStatusRef.current !== 'resolved' && incident.status === 'resolved' && expanded) {
+    if (prevStatusRef.current !== 'resolved' && incident.status === 'resolved') {
       setResolvedFlash(true)
-      const id = window.setTimeout(() => setResolvedFlash(false), 1500)
+      const id = window.setTimeout(() => setResolvedFlash(false), 2500)
       prevStatusRef.current = incident.status
       return () => window.clearTimeout(id)
     }
     prevStatusRef.current = incident.status
-  }, [incident.status, expanded])
+  }, [incident.status])
 
   const detailIncident = detail?.incident ?? incident
   const services = parseIncidentServices(detailIncident)
@@ -549,12 +549,16 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
   )
 
   return (
-    <div
+    <motion.div
+      layout
+      layoutId={incident.id}
+      exit={{ opacity: 0, y: -6, transition: { duration: 0.2 } }}
+      transition={{ layout: { duration: 0.42, ease: [0.25, 0.46, 0.45, 0.94] } }}
       style={{
         borderLeft: `2px solid ${borderColor}`,
-        outline: resolvedFlash ? '1px solid var(--success)' : '1px solid transparent',
-        boxShadow: resolvedFlash ? '0 0 0 1px var(--success)' : 'none',
-        transition: resolvedFlash ? 'none' : 'outline 0.6s ease, box-shadow 0.6s ease',
+        outline: resolvedFlash ? '2px solid var(--success)' : '1px solid transparent',
+        boxShadow: resolvedFlash ? '0 0 16px rgba(0,204,68,0.45), inset 0 0 0 1px rgba(0,204,68,0.12)' : 'none',
+        transition: resolvedFlash ? 'none' : 'outline 0.9s ease, box-shadow 0.9s ease',
         opacity: incident.status === 'resolved' ? 0.7 : 1,
         background: 'var(--surface)',
         marginBottom: 4,
@@ -897,7 +901,7 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
           )}
         </div>
       )}
-    </div>
+    </motion.div>
   )
 }
 
@@ -1007,38 +1011,51 @@ export default function IncidentsPage() {
           resolvedToday={resolvedToday}
         />
 
-        <div style={{ marginBottom: 28 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-            <span style={{ fontSize: 11, color: 'var(--muted)', letterSpacing: '0.14em' }}>OPEN</span>
-            {openIncidents.length > 0 && (
-              <span style={{ fontSize: 11, color: 'var(--danger)', letterSpacing: '0.1em' }}>
-                {openIncidents.length}
-              </span>
-            )}
-            <div style={{ flex: 1, height: 1, background: '#1E1E1E' }} />
-          </div>
-          {openIncidents.length === 0 ? (
-            <div style={{ fontSize: 12, color: 'var(--muted)', padding: '8px 0' }}>
-              No open incidents.
-            </div>
-          ) : (
-            openIncidents.map(inc => (
-              <IncidentCard key={inc.id} incident={inc} onSelectEntry={setSelectedEntry} />
-            ))
-          )}
-        </div>
-
-        {resolvedIncidents.length > 0 && (
-          <div>
+        <LayoutGroup id="incidents">
+          <motion.div layout style={{ marginBottom: 28 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-              <span style={{ fontSize: 11, color: 'var(--muted)', letterSpacing: '0.14em' }}>RECENTLY RESOLVED</span>
+              <span style={{ fontSize: 11, color: 'var(--muted)', letterSpacing: '0.14em' }}>OPEN</span>
+              {openIncidents.length > 0 && (
+                <span style={{ fontSize: 11, color: 'var(--danger)', letterSpacing: '0.1em' }}>
+                  {openIncidents.length}
+                </span>
+              )}
               <div style={{ flex: 1, height: 1, background: '#1E1E1E' }} />
             </div>
-            {resolvedIncidents.map(inc => (
-              <IncidentCard key={inc.id} incident={inc} onSelectEntry={setSelectedEntry} />
-            ))}
-          </div>
-        )}
+            <AnimatePresence mode="popLayout">
+              {openIncidents.length === 0 ? (
+                <motion.div
+                  key="empty-open"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  style={{ fontSize: 12, color: 'var(--muted)', padding: '8px 0' }}
+                >
+                  No open incidents.
+                </motion.div>
+              ) : (
+                openIncidents.map(inc => (
+                  <IncidentCard key={inc.id} incident={inc} onSelectEntry={setSelectedEntry} />
+                ))
+              )}
+            </AnimatePresence>
+          </motion.div>
+
+          {resolvedIncidents.length > 0 && (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                <span style={{ fontSize: 11, color: 'var(--muted)', letterSpacing: '0.14em' }}>RECENTLY RESOLVED</span>
+                <div style={{ flex: 1, height: 1, background: '#1E1E1E' }} />
+              </div>
+              <AnimatePresence initial={false}>
+                {resolvedIncidents.map(inc => (
+                  <IncidentCard key={inc.id} incident={inc} onSelectEntry={setSelectedEntry} />
+                ))}
+              </AnimatePresence>
+            </div>
+          )}
+        </LayoutGroup>
       </div>
       <AnimatePresence>
         {selectedEntry && (
