@@ -1,7 +1,7 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AnimatePresence, LayoutGroup, motion } from 'framer-motion'
-import { ChevronDown, ChevronRight, ExternalLink, FileDown, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, ExternalLink, FileDown, Printer, X } from 'lucide-react'
 import {
   fetchIncident,
   fetchIncidents,
@@ -463,8 +463,22 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
   const [expanded, setExpanded] = useState(defaultOpen)
   const [detail, setDetail] = useState<IncidentDetail | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
-  const prevStatusRef = useRef<string>(incident.status)
   const [resolvedFlash, setResolvedFlash] = useState(false)
+
+  // Fire the green flash when this card mounts as a freshly-resolved incident.
+  // The OPEN→RESOLVED transition replaces the component instance, so prevStatus
+  // tricks don't work — instead check resolved_at age on mount.
+  useEffect(() => {
+    if (incident.status === 'resolved' && incident.resolved_at) {
+      const age = Date.now() - new Date(incident.resolved_at).getTime()
+      if (age < 8000) {
+        setResolvedFlash(true)
+        const id = window.setTimeout(() => setResolvedFlash(false), 2500)
+        return () => window.clearTimeout(id)
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     if (!detail) return
@@ -495,16 +509,6 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
       cancelled = true
     }
   }, [detail, expanded, incident])
-
-  useEffect(() => {
-    if (prevStatusRef.current !== 'resolved' && incident.status === 'resolved') {
-      setResolvedFlash(true)
-      const id = window.setTimeout(() => setResolvedFlash(false), 2500)
-      prevStatusRef.current = incident.status
-      return () => window.clearTimeout(id)
-    }
-    prevStatusRef.current = incident.status
-  }, [incident.status])
 
   const detailIncident = detail?.incident ?? incident
   const services = parseIncidentServices(detailIncident)
@@ -550,7 +554,7 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
 
   return (
     <motion.div
-      layout
+      layout="position"
       layoutId={incident.id}
       exit={{ opacity: 0, y: -6, transition: { duration: 0.2 } }}
       transition={{ layout: { duration: 0.42, ease: [0.25, 0.46, 0.45, 0.94] } }}
@@ -873,7 +877,28 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
                 </div>
               )}
               {incident.status === 'resolved' && detail && (
-                <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
+                <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                  <a
+                    href={`/api/incidents/${incident.id}/report.pdf?print=1`}
+                    download={`incident-${incident.id}-report.pdf`}
+                    style={{
+                      background: 'none',
+                      border: '1px solid #333',
+                      color: '#555',
+                      padding: '5px 10px',
+                      fontFamily: 'inherit',
+                      fontSize: 11,
+                      letterSpacing: '0.08em',
+                      cursor: 'pointer',
+                      textDecoration: 'none',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 5,
+                    }}
+                  >
+                    <Printer size={12} />
+                    PRINT VERSION
+                  </a>
                   <a
                     href={`/api/incidents/${incident.id}/report.pdf`}
                     download={`incident-${incident.id}-report.pdf`}
@@ -1012,7 +1037,7 @@ export default function IncidentsPage() {
         />
 
         <LayoutGroup id="incidents">
-          <motion.div layout style={{ marginBottom: 28 }}>
+          <div style={{ marginBottom: 28 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
               <span style={{ fontSize: 11, color: 'var(--muted)', letterSpacing: '0.14em' }}>OPEN</span>
               {openIncidents.length > 0 && (
@@ -1040,7 +1065,7 @@ export default function IncidentsPage() {
                 ))
               )}
             </AnimatePresence>
-          </motion.div>
+          </div>
 
           {resolvedIncidents.length > 0 && (
             <div>

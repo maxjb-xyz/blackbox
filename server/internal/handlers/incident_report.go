@@ -70,16 +70,17 @@ func (t pdfTheme) ruleColor(pdf *gofpdf.Fpdf) {
 	}
 }
 
-// fillBackground fills the current page. In print mode no fill is drawn
-// (white is the default) and dimensions are derived dynamically from the
-// PDF so they always match the actual page format.
+// fillBackground fills the current page. Dimensions are derived from the PDF
+// rather than hardcoded so the fill always covers the full page regardless of
+// format. A small +0.1 buffer avoids sub-pixel slivers from float imprecision.
 func (t pdfTheme) fillBackground(pdf *gofpdf.Fpdf) {
-	if t.print {
-		return
-	}
 	w, h, _ := pdf.PageSize(0)
-	pdf.SetFillColor(0, 0, 0)
-	pdf.Rect(0, 0, w, h, "F")
+	if t.print {
+		pdf.SetFillColor(0xFF, 0xFF, 0xFF) // explicit white — don't rely on default
+	} else {
+		pdf.SetFillColor(0x00, 0x00, 0x00)
+	}
+	pdf.Rect(0, 0, w+0.1, h+0.1, "F")
 }
 
 func DownloadIncidentReport(database *gorm.DB) http.HandlerFunc {
@@ -277,6 +278,28 @@ func pdfAISection(pdf *gofpdf.Fpdf, data reportData, theme pdfTheme) {
 	pdfRule(pdf, theme)
 }
 
+// truncateToFit binary-searches for the longest prefix of text whose rendered
+// width (at the current font) fits within maxWidth, appending "…" if truncated.
+func truncateToFit(pdf *gofpdf.Fpdf, text string, maxWidth float64) string {
+	if pdf.GetStringWidth(text) <= maxWidth {
+		return text
+	}
+	runes := []rune(text)
+	lo, hi := 0, len(runes)
+	for lo < hi {
+		mid := (lo + hi + 1) / 2
+		if pdf.GetStringWidth(string(runes[:mid])+"...") <= maxWidth {
+			lo = mid
+		} else {
+			hi = mid - 1
+		}
+	}
+	if lo == 0 {
+		return ""
+	}
+	return string(runes[:lo]) + "..."
+}
+
 func pdfEventChain(pdf *gofpdf.Fpdf, entries []reportEntry, theme pdfTheme) {
 	pdf.SetFont("Courier", "", 11)
 	theme.label(pdf)
@@ -304,26 +327,33 @@ func pdfEventChain(pdf *gofpdf.Fpdf, entries []reportEntry, theme pdfTheme) {
 		entry := re.Entry
 		pdf.SetFont("Courier", "", 10)
 		theme.body(pdf)
+		src := truncateToFit(pdf, sanitizePDFString(entry.Source), colSrc-1)
+		svc := truncateToFit(pdf, sanitizePDFString(entry.Service), colSvc-1)
+		evt := truncateToFit(pdf, sanitizePDFString(entry.Event), colEvent-1)
 		pdf.CellFormat(colRole, 5, roleLabel(link.Role), "", 0, "L", false, 0, "")
 		pdf.CellFormat(colTS, 5, entry.Timestamp.UTC().Format("2006-01-02 15:04:05"), "", 0, "L", false, 0, "")
-		pdf.CellFormat(colSrc, 5, sanitizePDFString(entry.Source), "", 0, "L", false, 0, "")
-		pdf.CellFormat(colSvc, 5, sanitizePDFString(entry.Service), "", 0, "L", false, 0, "")
-		pdf.CellFormat(colEvent, 5, sanitizePDFString(entry.Event), "", 1, "L", false, 0, "")
+		pdf.CellFormat(colSrc, 5, src, "", 0, "L", false, 0, "")
+		pdf.CellFormat(colSvc, 5, svc, "", 0, "L", false, 0, "")
+		pdf.CellFormat(colEvent, 5, evt, "", 1, "L", false, 0, "")
 
 		if entry.Content != "" {
-			content := sanitizePDFString(truncateRunes(entry.Content, 120))
+			// Flatten newlines so MultiCell wraps at word boundaries, not at raw
+			// line breaks in the source data which can produce jagged sub-rows.
+			flat := strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ").Replace(entry.Content)
+			content := sanitizePDFString(truncateRunes(flat, 160))
 			pdf.SetX(26)
 			pdf.SetFont("Courier", "", 10)
 			theme.dim(pdf)
-			pdf.MultiCell(usableW-6, 4, content, "", "L", false)
+			pdf.MultiCell(usableW-6, 5, content, "", "L", false)
 		}
 
 		if link.Role == "ai_cause" && link.Reason != "" {
-			reason := sanitizePDFString("AI: " + truncateRunes(link.Reason, 120))
+			flat := strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ").Replace(link.Reason)
+			reason := sanitizePDFString("AI: " + truncateRunes(flat, 160))
 			pdf.SetX(26)
 			pdf.SetFont("Courier", "I", 10)
 			theme.dim(pdf)
-			pdf.MultiCell(usableW-6, 4, reason, "", "L", false)
+			pdf.MultiCell(usableW-6, 5, reason, "", "L", false)
 		}
 	}
 	pdf.Ln(2)
