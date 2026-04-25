@@ -626,6 +626,7 @@ The database is automatically migrated on startup — no manual schema managemen
 - [x] Mobile-friendly view
 - [x] Support OpenAI/Other AI Providers
 - [x] Webhook notification support
+- [x] GitHub tab in admin (release notes, feature requests, bug reports)
 - [x] AI review notifications — notify subscribed destinations when Ollama completes incident analysis
 - [x] Container and stack exclusion list
 - [x] FTS5 full-text timeline search
