@@ -327,10 +327,11 @@ func pdfEventChain(pdf *gofpdf.Fpdf, entries []reportEntry, theme pdfTheme) {
 		entry := re.Entry
 		pdf.SetFont("Courier", "", 10)
 		theme.body(pdf)
+		rol := truncateToFit(pdf, roleLabel(link.Role), colRole-1)
 		src := truncateToFit(pdf, sanitizePDFString(entry.Source), colSrc-1)
 		svc := truncateToFit(pdf, sanitizePDFString(entry.Service), colSvc-1)
 		evt := truncateToFit(pdf, sanitizePDFString(entry.Event), colEvent-1)
-		pdf.CellFormat(colRole, 5, roleLabel(link.Role), "", 0, "L", false, 0, "")
+		pdf.CellFormat(colRole, 5, rol, "", 0, "L", false, 0, "")
 		pdf.CellFormat(colTS, 5, entry.Timestamp.UTC().Format("2006-01-02 15:04:05"), "", 0, "L", false, 0, "")
 		pdf.CellFormat(colSrc, 5, src, "", 0, "L", false, 0, "")
 		pdf.CellFormat(colSvc, 5, svc, "", 0, "L", false, 0, "")
