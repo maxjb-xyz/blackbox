@@ -125,6 +125,14 @@ func decodeStringList(value string) []string {
 func generateIncidentPDF(data reportData) ([]byte, error) {
 	pdf := gofpdf.New("P", "mm", "A4", "")
 	pdf.SetMargins(20, 20, 20)
+
+	// Fill each page with black background before any content is drawn.
+	pdf.SetHeaderFunc(func() {
+		pdf.SetFillColor(0, 0, 0)
+		pdf.Rect(0, 0, 210, 297, "F")
+		pdf.SetXY(20, 20)
+	})
+
 	pdf.AddPage()
 
 	pdfHeader(pdf, data)
@@ -143,9 +151,18 @@ func generateIncidentPDF(data reportData) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// pdfRed sets the text color to the report accent red.
+func pdfRed(pdf *gofpdf.Fpdf) { pdf.SetTextColor(0xCC, 0x22, 0x22) }
+
+// pdfWhite sets the text color to near-white for body content.
+func pdfWhite(pdf *gofpdf.Fpdf) { pdf.SetTextColor(0xE8, 0xE8, 0xE8) }
+
+// pdfDim sets the text color to a dimmer gray for secondary content.
+func pdfDim(pdf *gofpdf.Fpdf) { pdf.SetTextColor(0xA0, 0xA0, 0xA0) }
+
 func pdfHeader(pdf *gofpdf.Fpdf, data reportData) {
-	pdf.SetFont("Courier", "", 10)
-	pdf.SetTextColor(0x66, 0x66, 0x66)
+	pdf.SetFont("Courier", "", 12)
+	pdfRed(pdf)
 
 	label := "BLACKBOX INCIDENT REPORT"
 	idStr := fmt.Sprintf("#%s", data.Incident.ID)
@@ -155,26 +172,26 @@ func pdfHeader(pdf *gofpdf.Fpdf, data reportData) {
 	pdf.CellFormat(usableW/2, 7, label, "", 0, "L", false, 0, "")
 	pdf.CellFormat(usableW/2, 7, idStr, "", 1, "R", false, 0, "")
 
-	pdf.SetFont("Courier", "B", 14)
-	pdf.SetTextColor(0, 0, 0)
-	pdf.MultiCell(0, 8, sanitizePDFString(data.Incident.Title), "", "L", false)
+	pdf.SetFont("Courier", "B", 16)
+	pdfWhite(pdf)
+	pdf.MultiCell(0, 9, sanitizePDFString(data.Incident.Title), "", "L", false)
 	pdf.Ln(2)
 }
 
 func pdfOverview(pdf *gofpdf.Fpdf, data reportData) {
 	inc := data.Incident
-	pdf.SetFont("Courier", "", 9)
-	pdf.SetTextColor(0x66, 0x66, 0x66)
+	pdf.SetFont("Courier", "", 11)
+	pdfRed(pdf)
 	pdf.CellFormat(0, 6, "OVERVIEW", "", 1, "L", false, 0, "")
 	pdf.Ln(1)
 
-	keyW := 30.0
+	keyW := 34.0
 	row := func(key, value string) {
-		pdf.SetFont("Courier", "", 9)
-		pdf.SetTextColor(0x66, 0x66, 0x66)
-		pdf.CellFormat(keyW, 5, key, "", 0, "L", false, 0, "")
-		pdf.SetTextColor(0, 0, 0)
-		pdf.MultiCell(0, 5, sanitizePDFString(value), "", "L", false)
+		pdf.SetFont("Courier", "", 11)
+		pdfRed(pdf)
+		pdf.CellFormat(keyW, 6, key, "", 0, "L", false, 0, "")
+		pdfWhite(pdf)
+		pdf.MultiCell(0, 6, sanitizePDFString(value), "", "L", false)
 	}
 
 	row("Status:", strings.ToUpper(inc.Status))
@@ -206,8 +223,8 @@ func pdfAISection(pdf *gofpdf.Fpdf, data reportData) {
 		return
 	}
 
-	pdf.SetFont("Courier", "", 9)
-	pdf.SetTextColor(0x66, 0x66, 0x66)
+	pdf.SetFont("Courier", "", 11)
+	pdfRed(pdf)
 	label := "AI ANALYSIS"
 	if data.AIModel != "" {
 		label = fmt.Sprintf("AI ANALYSIS  [%s]", data.AIModel)
@@ -215,27 +232,27 @@ func pdfAISection(pdf *gofpdf.Fpdf, data reportData) {
 	pdf.CellFormat(0, 6, sanitizePDFString(label), "", 1, "L", false, 0, "")
 	pdf.Ln(1)
 
-	pdf.SetFont("Courier", "", 9)
-	pdf.SetTextColor(0, 0, 0)
-	pdf.MultiCell(0, 5, sanitizePDFString(data.AIAnalysis), "", "L", false)
+	pdf.SetFont("Courier", "", 11)
+	pdfWhite(pdf)
+	pdf.MultiCell(0, 6, sanitizePDFString(data.AIAnalysis), "", "L", false)
 	pdf.Ln(2)
 	pdfRule(pdf)
 }
 
 func pdfEventChain(pdf *gofpdf.Fpdf, entries []reportEntry) {
-	pdf.SetFont("Courier", "", 9)
-	pdf.SetTextColor(0x66, 0x66, 0x66)
+	pdf.SetFont("Courier", "", 11)
+	pdfRed(pdf)
 	pdf.CellFormat(0, 6, fmt.Sprintf("EVENT CHAIN  (%d entries)", len(entries)), "", 1, "L", false, 0, "")
 	pdf.Ln(1)
 
-	pdf.SetFont("Courier", "", 8)
-	pdf.SetTextColor(0x66, 0x66, 0x66)
+	pdf.SetFont("Courier", "", 10)
+	pdfRed(pdf)
 	pageW, _, _ := pdf.PageSize(0)
 	usableW := pageW - 40
-	colRole := 22.0
-	colTS := 46.0
-	colSrc := 22.0
-	colSvc := 30.0
+	colRole := 24.0
+	colTS := 50.0
+	colSrc := 24.0
+	colSvc := 32.0
 	colEvent := usableW - colRole - colTS - colSrc - colSvc
 
 	pdf.CellFormat(colRole, 5, "ROLE", "", 0, "L", false, 0, "")
@@ -247,8 +264,8 @@ func pdfEventChain(pdf *gofpdf.Fpdf, entries []reportEntry) {
 	for _, re := range entries {
 		link := re.Link
 		entry := re.Entry
-		pdf.SetFont("Courier", "", 8)
-		pdf.SetTextColor(0, 0, 0)
+		pdf.SetFont("Courier", "", 10)
+		pdfWhite(pdf)
 		pdf.CellFormat(colRole, 5, roleLabel(link.Role), "", 0, "L", false, 0, "")
 		pdf.CellFormat(colTS, 5, entry.Timestamp.UTC().Format("2006-01-02 15:04:05"), "", 0, "L", false, 0, "")
 		pdf.CellFormat(colSrc, 5, sanitizePDFString(entry.Source), "", 0, "L", false, 0, "")
@@ -258,16 +275,16 @@ func pdfEventChain(pdf *gofpdf.Fpdf, entries []reportEntry) {
 		if entry.Content != "" {
 			content := sanitizePDFString(truncateRunes(entry.Content, 120))
 			pdf.SetX(26)
-			pdf.SetFont("Courier", "", 8)
-			pdf.SetTextColor(0x66, 0x66, 0x66)
+			pdf.SetFont("Courier", "", 10)
+			pdfDim(pdf)
 			pdf.MultiCell(usableW-6, 4, content, "", "L", false)
 		}
 
 		if link.Role == "ai_cause" && link.Reason != "" {
 			reason := sanitizePDFString("AI: " + truncateRunes(link.Reason, 120))
 			pdf.SetX(26)
-			pdf.SetFont("Courier", "I", 8)
-			pdf.SetTextColor(0x66, 0x66, 0x66)
+			pdf.SetFont("Courier", "I", 10)
+			pdfDim(pdf)
 			pdf.MultiCell(usableW-6, 4, reason, "", "L", false)
 		}
 	}
@@ -275,14 +292,14 @@ func pdfEventChain(pdf *gofpdf.Fpdf, entries []reportEntry) {
 }
 
 func pdfFooter(pdf *gofpdf.Fpdf, generatedAt time.Time) {
-	pdf.SetFont("Courier", "", 8)
-	pdf.SetTextColor(0x66, 0x66, 0x66)
+	pdf.SetFont("Courier", "", 10)
+	pdfDim(pdf)
 	pdf.CellFormat(0, 6, fmt.Sprintf("Generated by Blackbox on %s", generatedAt.UTC().Format("2006-01-02")), "", 1, "C", false, 0, "")
 }
 
 func pdfRule(pdf *gofpdf.Fpdf) {
 	pdf.Ln(2)
-	pdf.SetDrawColor(0xCC, 0xCC, 0xCC)
+	pdf.SetDrawColor(0x44, 0x08, 0x08)
 	pdf.SetLineWidth(0.3)
 	x := pdf.GetX()
 	y := pdf.GetY()

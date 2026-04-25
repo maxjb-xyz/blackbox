@@ -497,14 +497,14 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
   }, [detail, expanded, incident])
 
   useEffect(() => {
-    if (prevStatusRef.current !== 'resolved' && incident.status === 'resolved' && expanded) {
+    if (prevStatusRef.current !== 'resolved' && incident.status === 'resolved') {
       setResolvedFlash(true)
-      const id = window.setTimeout(() => setResolvedFlash(false), 1500)
+      const id = window.setTimeout(() => setResolvedFlash(false), 2500)
       prevStatusRef.current = incident.status
       return () => window.clearTimeout(id)
     }
     prevStatusRef.current = incident.status
-  }, [incident.status, expanded])
+  }, [incident.status])
 
   const detailIncident = detail?.incident ?? incident
   const services = parseIncidentServices(detailIncident)
@@ -552,9 +552,9 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
     <div
       style={{
         borderLeft: `2px solid ${borderColor}`,
-        outline: resolvedFlash ? '1px solid var(--success)' : '1px solid transparent',
-        boxShadow: resolvedFlash ? '0 0 0 1px var(--success)' : 'none',
-        transition: resolvedFlash ? 'none' : 'outline 0.6s ease, box-shadow 0.6s ease',
+        outline: resolvedFlash ? '2px solid var(--success)' : '1px solid transparent',
+        boxShadow: resolvedFlash ? '0 0 16px rgba(0,204,68,0.45), inset 0 0 0 1px rgba(0,204,68,0.12)' : 'none',
+        transition: resolvedFlash ? 'none' : 'outline 0.9s ease, box-shadow 0.9s ease',
         opacity: incident.status === 'resolved' ? 0.7 : 1,
         background: 'var(--surface)',
         marginBottom: 4,
