@@ -623,7 +623,16 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
         {incident.title}
       </div>
 
-      {expanded && (
+      <AnimatePresence initial={false}>
+        {expanded && (
+        <motion.div
+          key="expanded-content"
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: 'auto', opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          transition={{ duration: 0.22, ease: 'easeInOut' }}
+          style={{ overflow: 'hidden' }}
+        >
         <div style={{ padding: '0 12px 12px 36px', fontSize: 11 }}>
           {loadingDetail && (
             <div style={{ color: 'var(--muted)' }}>loading...</div>
@@ -922,7 +931,9 @@ function IncidentCard({ incident, defaultOpen = false, onSelectEntry }: Incident
             </>
           )}
         </div>
-      )}
+        </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   )
 }
@@ -1064,25 +1075,23 @@ export default function IncidentsPage() {
         </div>
 
         {resolvedIncidents.length > 0 && (
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-              <span style={{ fontSize: 11, color: 'var(--muted)', letterSpacing: '0.14em' }}>RECENTLY RESOLVED</span>
-              <div style={{ flex: 1, height: 1, background: '#1E1E1E' }} />
-            </div>
-            <AnimatePresence initial={false}>
-              {resolvedIncidents.map(inc => (
-                <motion.div
-                  key={inc.id}
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3, ease: 'easeOut' }}
-                >
-                  <IncidentCard incident={inc} onSelectEntry={setSelectedEntry} />
-                </motion.div>
-              ))}
-            </AnimatePresence>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+            <span style={{ fontSize: 11, color: 'var(--muted)', letterSpacing: '0.14em' }}>RECENTLY RESOLVED</span>
+            <div style={{ flex: 1, height: 1, background: '#1E1E1E' }} />
           </div>
         )}
+        <AnimatePresence initial={false}>
+          {resolvedIncidents.map(inc => (
+            <motion.div
+              key={inc.id}
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, ease: 'easeOut' }}
+            >
+              <IncidentCard incident={inc} onSelectEntry={setSelectedEntry} />
+            </motion.div>
+          ))}
+        </AnimatePresence>
       </div>
       <AnimatePresence>
         {selectedEntry && (
