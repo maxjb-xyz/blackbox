@@ -26,7 +26,7 @@ func TestBuildDiscordEmbed_ConfirmedOpen(t *testing.T) {
 		Metadata:   "{}",
 	}
 
-	embed := BuildDiscordEmbed(inc, false)
+	embed := BuildDiscordEmbed(inc, EventIncidentOpenedConfirmed, "", false)
 
 	assert.Equal(t, discordColorConfirmed, embed.Color)
 	assert.Equal(t, "nginx - monitor down", embed.Title)
@@ -45,7 +45,7 @@ func TestBuildDiscordEmbed_SuspectedOpen(t *testing.T) {
 		Metadata:   "{}",
 	}
 
-	embed := BuildDiscordEmbed(inc, false)
+	embed := BuildDiscordEmbed(inc, EventIncidentOpenedConfirmed, "", false)
 
 	assert.Equal(t, discordColorSuspected, embed.Color)
 }
@@ -64,16 +64,33 @@ func TestBuildDiscordEmbed_Resolved(t *testing.T) {
 		Metadata:   "{}",
 	}
 
-	embed := BuildDiscordEmbed(inc, false)
+	embed := BuildDiscordEmbed(inc, EventIncidentOpenedConfirmed, "", false)
 
 	assert.Equal(t, discordColorResolved, embed.Color)
 }
 
 func TestBuildDiscordEmbed_Test(t *testing.T) {
-	embed := BuildDiscordEmbed(models.Incident{}, true)
+	embed := BuildDiscordEmbed(models.Incident{}, EventIncidentOpenedConfirmed, "", true)
 
 	assert.Equal(t, discordColorTest, embed.Color)
 	assert.Equal(t, "Test Notification", embed.Title)
+}
+
+func TestBuildDiscordEmbed_AIReviewGenerated_WithSummaryAndLink(t *testing.T) {
+	embed := BuildDiscordEmbed(models.Incident{
+		ID:         "ai1",
+		Status:     "open",
+		Confidence: "confirmed",
+		Title:      "nginx AI review",
+		Services:   `["nginx"]`,
+		NodeNames:  `["server1"]`,
+		OpenedAt:   time.Now(),
+		Metadata:   `{"ai_analysis":"Service crashed due to OOM."}`,
+	}, EventAIReviewGenerated, "https://blackbox.example.com/incidents/ai1", false)
+
+	assert.Equal(t, "Blackbox - AI Review", embed.Footer.Text)
+	assert.Contains(t, embed.Fields, discordField{Name: "AI Analysis", Value: "Service crashed due to OOM.", Inline: false})
+	assert.Contains(t, embed.Fields, discordField{Name: "View Incident", Value: "https://blackbox.example.com/incidents/ai1", Inline: false})
 }
 
 func TestSendDiscord_PostsPayload(t *testing.T) {
@@ -98,7 +115,7 @@ func TestSendDiscord_PostsPayload(t *testing.T) {
 		Metadata:   "{}",
 	}
 
-	err := ExportedSendDiscord(context.Background(), srv.URL, inc, false)
+	err := ExportedSendDiscord(context.Background(), srv.URL, inc, EventIncidentOpenedConfirmed, "", false)
 	require.NoError(t, err)
 
 	var payload map[string]any
@@ -118,7 +135,7 @@ func TestSendDiscord_ReturnsErrorOnNon2xx(t *testing.T) {
 		Services:  `[]`,
 		NodeNames: `[]`,
 		Metadata:  "{}",
-	}, false)
+	}, EventIncidentOpenedConfirmed, "", false)
 
 	assert.Error(t, err)
 }

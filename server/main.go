@@ -213,6 +213,7 @@ func main() {
 		r.Get("/api/incidents/summary", handlers.GetIncidentSummary(database))
 		r.Post("/api/incidents/membership", handlers.ListIncidentMembership(database))
 		r.Get("/api/incidents/{id}", handlers.GetIncident(database))
+		r.Get("/api/incidents/{id}/report.pdf", handlers.DownloadIncidentReport(database))
 		r.Get("/api/entries", handlers.ListEntries(database))
 		r.Get("/api/entries/services", handlers.ListEntryServices(database))
 		r.Post("/api/entries", handlers.CreateEntry(database, eventHub, incidentCh, managerCtx.Done()))
@@ -234,6 +235,7 @@ func main() {
 		r.Delete("/api/admin/users/{id}", handlers.DeleteAdminUser(database, eventHub))
 		r.Get("/api/admin/config", handlers.AdminConfig(database, webhookSecret, mcpMgr))
 		r.Put("/api/admin/settings/file-watcher", handlers.UpdateFileWatcherSettings(database))
+		r.Put("/api/admin/settings/base-url", handlers.UpdateBaseURLSetting(database))
 		r.Get("/api/admin/settings/systemd", handlers.GetSystemdSettings(database))
 		r.Put("/api/admin/settings/systemd/{node_name}", handlers.UpdateSystemdSettings(database))
 		r.Put("/api/admin/settings/ai", handlers.UpdateAISettings(database))
@@ -252,6 +254,11 @@ func main() {
 		r.Put("/api/admin/notifications/{id}", handlers.UpdateNotificationDest(database))
 		r.Delete("/api/admin/notifications/{id}", handlers.DeleteNotificationDest(database))
 		r.Post("/api/admin/notifications/{id}/test", handlers.TestNotificationDest(database, notifier))
+		r.Get("/api/admin/excluded-targets", handlers.ListExcludedTargets(database))
+		r.Post("/api/admin/excluded-targets", handlers.CreateExcludedTarget(database))
+		r.Delete("/api/admin/excluded-targets/{id}", handlers.DeleteExcludedTarget(database))
+		r.Get("/api/admin/audit-logs", handlers.ListAuditLogs(database))
+		r.Get("/api/admin/webhook-deliveries", handlers.ListWebhookDeliveries(database))
 	})
 
 	r.Group(func(r chi.Router) {

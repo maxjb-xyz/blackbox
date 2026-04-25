@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"blackbox/server/internal/models"
+	"blackbox/server/internal/notify"
 	"blackbox/shared/types"
 	"gorm.io/gorm"
 )
@@ -45,9 +46,14 @@ var callCorrelateGenerateFunc = func(ctx context.Context, provider LLMProvider, 
 
 type AIEnricher struct {
 	db            *gorm.DB
+	notifier      notifySender
 	onIncidentSet func(string)
 	dispatchMu    sync.Mutex
 	dispatches    map[string]aiDispatchState
+}
+
+type notifySender interface {
+	Send(ctx context.Context, event string, inc models.Incident)
 }
 
 type aiDispatch struct {
@@ -142,6 +148,12 @@ func NewAIEnricher(db *gorm.DB, onIncidentSet func(string)) *AIEnricher {
 		onIncidentSet: onIncidentSet,
 		dispatches:    make(map[string]aiDispatchState),
 	}
+}
+
+func NewAIEnricherWithNotifier(db *gorm.DB, notifier notifySender, onIncidentSet func(string)) *AIEnricher {
+	enricher := NewAIEnricher(db, onIncidentSet)
+	enricher.notifier = notifier
+	return enricher
 }
 
 // EnrichAsync delegates to the AIEnricher.
@@ -289,13 +301,14 @@ func (e *AIEnricher) enrich(dispatch aiDispatch) {
 
 	if !e.updateIncidentMetadata(dispatch.incidentID, func(meta map[string]interface{}) {
 		delete(meta, "ai_pending")
-		meta["ai_analysis"] = result
+		meta["ai_analysis"] = sanitizeExternalText(result)
 		meta["ai_model"] = dispatch.model
 		meta["ai_mode"] = dispatch.mode
 		meta["ai_enriched_at"] = time.Now().UTC().Format(time.RFC3339)
 	}) {
 		return
 	}
+	e.notifyAIReview(dispatch.incidentID)
 }
 
 func (e *AIEnricher) correlate(dispatch aiDispatch) {
@@ -524,6 +537,24 @@ func (e *AIEnricher) correlate(dispatch aiDispatch) {
 		meta["ai_enriched_at"] = time.Now().UTC().Format(time.RFC3339)
 	}) {
 		return
+	}
+	e.notifyAIReview(dispatch.incidentID)
+}
+
+func (e *AIEnricher) notifyAIReview(incidentID string) {
+	if e.notifier == nil {
+		return
+	}
+	var updated models.Incident
+	if err := e.db.First(&updated, "id = ?", incidentID).Error; err != nil {
+		return
+	}
+	var meta map[string]interface{}
+	if err := json.Unmarshal([]byte(updated.Metadata), &meta); err != nil {
+		return
+	}
+	if analysis, ok := meta["ai_analysis"].(string); ok && strings.TrimSpace(analysis) != "" {
+		e.notifier.Send(context.Background(), notify.EventAIReviewGenerated, updated)
 	}
 }
 

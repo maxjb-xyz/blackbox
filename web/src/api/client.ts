@@ -315,6 +315,7 @@ export interface AdminConfig {
   mcp_auth_token_set: boolean
   mcp_auth_token_suffix: string
   mcp_running: boolean
+  base_url: string
 }
 
 export interface AISettingsInput {
@@ -350,6 +351,15 @@ export async function updateFileWatcherSettings(redactSecrets: boolean): Promise
   })
   if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to update file watcher settings'))
   return res.json()
+}
+
+export async function updateBaseURL(baseURL: string): Promise<void> {
+  const res = await apiFetch('/api/admin/settings/base-url', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ base_url: baseURL }),
+  })
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to update instance base URL'))
 }
 
 export async function updateAISettings(settings: AISettingsInput): Promise<void> {
@@ -766,4 +776,98 @@ export async function testNotificationDest(id: string): Promise<{ ok: boolean; e
   })
   if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to test notification destination'))
   return res.json() as Promise<{ ok: boolean; error?: string }>
+}
+
+export interface ExcludedTarget {
+  id: string
+  type: 'container' | 'stack'
+  name: string
+  created_at: string
+}
+
+export async function listExcludedTargets(): Promise<ExcludedTarget[]> {
+  const res = await apiFetch('/api/admin/excluded-targets')
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to list excluded targets'))
+  return res.json() as Promise<ExcludedTarget[]>
+}
+
+export async function createExcludedTarget(type: ExcludedTarget['type'], name: string): Promise<ExcludedTarget> {
+  const res = await apiFetch('/api/admin/excluded-targets', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type, name }),
+  })
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to create excluded target'))
+  return res.json() as Promise<ExcludedTarget>
+}
+
+export async function deleteExcludedTarget(id: string): Promise<void> {
+  const res = await apiFetch(`/api/admin/excluded-targets/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok && res.status !== 404) {
+    throw new Error(await readErrorMessage(res, 'Failed to delete excluded target'))
+  }
+}
+
+export interface AuditLogEntry {
+  id: string
+  actor_user_id: string
+  actor_email: string
+  action: string
+  target_type: string
+  target_id: string
+  metadata: Record<string, unknown>
+  ip_address: string
+  created_at: string
+}
+
+export interface AuditLogPage {
+  total: number
+  page: number
+  per_page: number
+  items: AuditLogEntry[]
+}
+
+export interface WebhookDelivery {
+  id: string
+  source: string
+  received_at: string
+  payload_snippet: string
+  matched_incident_id: string
+  status: string
+  error_message: string
+}
+
+export interface WebhookDeliveryPage {
+  total: number
+  page: number
+  per_page: number
+  items: WebhookDelivery[]
+}
+
+export async function listAuditLogs(page = 1, perPage = 50, action?: string): Promise<AuditLogPage> {
+  const url = new URL('/api/admin/audit-logs', window.location.origin)
+  url.searchParams.set('page', String(page))
+  url.searchParams.set('per_page', String(perPage))
+  if (action) url.searchParams.set('action', action)
+  const res = await apiFetch(url.toString())
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to list audit logs'))
+  return res.json()
+}
+
+export async function listWebhookDeliveries(
+  page = 1,
+  perPage = 50,
+  source?: string,
+  status?: string,
+): Promise<WebhookDeliveryPage> {
+  const url = new URL('/api/admin/webhook-deliveries', window.location.origin)
+  url.searchParams.set('page', String(page))
+  url.searchParams.set('per_page', String(perPage))
+  if (source) url.searchParams.set('source', source)
+  if (status) url.searchParams.set('status', status)
+  const res = await apiFetch(url.toString())
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to list webhook deliveries'))
+  return res.json()
 }

@@ -3,8 +3,10 @@ import type { CSSProperties } from 'react'
 import { Navigate } from 'react-router-dom'
 import {
   createAdminOIDCProvider,
+  createExcludedTarget,
   createNotificationDest,
   deleteAdminOIDCProvider,
+  deleteExcludedTarget,
   deleteNotificationDest,
   deleteAdminUser,
   fetchAdminConfig,
@@ -14,13 +16,17 @@ import {
   getOIDCPolicy,
   listAdminOIDCProviders,
   listAdminUsers,
+  listAuditLogs,
+  listExcludedTargets,
   listNotificationDests,
   regenerateMCPToken,
+  listWebhookDeliveries,
   revokeInvite,
   setOIDCPolicy,
   testAISettings,
   testNotificationDest,
   updateAISettings,
+  updateBaseURL,
   updateFileWatcherSettings,
   updateAdminOIDCProvider,
   updateAdminUser,
@@ -28,7 +34,7 @@ import {
   updateNotificationDest,
   updateSystemdSettings,
 } from '../api/client'
-import type { AISettingsInput, AdminUser, MCPSettingsInput, Node, NotificationDest, NotificationDestInput, OIDCProviderConfig } from '../api/client'
+import type { AISettingsInput, AdminUser, AuditLogPage, ExcludedTarget, MCPSettingsInput, Node, NotificationDest, NotificationDestInput, OIDCProviderConfig, WebhookDeliveryPage } from '../api/client'
 import { readErrorMessage } from '../api/errorUtils'
 import { useSession } from '../session'
 import PageHeader from '../components/PageHeader'
@@ -52,7 +58,8 @@ interface OIDCProviderFormState {
   enabled: boolean
 }
 
-type Tab = 'invites' | 'users' | 'oidc' | 'settings' | 'systemd' | 'notifications'
+type AdminGroup = 'access' | 'integrations' | 'system'
+type Tab = 'invites' | 'users' | 'oidc' | 'audit' | 'notifications' | 'webhooks' | 'agents' | 'excludes' | 'ai' | 'systemd' | 'filewatcher'
 type OIDCPolicy = 'open' | 'existing_only' | 'invite_required'
 
 const UNIT_SUFFIXES = ['.service','.socket','.device','.mount','.automount',
@@ -71,8 +78,14 @@ const NOTIFICATION_EVENT_OPTIONS = [
   { value: 'incident_opened_suspected', label: 'INCIDENT OPENED / SUSPECTED' },
   { value: 'incident_confirmed', label: 'INCIDENT UPGRADED TO CONFIRMED' },
   { value: 'incident_resolved', label: 'INCIDENT RESOLVED' },
+  { value: 'incident_ai_review_generated', label: 'AI REVIEW GENERATED' },
 ] as const
-const ADMIN_TABS: Tab[] = ['invites', 'users', 'oidc', 'settings', 'systemd', 'notifications']
+const ADMIN_GROUPS: Record<AdminGroup, { label: string; tabs: Tab[] }> = {
+  access: { label: 'ACCESS', tabs: ['users', 'invites', 'oidc', 'audit'] },
+  integrations: { label: 'INTEGRATIONS', tabs: ['notifications', 'webhooks', 'agents', 'excludes'] },
+  system: { label: 'SYSTEM', tabs: ['ai', 'systemd', 'filewatcher'] },
+}
+const ALL_ADMIN_GROUPS: AdminGroup[] = ['access', 'integrations', 'system']
 
 function normalizeInvite(invite: Record<string, unknown>): InviteCode {
   return {
@@ -133,7 +146,8 @@ function oidcCallbackURL(providerID: string): string {
 export default function AdminPage() {
   const { user } = useSession()
   const isAdmin = user?.is_admin === true
-  const [tab, setTab] = useState<Tab>('invites')
+  const [group, setGroup] = useState<AdminGroup>('access')
+  const [tab, setTab] = useState<Tab>('users')
   const [nodes, setNodes] = useState<Node[]>([])
   const [systemdSettings, setSystemdSettings] = useState<Record<string, string[]>>({})
   const [systemdInputs, setSystemdInputs] = useState<Record<string, string>>({})
@@ -151,6 +165,24 @@ export default function AdminPage() {
   const [notificationSaveError, setNotificationSaveError] = useState<string | null>(null)
   const [notificationTestResults, setNotificationTestResults] = useState<Record<string, { ok: boolean; error?: string } | undefined>>({})
   const notificationTestTimeoutsRef = useRef<Record<string, number>>({})
+  const [baseURL, setBaseURL] = useState('')
+  const [baseURLSaving, setBaseURLSaving] = useState(false)
+  const [baseURLError, setBaseURLError] = useState<string | null>(null)
+  const [baseURLSuccess, setBaseURLSuccess] = useState(false)
+  const baseURLSuccessTimerRef = useRef<number | null>(null)
+  const [auditLogs, setAuditLogs] = useState<AuditLogPage | null>(null)
+  const [auditLoading, setAuditLoading] = useState(false)
+  const [auditError, setAuditError] = useState<string | null>(null)
+  const [auditPage, setAuditPage] = useState(1)
+  const [auditActionInput, setAuditActionInput] = useState('')
+  const [auditActionFilter, setAuditActionFilter] = useState('')
+  const [webhookDeliveries, setWebhookDeliveries] = useState<WebhookDeliveryPage | null>(null)
+  const [webhooksLoading, setWebhooksLoading] = useState(false)
+  const [webhooksError, setWebhooksError] = useState<string | null>(null)
+  const [webhooksPage, setWebhooksPage] = useState(1)
+  const [webhookSourceFilter, setWebhookSourceFilter] = useState('')
+  const [webhookStatusFilter, setWebhookStatusFilter] = useState('')
+  const [expandedWebhookRow, setExpandedWebhookRow] = useState<string | null>(null)
   const adminTabRefs = useRef<Array<HTMLButtonElement | null>>([])
 
   const handleAddUnit = useCallback((nodeName: string) => {
@@ -174,6 +206,16 @@ export default function AdminPage() {
       setNotificationsError(err instanceof Error ? err.message : 'Failed to load notification destinations')
     } finally {
       setNotificationsLoading(false)
+    }
+  }, [])
+
+  const loadNotificationSettings = useCallback(async () => {
+    setBaseURLError(null)
+    try {
+      const config = await fetchAdminConfig()
+      setBaseURL(config.base_url ?? '')
+    } catch (err) {
+      setBaseURLError(err instanceof Error ? err.message : 'Failed to load instance base URL')
     }
   }, [])
 
@@ -204,22 +246,74 @@ export default function AdminPage() {
   useEffect(() => {
     if (tab !== 'notifications') return
     void loadNotificationDests()
-  }, [loadNotificationDests, tab])
+    void loadNotificationSettings()
+  }, [loadNotificationDests, loadNotificationSettings, tab])
+
+  useEffect(() => {
+    if (tab !== 'audit') return
+    setAuditLoading(true)
+    setAuditError(null)
+    listAuditLogs(auditPage, 50, auditActionFilter || undefined)
+      .then(setAuditLogs)
+      .catch((err: unknown) => setAuditError(err instanceof Error ? err.message : 'Failed to load audit logs'))
+      .finally(() => setAuditLoading(false))
+  }, [tab, auditPage, auditActionFilter])
+
+  useEffect(() => {
+    if (tab !== 'webhooks') return
+    setWebhooksLoading(true)
+    setWebhooksError(null)
+    listWebhookDeliveries(webhooksPage, 50, webhookSourceFilter || undefined, webhookStatusFilter || undefined)
+      .then(setWebhookDeliveries)
+      .catch((err: unknown) => setWebhooksError(err instanceof Error ? err.message : 'Failed to load webhook deliveries'))
+      .finally(() => setWebhooksLoading(false))
+  }, [tab, webhooksPage, webhookSourceFilter, webhookStatusFilter])
 
   useEffect(() => {
     return () => {
       Object.values(notificationTestTimeoutsRef.current).forEach(timeoutID => {
         window.clearTimeout(timeoutID)
       })
+      if (baseURLSuccessTimerRef.current !== null) {
+        window.clearTimeout(baseURLSuccessTimerRef.current)
+      }
     }
   }, [])
 
   if (!isAdmin) return <Navigate to="/timeline" replace />
 
+  function selectGroup(nextGroup: AdminGroup) {
+    setGroup(nextGroup)
+    setTab(ADMIN_GROUPS[nextGroup].tabs[0])
+  }
+
   function selectAdminTabAt(index: number) {
-    const normalizedIndex = (index + ADMIN_TABS.length) % ADMIN_TABS.length
-    setTab(ADMIN_TABS[normalizedIndex])
+    const tabs = ADMIN_GROUPS[group].tabs
+    const normalizedIndex = (index + tabs.length) % tabs.length
+    setTab(tabs[normalizedIndex])
     adminTabRefs.current[normalizedIndex]?.focus()
+  }
+
+  async function saveBaseURL(e: React.FormEvent) {
+    e.preventDefault()
+    setBaseURLSaving(true)
+    setBaseURLError(null)
+    setBaseURLSuccess(false)
+    try {
+      await updateBaseURL(baseURL)
+      if (baseURLSuccessTimerRef.current !== null) {
+        window.clearTimeout(baseURLSuccessTimerRef.current)
+      }
+      setBaseURLSuccess(true)
+      baseURLSuccessTimerRef.current = window.setTimeout(() => {
+        setBaseURLSuccess(false)
+        baseURLSuccessTimerRef.current = null
+      }, 2500)
+    } catch (err) {
+      setBaseURLError(err instanceof Error ? err.message : 'Save failed')
+    } finally {
+      setBaseURLSaving(false)
+    }
   }
 
   return (
@@ -229,57 +323,86 @@ export default function AdminPage() {
         titleActions={(
           <div className="admin-title-actions">
             <span className="admin-title-divider" aria-hidden="true" />
-            <div className="admin-tab-list" role="tablist" aria-label="Admin sections">
-              {ADMIN_TABS.map((t, index) => (
-                <Fragment key={t}>
-                  {index > 0 ? <span className="admin-tab-divider" aria-hidden="true">/</span> : null}
-                  <button
-                    ref={element => { adminTabRefs.current[index] = element }}
-                    className="admin-tab-button"
-                    id={`admin-tab-${t}`}
-                    role="tab"
-                    aria-selected={tab === t}
-                    aria-controls={`admin-panel-${t}`}
-                    tabIndex={tab === t ? 0 : -1}
-                    onClick={() => setTab(t)}
-                    onKeyDown={event => {
-                      if (event.key === 'ArrowRight') {
-                        event.preventDefault()
-                        selectAdminTabAt(index + 1)
-                        return
-                      }
-                      if (event.key === 'ArrowLeft') {
-                        event.preventDefault()
-                        selectAdminTabAt(index - 1)
-                        return
-                      }
-                      if (event.key === 'Home') {
-                        event.preventDefault()
-                        selectAdminTabAt(0)
-                        return
-                      }
-                      if (event.key === 'End') {
-                        event.preventDefault()
-                        selectAdminTabAt(ADMIN_TABS.length - 1)
-                      }
-                    }}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: tab === t ? 'var(--accent)' : '#F0F0F0',
-                      fontSize: '18px',
-                      fontWeight: 700,
-                      letterSpacing: '0.12em',
-                      cursor: 'pointer',
-                      fontFamily: 'inherit',
-                      lineHeight: 1,
-                      padding: 0,
-                    }}
-                  >
-                    {t.toUpperCase()}
-                  </button>
-                </Fragment>
-              ))}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div role="tablist" style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+                {ALL_ADMIN_GROUPS.map((g, index) => (
+                  <Fragment key={g}>
+                    {index > 0 ? <span className="admin-tab-divider" aria-hidden="true">/</span> : null}
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={group === g}
+                      onClick={() => selectGroup(g)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: group === g ? 'var(--accent)' : '#F0F0F0',
+                        fontSize: '18px',
+                        fontWeight: 700,
+                        letterSpacing: '0.12em',
+                        cursor: 'pointer',
+                        fontFamily: 'inherit',
+                        lineHeight: 1,
+                        padding: 0,
+                      }}
+                    >
+                      {ADMIN_GROUPS[g].label}
+                    </button>
+                  </Fragment>
+                ))}
+              </div>
+              <div className="admin-tab-list" role="tablist" aria-label={`${ADMIN_GROUPS[group].label} sections`}>
+                {ADMIN_GROUPS[group].tabs.map((t, index) => (
+                  <Fragment key={t}>
+                    {index > 0 ? <span className="admin-tab-divider" aria-hidden="true">/</span> : null}
+                    <button
+                      ref={element => { adminTabRefs.current[index] = element }}
+                      className="admin-tab-button"
+                      id={`admin-tab-${t}`}
+                      role="tab"
+                      aria-selected={tab === t}
+                      aria-controls={`admin-panel-${t}`}
+                      tabIndex={tab === t ? 0 : -1}
+                      onClick={() => setTab(t)}
+                      onKeyDown={event => {
+                        if (event.key === 'ArrowRight') {
+                          event.preventDefault()
+                          selectAdminTabAt(index + 1)
+                          return
+                        }
+                        if (event.key === 'ArrowLeft') {
+                          event.preventDefault()
+                          selectAdminTabAt(index - 1)
+                          return
+                        }
+                        if (event.key === 'Home') {
+                          event.preventDefault()
+                          selectAdminTabAt(0)
+                          return
+                        }
+                        if (event.key === 'End') {
+                          event.preventDefault()
+                          selectAdminTabAt(ADMIN_GROUPS[group].tabs.length - 1)
+                        }
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: tab === t ? 'var(--accent)' : 'var(--muted)',
+                        fontSize: '14px',
+                        fontWeight: tab === t ? 700 : 400,
+                        letterSpacing: '0.1em',
+                        cursor: 'pointer',
+                        fontFamily: 'inherit',
+                        lineHeight: 1,
+                        padding: 0,
+                      }}
+                    >
+                      {t.toUpperCase()}
+                    </button>
+                  </Fragment>
+                ))}
+              </div>
             </div>
           </div>
         )}
@@ -295,7 +418,25 @@ export default function AdminPage() {
         {tab === 'invites' && <InvitesTab />}
         {tab === 'users' && <UsersTab currentUserId={user?.user_id ?? ''} />}
         {tab === 'oidc' && <OIDCTab />}
-        {tab === 'settings' && <SettingsTab />}
+        {tab === 'audit' && (
+          <AuditLogTab
+            logs={auditLogs}
+            loading={auditLoading}
+            error={auditError}
+            page={auditPage}
+            actionInput={auditActionInput}
+            onActionInputChange={setAuditActionInput}
+            onFilter={() => {
+              setAuditPage(1)
+              setAuditActionFilter(auditActionInput)
+            }}
+            onPageChange={setAuditPage}
+          />
+        )}
+        {tab === 'agents' && <AgentsTab />}
+        {tab === 'excludes' && <ExcludedTargetsTab />}
+        {tab === 'ai' && <SettingsTab section="ai" />}
+        {tab === 'filewatcher' && <SettingsTab section="filewatcher" />}
         {tab === 'systemd' && (
           <div>
             <div
@@ -452,6 +593,48 @@ export default function AdminPage() {
         )}
         {tab === 'notifications' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <section style={panelStyle}>
+              <div style={panelHeaderStyle}>
+                <span id="instance-base-url-heading" style={panelLabelStyle}>INSTANCE BASE URL</span>
+              </div>
+              <form onSubmit={saveBaseURL} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <input
+                  type="url"
+                  value={baseURL}
+                  aria-labelledby="instance-base-url-heading"
+                  onChange={e => {
+                    setBaseURL(e.target.value)
+                    setBaseURLError(null)
+                    setBaseURLSuccess(false)
+                  }}
+                  placeholder="https://blackbox.example.com"
+                  disabled={notificationsLoading || baseURLSaving}
+                  style={inputStyle}
+                />
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                  Used to generate clickable incident links in notifications. Leave blank to omit links.
+                </div>
+                {baseURLError && <div style={{ fontSize: 11, color: 'var(--danger)' }}>{baseURLError}</div>}
+                {baseURLSuccess && <div style={{ fontSize: 11, color: 'var(--success)' }}>saved</div>}
+                <button
+                  type="submit"
+                  disabled={notificationsLoading || baseURLSaving}
+                  style={{
+                    alignSelf: 'flex-start',
+                    background: 'transparent',
+                    border: '1px solid var(--border)',
+                    color: 'var(--muted)',
+                    fontSize: 11,
+                    padding: '4px 12px',
+                    cursor: notificationsLoading || baseURLSaving ? 'not-allowed' : 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  {baseURLSaving ? 'SAVING...' : 'SAVE'}
+                </button>
+              </form>
+            </section>
+
             <section style={panelStyle}>
               <div style={panelHeaderStyle}>
                 <span style={panelLabelStyle}>DESTINATIONS</span>
@@ -765,6 +948,35 @@ export default function AdminPage() {
                   ))}
                 </div>
               )}
+            </section>
+          </div>
+        )}
+        {tab === 'webhooks' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <WebhooksTab />
+            <section style={panelStyle}>
+              <div style={panelHeaderStyle}>
+                <span style={panelLabelStyle}>DELIVERY LOG</span>
+              </div>
+              <WebhookDeliveriesTab
+                deliveries={webhookDeliveries}
+                loading={webhooksLoading}
+                error={webhooksError}
+                page={webhooksPage}
+                sourceFilter={webhookSourceFilter}
+                statusFilter={webhookStatusFilter}
+                expandedRow={expandedWebhookRow}
+                onSourceChange={value => {
+                  setWebhookSourceFilter(value)
+                  setWebhooksPage(1)
+                }}
+                onStatusChange={value => {
+                  setWebhookStatusFilter(value)
+                  setWebhooksPage(1)
+                }}
+                onPageChange={setWebhooksPage}
+                onRowClick={id => setExpandedWebhookRow(prev => prev === id ? null : id)}
+              />
             </section>
           </div>
         )}
@@ -1545,7 +1757,383 @@ function OIDCTab() {
   )
 }
 
-function SettingsTab() {
+function WebhooksTab() {
+  const origin = window.location.origin
+  const endpoints = [
+    { method: 'POST', path: '/api/webhooks/uptime', description: 'Uptime monitor events' },
+    { method: 'POST', path: '/api/webhooks/watchtower', description: 'Watchtower update notifications' },
+  ]
+  const [copied, setCopied] = useState<string | null>(null)
+
+  function copyURL(path: string) {
+    void navigator.clipboard.writeText(`${origin}${path}`)
+    setCopied(path)
+    window.setTimeout(() => setCopied(null), 1500)
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ fontSize: 11, color: 'var(--muted)', letterSpacing: '0.08em', marginBottom: 8, textTransform: 'uppercase' }}>
+        Inbound Webhook Endpoints
+      </div>
+      {endpoints.map(endpoint => (
+        <div key={endpoint.path} style={{ border: '1px solid var(--border)', padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 700 }}>{endpoint.method}</span>
+          <span style={{ fontSize: 12, color: 'var(--text)', flex: 1, wordBreak: 'break-all' }}>{origin}{endpoint.path}</span>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{endpoint.description}</span>
+          <button type="button" onClick={() => copyURL(endpoint.path)} style={actionBtnStyle}>
+            {copied === endpoint.path ? 'COPIED' : 'COPY'}
+          </button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function AgentsTab() {
+  const [nodes, setNodes] = useState<Node[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    void fetchNodes()
+      .then(data => setNodes(data))
+      .catch(err => setError(err instanceof Error ? err.message : 'Failed to fetch nodes'))
+      .finally(() => setLoading(false))
+  }, [])
+
+  if (loading) return <div style={{ fontSize: 12, color: 'var(--muted)' }}>loading...</div>
+  if (error) return <div style={{ fontSize: 12, color: 'var(--danger)' }}>{error}</div>
+  if (nodes.length === 0) return <div style={{ fontSize: 12, color: 'var(--muted)' }}>No nodes registered yet.</div>
+
+  return (
+    <div>
+      <div style={{ fontSize: 11, color: 'var(--muted)', letterSpacing: '0.08em', marginBottom: 12, textTransform: 'uppercase' }}>Registered Agents</div>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+        <thead>
+          <tr style={{ color: 'var(--muted)', fontSize: 11, letterSpacing: '0.08em' }}>
+            {['NAME', 'STATUS', 'VERSION', 'IP', 'OS', 'LAST SEEN'].map(header => (
+              <th key={header} style={{ textAlign: 'left', padding: '4px 8px', borderBottom: '1px solid var(--border)' }}>{header}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {[...nodes].sort((a, b) => a.name.localeCompare(b.name)).map(node => (
+            <tr key={node.id} style={{ borderBottom: '1px solid var(--border)' }}>
+              <td style={{ padding: '6px 8px', color: 'var(--text)' }}>{node.name}</td>
+              <td style={{ padding: '6px 8px', color: node.status === 'online' ? 'var(--success)' : 'var(--muted)' }}>{node.status.toUpperCase()}</td>
+              <td style={{ padding: '6px 8px', color: 'var(--muted)' }}>{node.agent_version || '-'}</td>
+              <td style={{ padding: '6px 8px', color: 'var(--muted)' }}>{node.ip_address || '-'}</td>
+              <td style={{ padding: '6px 8px', color: 'var(--muted)' }}>{node.os_info || '-'}</td>
+              <td style={{ padding: '6px 8px', color: 'var(--muted)' }}>{node.last_seen ? formatLocalTimestamp(new Date(node.last_seen)) : '-'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function ExcludedTargetsTab() {
+  const [targets, setTargets] = useState<ExcludedTarget[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [containerInput, setContainerInput] = useState('')
+  const [stackInput, setStackInput] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      setTargets(await listExcludedTargets())
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load excluded targets')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { void load() }, [load])
+
+  async function handleAdd(type: ExcludedTarget['type']) {
+    const name = (type === 'container' ? containerInput : stackInput).trim()
+    if (!name || saving) return
+    setSaving(true)
+    setSaveError(null)
+    try {
+      await createExcludedTarget(type, name)
+      if (type === 'container') setContainerInput('')
+      else setStackInput('')
+      await load()
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to add exclusion')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDelete(id: string) {
+    setSaveError(null)
+    try {
+      await deleteExcludedTarget(id)
+      await load()
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to delete exclusion')
+    }
+  }
+
+  function renderPanel(label: string, items: ExcludedTarget[], input: string, setInput: (value: string) => void, type: ExcludedTarget['type']) {
+    return (
+      <section style={panelStyle}>
+        <div style={panelHeaderStyle}>
+          <span style={panelLabelStyle}>{label}</span>
+        </div>
+        {items.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>No exclusions configured.</div>}
+        {items.map(item => (
+          <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <span style={{ fontSize: 12, color: 'var(--text)', flex: 1 }}>{item.name}</span>
+            <span style={{ fontSize: 11, color: 'var(--muted)' }}>{formatLocalDate(new Date(item.created_at))}</span>
+            <button type="button" onClick={() => void handleDelete(item.id)} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}>x</button>
+          </div>
+        ))}
+        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          <input
+            type="text"
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') void handleAdd(type) }}
+            placeholder={type === 'container' ? 'e.g. health-sidecar' : 'e.g. ci-runners'}
+            style={{ flex: 1, ...inputStyle }}
+          />
+          <button type="button" onClick={() => void handleAdd(type)} disabled={saving || !input.trim()} style={actionBtnStyle}>ADD</button>
+        </div>
+      </section>
+    )
+  }
+
+  if (loading) return <div style={{ fontSize: 12, color: 'var(--muted)' }}>loading...</div>
+  if (error) return <div style={{ fontSize: 12, color: 'var(--danger)' }}>{error}</div>
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {saveError && <div style={{ color: 'var(--danger)', fontSize: 11 }}>{saveError}</div>}
+      {renderPanel('CONTAINER EXCLUDES', targets.filter(t => t.type === 'container'), containerInput, setContainerInput, 'container')}
+      {renderPanel('STACK EXCLUDES', targets.filter(t => t.type === 'stack'), stackInput, setStackInput, 'stack')}
+    </div>
+  )
+}
+
+function AuditLogTab({
+  logs,
+  loading,
+  error,
+  page,
+  actionInput,
+  onActionInputChange,
+  onFilter,
+  onPageChange,
+}: {
+  logs: AuditLogPage | null
+  loading: boolean
+  error: string | null
+  page: number
+  actionInput: string
+  onActionInputChange: (value: string) => void
+  onFilter: () => void
+  onPageChange: (page: number) => void
+}) {
+  const totalPages = logs ? Math.max(1, Math.ceil(logs.total / logs.per_page)) : 1
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <input
+          type="text"
+          placeholder="Filter by action"
+          value={actionInput}
+          onChange={event => onActionInputChange(event.target.value)}
+          onKeyDown={event => { if (event.key === 'Enter') onFilter() }}
+          style={{ ...inputStyle, width: 280 }}
+        />
+        <button type="button" onClick={onFilter} style={actionBtnStyle}>FILTER</button>
+      </div>
+
+      {loading && <div style={{ color: 'var(--muted)', fontSize: 12 }}>loading...</div>}
+      {error && <div style={{ color: 'var(--danger)', fontSize: 12 }}>{error}</div>}
+
+      {!loading && !error && logs && (
+        <>
+          {logs.items.length === 0 ? (
+            <div style={{ color: 'var(--muted)', fontSize: 12 }}>No audit log entries.</div>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr style={{ color: 'var(--muted)', fontSize: 11, letterSpacing: '0.08em' }}>
+                  <th style={adminTableHeaderStyle}>TIME</th>
+                  <th style={adminTableHeaderStyle}>ACTOR</th>
+                  <th style={adminTableHeaderStyle}>ACTION</th>
+                  <th style={adminTableHeaderStyle}>TARGET</th>
+                  <th style={adminTableHeaderStyle}>IP</th>
+                </tr>
+              </thead>
+              <tbody>
+                {logs.items.map(entry => {
+                  const target = `${entry.target_type} ${entry.target_id}`.trim()
+                  return (
+                    <tr key={entry.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <td style={adminTableCellStyle}>{formatLocalTimestamp(new Date(entry.created_at))}</td>
+                      <td style={adminTableCellStyle}>{entry.actor_email || entry.actor_user_id}</td>
+                      <td style={adminTableCellStyle}>{entry.action}</td>
+                      <td style={{ ...adminTableCellStyle, color: 'var(--muted)' }} title={target}>
+                        {truncateDisplayText(target, 32)}
+                      </td>
+                      <td style={{ ...adminTableCellStyle, color: 'var(--muted)' }}>{entry.ip_address || '-'}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+          <AdminPagination page={page} totalPages={totalPages} onPageChange={onPageChange} />
+        </>
+      )}
+    </div>
+  )
+}
+
+function WebhookDeliveriesTab({
+  deliveries,
+  loading,
+  error,
+  page,
+  sourceFilter,
+  statusFilter,
+  expandedRow,
+  onSourceChange,
+  onStatusChange,
+  onPageChange,
+  onRowClick,
+}: {
+  deliveries: WebhookDeliveryPage | null
+  loading: boolean
+  error: string | null
+  page: number
+  sourceFilter: string
+  statusFilter: string
+  expandedRow: string | null
+  onSourceChange: (value: string) => void
+  onStatusChange: (value: string) => void
+  onPageChange: (page: number) => void
+  onRowClick: (id: string) => void
+}) {
+  const totalPages = deliveries ? Math.max(1, Math.ceil(deliveries.total / deliveries.per_page)) : 1
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <select value={sourceFilter} onChange={event => onSourceChange(event.target.value)} style={FILTER_CONTROL_STYLE}>
+          <option value="">All Sources</option>
+          <option value="uptime_kuma">Uptime Kuma</option>
+          <option value="watchtower">Watchtower</option>
+        </select>
+        <select value={statusFilter} onChange={event => onStatusChange(event.target.value)} style={FILTER_CONTROL_STYLE}>
+          <option value="">All Statuses</option>
+          <option value="processed">Processed</option>
+          <option value="ignored">Ignored</option>
+          <option value="error">Error</option>
+        </select>
+      </div>
+
+      {loading && <div style={{ color: 'var(--muted)', fontSize: 12 }}>loading...</div>}
+      {error && <div style={{ color: 'var(--danger)', fontSize: 12 }}>{error}</div>}
+
+      {!loading && !error && deliveries && (
+        <>
+          {deliveries.items.length === 0 ? (
+            <div style={{ color: 'var(--muted)', fontSize: 12 }}>No webhook deliveries recorded.</div>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr style={{ color: 'var(--muted)', fontSize: 11, letterSpacing: '0.08em' }}>
+                  <th style={adminTableHeaderStyle}>TIME</th>
+                  <th style={adminTableHeaderStyle}>SOURCE</th>
+                  <th style={adminTableHeaderStyle}>STATUS</th>
+                  <th style={adminTableHeaderStyle}>CORRELATED ENTRY</th>
+                  <th style={adminTableHeaderStyle}>SNIPPET</th>
+                </tr>
+              </thead>
+              <tbody>
+                {deliveries.items.map(item => {
+                  const expanded = expandedRow === item.id
+                  return (
+                    <Fragment key={item.id}>
+                      <tr
+                        onClick={() => onRowClick(item.id)}
+                        style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                      >
+                        <td style={adminTableCellStyle}>{formatLocalTimestamp(new Date(item.received_at))}</td>
+                        <td style={adminTableCellStyle}>{sourceLabel(item.source)}</td>
+                        <td style={{ ...adminTableCellStyle, ...webhookStatusStyle(item.status) }}>{item.status.toUpperCase()}</td>
+                        <td style={adminTableCellStyle}>
+                          {item.matched_incident_id ? (
+                            <span title={item.matched_incident_id} style={{ color: 'var(--accent)', fontFamily: 'monospace' }}>
+                              {item.matched_incident_id.slice(0, 8)}
+                            </span>
+                          ) : <span style={{ color: 'var(--muted)' }}>-</span>}
+                        </td>
+                        <td style={{ ...adminTableCellStyle, color: 'var(--muted)' }}>{truncateDisplayText(item.payload_snippet, 80)}</td>
+                      </tr>
+                      {expanded && (
+                        <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface)' }}>
+                          <td colSpan={5} style={{ padding: '8px 12px' }}>
+                            {item.error_message && (
+                              <div style={{ marginBottom: 6, color: 'var(--danger)', fontSize: 11 }}>
+                                ERROR: {item.error_message}
+                              </div>
+                            )}
+                            <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--muted)', fontFamily: 'inherit', fontSize: 11 }}>
+                              {item.payload_snippet}
+                            </pre>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+          <AdminPagination page={page} totalPages={totalPages} onPageChange={onPageChange} />
+        </>
+      )}
+    </div>
+  )
+}
+
+function AdminPagination({ page, totalPages, onPageChange }: { page: number; totalPages: number; onPageChange: (page: number) => void }) {
+  return (
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12 }}>
+      <button type="button" disabled={page <= 1} onClick={() => onPageChange(page - 1)} style={actionBtnStyle}>PREV</button>
+      <span style={{ color: 'var(--muted)' }}>PAGE {page} OF {totalPages}</span>
+      <button type="button" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)} style={actionBtnStyle}>NEXT</button>
+    </div>
+  )
+}
+
+function sourceLabel(source: string) {
+  if (source === 'uptime_kuma') return 'UPTIME KUMA'
+  if (source === 'watchtower') return 'WATCHTOWER'
+  return source.toUpperCase()
+}
+
+function webhookStatusStyle(status: string): CSSProperties {
+  if (status === 'processed') return { color: 'var(--success)' }
+  if (status === 'error') return { color: 'var(--danger)' }
+  return { color: 'var(--muted)' }
+}
+function SettingsTab({ section }: { section: 'ai' | 'filewatcher' }) {
   const [redactSecrets, setRedactSecrets] = useState(true)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -1729,7 +2317,7 @@ function SettingsTab() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-      <section style={panelStyle}>
+      {section === 'filewatcher' && <section style={panelStyle}>
         <div style={panelHeaderStyle}>
           <span style={panelLabelStyle}>FILE WATCHER</span>
         </div>
@@ -1793,9 +2381,10 @@ function SettingsTab() {
             </button>
           </>
         )}
-      </section>
+      </section>}
 
-      <section style={panelStyle}>
+      {section === 'ai' && <>
+        <section style={panelStyle}>
         <h3 style={{ fontSize: 11, color: 'var(--muted)', letterSpacing: '0.1em', margin: '0 0 12px 0' }}>
           AI PROVIDER
         </h3>
@@ -2066,6 +2655,7 @@ function SettingsTab() {
           </div>
         )}
       </section>
+      </>}
     </div>
   )
 }
@@ -2134,4 +2724,16 @@ const actionBtnStyle: CSSProperties = {
   fontFamily: 'inherit',
   cursor: 'pointer',
   letterSpacing: '0.05em',
+}
+
+const adminTableHeaderStyle: CSSProperties = {
+  textAlign: 'left',
+  padding: '4px 8px',
+  borderBottom: '1px solid var(--border)',
+}
+
+const adminTableCellStyle: CSSProperties = {
+  padding: '6px 8px',
+  color: 'var(--text)',
+  verticalAlign: 'top',
 }

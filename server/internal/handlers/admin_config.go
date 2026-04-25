@@ -23,6 +23,7 @@ const aiURLKey = "ai_url"
 const aiModelKey = "ai_model"
 const aiAPIKeyKey = "ai_api_key"
 const aiModeKey = "ai_mode"
+const baseURLKey = "base_url"
 const mcpEnabledKey = "mcp_enabled"
 const mcpPortKey = "mcp_port"
 const mcpAuthTokenKey = "mcp_auth_token"
@@ -62,6 +63,11 @@ func AdminConfig(db *gorm.DB, webhookSecret string, mcpMgr *mcppkg.MCPManager) h
 			writeError(w, http.StatusInternalServerError, "failed to load admin config")
 			return
 		}
+		var baseURLSetting models.AppSetting
+		baseURL := ""
+		if err := db.First(&baseURLSetting, "key = ?", baseURLKey).Error; err == nil {
+			baseURL = strings.TrimSpace(baseURLSetting.Value)
+		}
 		mcpSettings, err := getMCPSettings(db)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to load admin config")
@@ -84,6 +90,7 @@ func AdminConfig(db *gorm.DB, webhookSecret string, mcpMgr *mcppkg.MCPManager) h
 			"ai_model":                    ai.model,
 			"ai_api_key_set":              ai.apiKeySet,
 			"ai_mode":                     ai.mode,
+			"base_url":                    baseURL,
 			"mcp_enabled":                 mcpSettings.enabled,
 			"mcp_port":                    mcpSettings.port,
 			"mcp_auth_token_set":          mcpSettings.tokenSet,
@@ -196,6 +203,34 @@ func RegenerateMCPToken(db *gorm.DB, mcpMgr *mcppkg.MCPManager) http.HandlerFunc
 		if err := json.NewEncoder(w).Encode(map[string]string{"mcp_auth_token_suffix": tokenSuffix(newToken)}); err != nil {
 			log.Printf("RegenerateMCPToken encode: %v", err)
 		}
+	}
+}
+
+func UpdateBaseURLSetting(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			BaseURL string `json:"base_url"`
+		}
+		if !decodeJSONBody(w, r, 4<<10, &req) {
+			return
+		}
+
+		value := strings.TrimSpace(req.BaseURL)
+		if value != "" {
+			parsed, err := url.ParseRequestURI(value)
+			if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+				writeError(w, http.StatusBadRequest, "base_url must be a valid absolute URL or empty")
+				return
+			}
+			value = strings.TrimRight(value, "/")
+		}
+
+		setting := models.AppSetting{Key: baseURLKey, Value: value, UpdatedAt: time.Now()}
+		if err := db.Save(&setting).Error; err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to save base_url")
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	}
 }
 

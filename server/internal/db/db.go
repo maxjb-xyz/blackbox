@@ -62,27 +62,21 @@ func Init(path string) (*gorm.DB, error) {
 		&models.IncidentEntry{},
 		&models.SystemdUnitConfig{},
 		&models.NotificationDest{},
+		&models.ExcludedTarget{},
+		&models.AuditLog{},
+		&models.WebhookDelivery{},
 	); err != nil {
 		return nil, err
 	}
 	if err := ensureEntryIndexes(database); err != nil {
 		return nil, err
 	}
-	// Create FTS5 virtual table for full-text search over entry content
-	if err := database.Exec(`CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(content, content='entries', content_rowid='rowid')`).Error; err != nil {
-		return nil, fmt.Errorf("create entries_fts: %w", err)
+	if err := ensureExcludedTargetIndexes(database); err != nil {
+		return nil, err
 	}
-	// Triggers to keep entries_fts in sync
-	database.Exec(`CREATE TRIGGER IF NOT EXISTS entries_ai AFTER INSERT ON entries BEGIN
-    INSERT INTO entries_fts(rowid, content) VALUES (new.rowid, new.content);
-END`)
-	database.Exec(`CREATE TRIGGER IF NOT EXISTS entries_ad AFTER DELETE ON entries BEGIN
-    INSERT INTO entries_fts(entries_fts, rowid, content) VALUES('delete', old.rowid, old.content);
-END`)
-	database.Exec(`CREATE TRIGGER IF NOT EXISTS entries_au AFTER UPDATE ON entries BEGIN
-    INSERT INTO entries_fts(entries_fts, rowid, content) VALUES('delete', old.rowid, old.content);
-    INSERT INTO entries_fts(rowid, content) VALUES (new.rowid, new.content);
-END`)
+	if err := EnsureEntriesFTS(database); err != nil {
+		return nil, err
+	}
 	return database, nil
 }
 
@@ -98,6 +92,13 @@ func ensureEntryIndexes(database *gorm.DB) error {
 		}
 	}
 	return nil
+}
+
+func ensureExcludedTargetIndexes(database *gorm.DB) error {
+	return database.Exec(`
+CREATE UNIQUE INDEX IF NOT EXISTS idx_excluded_targets_type_lower_name
+ON excluded_targets(type, lower(name));
+`).Error
 }
 
 func ensureWritablePath(path string) error {

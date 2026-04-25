@@ -26,7 +26,7 @@ func TestBuildSlackPayload_ConfirmedOpen(t *testing.T) {
 		Metadata:   "{}",
 	}
 
-	payload := BuildSlackPayload(inc, false)
+	payload := BuildSlackPayload(inc, EventIncidentOpenedConfirmed, "", false)
 
 	require.Len(t, payload.Attachments, 1)
 	assert.Equal(t, "#ED4245", payload.Attachments[0].Color)
@@ -47,16 +47,34 @@ func TestBuildSlackPayload_Resolved(t *testing.T) {
 		Metadata:   "{}",
 	}
 
-	payload := BuildSlackPayload(inc, false)
+	payload := BuildSlackPayload(inc, EventIncidentOpenedConfirmed, "", false)
 
 	assert.Equal(t, "#57F287", payload.Attachments[0].Color)
 }
 
 func TestBuildSlackPayload_Test(t *testing.T) {
-	payload := BuildSlackPayload(models.Incident{}, true)
+	payload := BuildSlackPayload(models.Incident{}, EventIncidentOpenedConfirmed, "", true)
 
 	require.Len(t, payload.Attachments, 1)
 	assert.Equal(t, "#5865F2", payload.Attachments[0].Color)
+}
+
+func TestBuildSlackPayload_AIReviewGenerated_WithSummaryAndTitleLink(t *testing.T) {
+	payload := BuildSlackPayload(models.Incident{
+		ID:         "s3",
+		Status:     "open",
+		Confidence: "confirmed",
+		Title:      "nginx AI review",
+		Services:   `["nginx"]`,
+		NodeNames:  `["n1"]`,
+		OpenedAt:   time.Now(),
+		Metadata:   `{"ai_analysis":"Root cause: OOM kill."}`,
+	}, EventAIReviewGenerated, "https://blackbox.example.com/incidents/s3", false)
+
+	require.Len(t, payload.Attachments, 1)
+	attachment := payload.Attachments[0]
+	assert.Equal(t, "https://blackbox.example.com/incidents/s3", attachment.TitleLink)
+	assert.Contains(t, attachment.Fields, slackField{Title: "AI Analysis", Value: "Root cause: OOM kill.", Short: false})
 }
 
 func TestSendSlack_PostsPayload(t *testing.T) {
@@ -78,7 +96,7 @@ func TestSendSlack_PostsPayload(t *testing.T) {
 		NodeNames:  `["node"]`,
 		OpenedAt:   time.Now(),
 		Metadata:   "{}",
-	}, false)
+	}, EventIncidentOpenedConfirmed, "", false)
 	require.NoError(t, err)
 
 	var payload map[string]any
@@ -97,7 +115,7 @@ func TestSendSlack_ReturnsErrorOnNon2xx(t *testing.T) {
 		Services:  `[]`,
 		NodeNames: `[]`,
 		Metadata:  "{}",
-	}, false)
+	}, EventIncidentOpenedConfirmed, "", false)
 
 	assert.Error(t, err)
 }
