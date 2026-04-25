@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"blackbox/server/internal/handlers"
 	"blackbox/server/internal/hub"
 	"blackbox/server/internal/incidents"
+	bbmcp "blackbox/server/internal/mcp"
 	"blackbox/server/internal/middleware"
 	"blackbox/server/internal/models"
 	"blackbox/server/internal/notify"
@@ -24,6 +26,7 @@ import (
 	"blackbox/shared/timezone"
 	"github.com/go-chi/chi/v5"
 	"github.com/oklog/ulid/v2"
+	"gorm.io/gorm"
 )
 
 //go:embed web/dist
@@ -87,6 +90,14 @@ func main() {
 		log.Fatalf("database init failed: %v", err)
 	}
 	log.Printf("database initialized at %s", dbPath)
+	mcpMgr := bbmcp.NewMCPManager(database)
+	defer func() {
+		if err := mcpMgr.Shutdown(context.Background()); err != nil {
+			log.Printf("mcp: shutdown failed: %v", err)
+		}
+	}()
+	restoreMCPState(database, mcpMgr)
+
 	db.StartOIDCStateSweeper(rootCtx, database)
 	eventHub := hub.New()
 	notifier := notify.NewDispatcher(database)
@@ -222,7 +233,7 @@ func main() {
 		r.Patch("/api/admin/users/{id}", handlers.UpdateAdminUser(database, eventHub))
 		r.Post("/api/admin/users/{id}/force-logout", handlers.ForceLogoutUser(database, eventHub))
 		r.Delete("/api/admin/users/{id}", handlers.DeleteAdminUser(database, eventHub))
-		r.Get("/api/admin/config", handlers.AdminConfig(database, webhookSecret))
+		r.Get("/api/admin/config", handlers.AdminConfig(database, webhookSecret, mcpMgr))
 		r.Put("/api/admin/settings/file-watcher", handlers.UpdateFileWatcherSettings(database))
 		r.Put("/api/admin/settings/base-url", handlers.UpdateBaseURLSetting(database))
 		r.Get("/api/admin/settings/systemd", handlers.GetSystemdSettings(database))
@@ -230,6 +241,8 @@ func main() {
 		r.Put("/api/admin/settings/ai", handlers.UpdateAISettings(database))
 		r.Post("/api/admin/settings/ai/test", handlers.TestAISettings(database))
 		r.Put("/api/admin/settings/ollama", handlers.UpdateOllamaSettingsLegacy(database)) // deprecated alias
+		r.Put("/api/admin/settings/mcp", handlers.UpdateMCPSettings(database, mcpMgr))
+		r.Post("/api/admin/settings/mcp/regenerate-token", handlers.RegenerateMCPToken(database, mcpMgr))
 		r.Get("/api/admin/oidc/providers", handlers.ListOIDCProviders(database))
 		r.Post("/api/admin/oidc/providers", handlers.CreateOIDCProvider(database, registry))
 		r.Patch("/api/admin/oidc/providers/{id}", handlers.UpdateOIDCProvider(database, registry))
@@ -303,4 +316,26 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func restoreMCPState(database *gorm.DB, mcpMgr *bbmcp.MCPManager) {
+	var settings []models.AppSetting
+	if err := database.Where("key IN ?", []string{"mcp_enabled", "mcp_port", "mcp_auth_token"}).Find(&settings).Error; err != nil {
+		log.Printf("mcp: failed to load startup settings: %v", err)
+		return
+	}
+	m := make(map[string]string, len(settings))
+	for _, s := range settings {
+		m[s.Key] = s.Value
+	}
+	if m["mcp_enabled"] != "true" || m["mcp_auth_token"] == "" {
+		return
+	}
+	port := 3001
+	if p, err := strconv.Atoi(m["mcp_port"]); err == nil && p >= 1024 && p <= 65535 {
+		port = p
+	}
+	if err := mcpMgr.ApplySettings(true, port, m["mcp_auth_token"]); err != nil {
+		log.Printf("mcp: failed to restore state on startup: %v", err)
+	}
 }
