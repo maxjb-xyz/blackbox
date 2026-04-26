@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode"
 
 	"blackbox/shared/types"
 )
@@ -214,6 +215,11 @@ func sanitizeCapabilities(capabilities []string) ([]string, error) {
 		}
 		if strings.Contains(capability, ",") {
 			return nil, fmt.Errorf("invalid capability %q: capability values must not contain commas", capability)
+		}
+		for _, r := range capability {
+			if r < 0x20 || r == 0x7f || unicode.IsControl(r) {
+				return nil, fmt.Errorf("invalid capability %q: capability values must not contain control characters", capability)
+			}
 		}
 		cleaned = append(cleaned, capability)
 	}

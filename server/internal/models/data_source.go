@@ -16,11 +16,11 @@ var agentScopedSingletonSourceTypes = []string{"docker", "systemd", "filewatcher
 var serverScopedSingletonSourceTypes = []string{"webhook_uptime_kuma", "webhook_watchtower"}
 
 func GetAgentScopedSingletonSourceTypes() []string {
-	return append([]string(nil), agentScopedSingletonSourceTypes...)
+	return slices.Clone(agentScopedSingletonSourceTypes)
 }
 
 func GetServerScopedSingletonSourceTypes() []string {
-	return append([]string(nil), serverScopedSingletonSourceTypes...)
+	return slices.Clone(serverScopedSingletonSourceTypes)
 }
 
 // DataSourceInstance is a configured instance of a source type.

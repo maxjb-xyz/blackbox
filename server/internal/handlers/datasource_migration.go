@@ -12,13 +12,24 @@ import (
 	"blackbox/server/internal/models"
 	"github.com/oklog/ulid/v2"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+const dataSourcesMigratedKey = "data_sources_migrated"
 
 // MigrateDataSources seeds data_source_instances from legacy tables.
 // Safe to call on every startup — skips rows that already exist.
 func MigrateDataSources(db *gorm.DB, envWebhookSecret string) error {
 	return db.Transaction(func(tx *gorm.DB) error {
 		now := time.Now().UTC()
+		var migrationSetting models.AppSetting
+		if err := tx.First(&migrationSetting, "key = ?", dataSourcesMigratedKey).Error; err == nil {
+			if strings.EqualFold(migrationSetting.Value, "true") {
+				return nil
+			}
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("load migration marker: %w", err)
+		}
 
 		// 1. Systemd: one instance per node in systemd_unit_configs
 		var systemdConfigs []models.SystemdUnitConfig
@@ -78,7 +89,17 @@ func MigrateDataSources(db *gorm.DB, envWebhookSecret string) error {
 		for _, node := range nodes {
 			nodeName := node.Name
 			if !nodeHasCapability(node.Capabilities, "filewatcher") {
-				continue
+				if strings.TrimSpace(node.Capabilities) == "" || node.Capabilities == "[]" {
+					capsJSON, err := json.Marshal([]string{"filewatcher"})
+					if err != nil {
+						return fmt.Errorf("marshal capabilities for %s: %w", nodeName, err)
+					}
+					if err := tx.Model(&models.Node{}).Where("name = ?", nodeName).Update("capabilities", string(capsJSON)).Error; err != nil {
+						return fmt.Errorf("update capabilities for %s: %w", nodeName, err)
+					}
+				} else {
+					continue
+				}
 			}
 			var existing models.DataSourceInstance
 			err := tx.Where("type = ? AND node_id = ?", "filewatcher", nodeName).First(&existing).Error
@@ -102,7 +123,7 @@ func MigrateDataSources(db *gorm.DB, envWebhookSecret string) error {
 		// 3. Webhook instances
 		for _, wType := range []string{"webhook_uptime_kuma", "webhook_watchtower"} {
 			var existing models.DataSourceInstance
-			err := tx.Where("type = ?", wType).First(&existing).Error
+			err := tx.Where("type = ? AND scope = ?", wType, models.ScopeServer).First(&existing).Error
 			if err == nil {
 				continue
 			}
@@ -128,7 +149,17 @@ func MigrateDataSources(db *gorm.DB, envWebhookSecret string) error {
 			}
 		}
 
-		return nil
+		return tx.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "key"}},
+			DoUpdates: clause.Assignments(map[string]any{
+				"value":      "true",
+				"updated_at": now,
+			}),
+		}).Create(&models.AppSetting{
+			Key:       dataSourcesMigratedKey,
+			Value:     "true",
+			UpdatedAt: now,
+		}).Error
 	})
 }
 

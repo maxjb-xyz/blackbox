@@ -162,7 +162,6 @@ func TestRefreshFileWatcherSettingsKeepsExistingSettingsOnFetchFailure(t *testin
 		}),
 	})
 	settings := files.NewSettings(false)
-	settings.SetEnabled(true)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

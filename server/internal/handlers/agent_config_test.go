@@ -7,19 +7,18 @@ import (
 	"testing"
 	"time"
 
+	dbpkg "blackbox/server/internal/db"
 	"blackbox/server/internal/handlers"
 	"blackbox/server/internal/middleware"
 	"blackbox/server/internal/models"
-	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
 
 func newAgentConfigTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := dbpkg.Init(":memory:")
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.Node{}, &models.DataSourceInstance{}, &models.AppSetting{}, &models.SystemdUnitConfig{}))
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sqlDB.Close() })

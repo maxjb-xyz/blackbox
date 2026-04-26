@@ -188,6 +188,17 @@ func TestGetAgentConfig_RejectsCapabilitiesWithCommas(t *testing.T) {
 	}
 }
 
+func TestGetAgentConfig_RejectsCapabilitiesWithControlCharacters(t *testing.T) {
+	c := client.New("http://example.invalid", "test-token", "node-1")
+	_, err := c.GetAgentConfig(context.Background(), []string{"docker", "bad\ncap"})
+	if err == nil {
+		t.Fatal("expected error for capability containing control character, got nil")
+	}
+	if !strings.Contains(err.Error(), "control characters") {
+		t.Fatalf("error = %q, want control-character validation message", err)
+	}
+}
+
 func TestGetAgentConfig_FourXXReturnsPermanentError(t *testing.T) {
 	for _, status := range []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden} {
 		status := status

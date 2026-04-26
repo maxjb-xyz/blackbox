@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"strings"
 	"sync"
 
 	"golang.org/x/sync/singleflight"
@@ -9,23 +10,20 @@ import (
 
 var (
 	webhookSecretCache     sync.Map
-	webhookSecretFallbacks sync.Map
 	webhookSecretRefreshes singleflight.Group
 )
 
-func PrimeWebhookSecretCache(db *gorm.DB, sourceType, envFallback string) string {
-	webhookSecretFallbacks.Store(sourceType, envFallback)
+func PrimeWebhookSecretCache(db *gorm.DB, sourceType string) string {
 	return RefreshWebhookSecretCache(db, sourceType)
 }
 
-func GetCachedWebhookSecret(db *gorm.DB, sourceType, envFallback string) string {
+func GetCachedWebhookSecret(db *gorm.DB, sourceType string) string {
 	if cached, ok := webhookSecretCache.Load(sourceType); ok {
 		if secret, ok := cached.(string); ok {
 			return secret
 		}
 		webhookSecretCache.Delete(sourceType)
 	}
-	webhookSecretFallbacks.LoadOrStore(sourceType, envFallback)
 	return RefreshWebhookSecretCache(db, sourceType)
 }
 
@@ -38,23 +36,18 @@ func RefreshWebhookSecretCache(db *gorm.DB, sourceType string) string {
 	if secret, ok := resolved.(string); ok {
 		return secret
 	}
-	return loadWebhookSecretFallback(sourceType)
+	return ""
 }
 
 func refreshWebhookSecretCacheIfNeeded(db *gorm.DB, sourceType string) {
-	if sourceType == "" || db == nil {
+	if sourceType == "" || db == nil || !strings.HasPrefix(sourceType, "webhook_") {
 		return
 	}
-	if _, ok := webhookSecretFallbacks.Load(sourceType); ok {
-		RefreshWebhookSecretCache(db, sourceType)
-	}
+	RefreshWebhookSecretCache(db, sourceType)
 }
 
-func loadWebhookSecretFallback(sourceType string) string {
-	if fallback, ok := webhookSecretFallbacks.Load(sourceType); ok {
-		if secret, ok := fallback.(string); ok {
-			return secret
-		}
+func ResetWebhookSecretCacheForTesting(sourceTypes ...string) {
+	for _, sourceType := range sourceTypes {
+		webhookSecretCache.Delete(sourceType)
 	}
-	return ""
 }

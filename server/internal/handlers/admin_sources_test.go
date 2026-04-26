@@ -68,6 +68,19 @@ func TestCreateSource_UnknownType(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, w.Code)
 }
 
+func TestCreateSource_WhitespaceNameRejected(t *testing.T) {
+	db := newSourcesTestDB(t)
+	body, _ := json.Marshal(map[string]any{
+		"type": "filewatcher", "scope": "agent", "node_id": "homelab-01",
+		"name": "   ", "config": map[string]any{"redact_secrets": false},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/sources", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	handlers.CreateSource(db)(w, req)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+}
+
 func TestUpdateSource(t *testing.T) {
 	db := newSourcesTestDB(t)
 	nodeName := "homelab-01"
@@ -125,7 +138,7 @@ func TestUpdateSource_PreservesSensitiveConfigWhenOmitted(t *testing.T) {
 	require.NotContains(t, respInst.Config, "keep-me")
 }
 
-func TestUpdateSource_PreservesSensitiveConfigWhenNullOrNonString(t *testing.T) {
+func TestUpdateSource_RejectsSensitiveConfigWhenNullOrNonString(t *testing.T) {
 	db := newSourcesTestDB(t)
 	inst := models.DataSourceInstance{
 		ID: "testid", Type: "webhook_uptime_kuma", Scope: "server",
@@ -139,34 +152,28 @@ func TestUpdateSource_PreservesSensitiveConfigWhenNullOrNonString(t *testing.T) 
 		"non-string": `{"config":{"secret":123,"note":"updated"}}`,
 	} {
 		t.Run(name, func(t *testing.T) {
-			require.NoError(t, db.Model(&models.DataSourceInstance{}).Where("id = ?", "testid").Update("config", `{"secret":"keep-me","note":"existing"}`).Error)
-
 			r := chi.NewRouter()
 			r.Put("/api/admin/sources/{id}", handlers.UpdateSource(db))
 			req := httptest.NewRequest(http.MethodPut, "/api/admin/sources/testid", bytes.NewReader([]byte(body)))
 			req.Header.Set("Content-Type", "application/json")
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, req)
-			require.Equal(t, http.StatusOK, w.Code)
-
-			var updated models.DataSourceInstance
-			require.NoError(t, db.First(&updated, "id = ?", "testid").Error)
-			var cfg map[string]any
-			require.NoError(t, json.Unmarshal([]byte(updated.Config), &cfg))
-			require.Equal(t, "updated", cfg["note"])
-			require.Equal(t, "keep-me", cfg["secret"])
+			require.Equal(t, http.StatusBadRequest, w.Code)
 		})
 	}
 }
 
 func TestUpdateSource_DisablingWebhookClearsRuntimeSecretCache(t *testing.T) {
 	db := newSourcesTestDB(t)
+	t.Cleanup(func() {
+		handlers.ResetWebhookSecretCacheForTesting("webhook_uptime_kuma")
+	})
 	inst := models.DataSourceInstance{
 		ID: "testid", Type: "webhook_uptime_kuma", Scope: "server",
 		Name: "UK", Config: `{"secret":"keep-me"}`, Enabled: true,
 	}
 	require.NoError(t, db.Create(&inst).Error)
-	require.Equal(t, "keep-me", handlers.PrimeWebhookSecretCache(db, "webhook_uptime_kuma", ""))
+	require.Equal(t, "keep-me", handlers.PrimeWebhookSecretCache(db, "webhook_uptime_kuma"))
 
 	r := chi.NewRouter()
 	r.Put("/api/admin/sources/{id}", handlers.UpdateSource(db))
@@ -176,7 +183,7 @@ func TestUpdateSource_DisablingWebhookClearsRuntimeSecretCache(t *testing.T) {
 	r.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 
-	require.Equal(t, "", handlers.GetCachedWebhookSecret(db, "webhook_uptime_kuma", ""))
+	require.Equal(t, "", handlers.GetCachedWebhookSecret(db, "webhook_uptime_kuma"))
 }
 
 func TestDeleteSource(t *testing.T) {
@@ -197,11 +204,14 @@ func TestDeleteSource(t *testing.T) {
 
 func TestDeleteSource_ClearsRuntimeWebhookSecretCache(t *testing.T) {
 	db := newSourcesTestDB(t)
+	t.Cleanup(func() {
+		handlers.ResetWebhookSecretCacheForTesting("webhook_uptime_kuma")
+	})
 	require.NoError(t, db.Create(&models.DataSourceInstance{
 		ID: "wh1", Type: "webhook_uptime_kuma", Scope: "server",
 		Name: "UK", Config: `{"secret":"db-secret"}`, Enabled: true,
 	}).Error)
-	require.Equal(t, "db-secret", handlers.PrimeWebhookSecretCache(db, "webhook_uptime_kuma", ""))
+	require.Equal(t, "db-secret", handlers.PrimeWebhookSecretCache(db, "webhook_uptime_kuma"))
 
 	r := chi.NewRouter()
 	r.Delete("/api/admin/sources/{id}", handlers.DeleteSource(db))
@@ -210,7 +220,7 @@ func TestDeleteSource_ClearsRuntimeWebhookSecretCache(t *testing.T) {
 	r.ServeHTTP(w, req)
 	require.Equal(t, http.StatusNoContent, w.Code)
 
-	require.Equal(t, "", handlers.GetCachedWebhookSecret(db, "webhook_uptime_kuma", ""))
+	require.Equal(t, "", handlers.GetCachedWebhookSecret(db, "webhook_uptime_kuma"))
 }
 
 func TestCreateSource_SingletonEnforced(t *testing.T) {
@@ -456,6 +466,46 @@ func TestUpdateSource_EmptyNameRejected(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	require.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestUpdateSource_WhitespaceNameRejected(t *testing.T) {
+	db := newSourcesTestDB(t)
+	nodeName := "homelab-01"
+	inst := models.DataSourceInstance{
+		ID: "testid", Type: "filewatcher", Scope: "agent", NodeID: &nodeName,
+		Name: "watcher", Config: `{"redact_secrets":true}`, Enabled: true,
+	}
+	require.NoError(t, db.Create(&inst).Error)
+
+	r := chi.NewRouter()
+	r.Put("/api/admin/sources/{id}", handlers.UpdateSource(db))
+	req := httptest.NewRequest(http.MethodPut, "/api/admin/sources/testid", bytes.NewReader([]byte(`{"name":"   "}`)))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestCreateSource_SystemdRequiresUnitsArray(t *testing.T) {
+	db := newSourcesTestDB(t)
+	raw := []byte(`{"type":"systemd","scope":"agent","node_id":"homelab-01","name":"systemd","config":{"units":"nginx.service"},"enabled":true}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/sources", bytes.NewReader(raw))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	handlers.CreateSource(db)(w, req)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Contains(t, w.Body.String(), "units must be an array of strings")
+}
+
+func TestCreateSource_WebhookRequiresStringSecret(t *testing.T) {
+	db := newSourcesTestDB(t)
+	raw := []byte(`{"type":"webhook_uptime_kuma","scope":"server","name":"UK","config":{"secret":123},"enabled":true}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/sources", bytes.NewReader(raw))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	handlers.CreateSource(db)(w, req)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Contains(t, w.Body.String(), "secret must be a string")
 }
 
 func TestUpdateSource_FileWatcherEmptyPartialConfigPreservesRedactSecrets(t *testing.T) {

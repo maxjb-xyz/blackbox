@@ -76,15 +76,21 @@ func TestMigrateDataSources_FileWatcherPerNode(t *testing.T) {
 	require.True(t, cfg.RedactSecrets)
 }
 
-func TestMigrateDataSources_FileWatcherDisabledWithoutCapability(t *testing.T) {
+func TestMigrateDataSources_FileWatcherSeedsLegacyNodeWithEmptyCapabilities(t *testing.T) {
 	db := newMigrationTestDB(t)
 
 	require.NoError(t, db.Create(&models.Node{ID: "n1", Name: "homelab-01", Capabilities: "[]"}).Error)
 	require.NoError(t, handlers.MigrateDataSources(db, ""))
 
-	var count int64
-	require.NoError(t, db.Model(&models.DataSourceInstance{}).Where("type = ?", "filewatcher").Count(&count).Error)
-	require.Equal(t, int64(0), count)
+	var instances []models.DataSourceInstance
+	require.NoError(t, db.Where("type = ?", "filewatcher").Find(&instances).Error)
+	require.Len(t, instances, 1)
+	require.NotNil(t, instances[0].NodeID)
+	require.Equal(t, "homelab-01", *instances[0].NodeID)
+
+	var node models.Node
+	require.NoError(t, db.Where("name = ?", "homelab-01").First(&node).Error)
+	require.Equal(t, `["filewatcher"]`, node.Capabilities)
 }
 
 func TestMigrateDataSources_WebhookInstances(t *testing.T) {
@@ -125,4 +131,21 @@ func TestMigrateDataSources_Idempotent(t *testing.T) {
 		require.NoError(t, db.Model(&models.DataSourceInstance{}).Where("type = ?", sourceType).Count(&count).Error)
 		require.Equal(t, int64(1), count, "unexpected count for %s", sourceType)
 	}
+}
+
+func TestMigrateDataSources_DoesNotRecreateDeletedFileWatcherAfterMarker(t *testing.T) {
+	db := newMigrationTestDB(t)
+	require.NoError(t, db.Create(&models.Node{ID: "n1", Name: "homelab-01", Capabilities: `["filewatcher"]`}).Error)
+
+	require.NoError(t, handlers.MigrateDataSources(db, ""))
+
+	var inst models.DataSourceInstance
+	require.NoError(t, db.Where("type = ? AND node_id = ?", "filewatcher", "homelab-01").First(&inst).Error)
+	require.NoError(t, db.Delete(&models.DataSourceInstance{}, "id = ?", inst.ID).Error)
+
+	require.NoError(t, handlers.MigrateDataSources(db, ""))
+
+	var count int64
+	require.NoError(t, db.Model(&models.DataSourceInstance{}).Where("type = ? AND node_id = ?", "filewatcher", "homelab-01").Count(&count).Error)
+	require.Equal(t, int64(0), count)
 }

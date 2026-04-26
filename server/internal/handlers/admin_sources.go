@@ -150,6 +150,7 @@ func CreateSource(db *gorm.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "docker is a virtual source and cannot be created")
 			return
 		}
+		req.Name = strings.TrimSpace(req.Name)
 		if req.Name == "" {
 			writeError(w, http.StatusBadRequest, "name is required")
 			return
@@ -256,11 +257,12 @@ func UpdateSource(db *gorm.DB) http.HandlerFunc {
 			return
 		}
 		if req.Name != nil {
-			if *req.Name == "" {
+			trimmedName := strings.TrimSpace(*req.Name)
+			if trimmedName == "" {
 				writeError(w, http.StatusBadRequest, "name is required")
 				return
 			}
-			inst.Name = *req.Name
+			inst.Name = trimmedName
 		}
 		if len(req.Config) > 0 {
 			var incoming map[string]any
@@ -313,6 +315,10 @@ func DeleteSource(db *gorm.DB) http.HandlerFunc {
 		result := db.Delete(&models.DataSourceInstance{}, "id = ?", id)
 		if result.Error != nil {
 			writeError(w, http.StatusInternalServerError, "failed to delete source")
+			return
+		}
+		if result.RowsAffected == 0 {
+			writeError(w, http.StatusNotFound, "source not found")
 			return
 		}
 		refreshWebhookSecretCacheIfNeeded(db, inst.Type)
@@ -420,6 +426,31 @@ func mergeSourceConfig(sourceType, existingConfig string, incoming map[string]an
 }
 
 func validateSourceConfig(sourceType string, config map[string]any) error {
+	if sourceType == "systemd" {
+		rawValue, ok := config["units"]
+		if !ok {
+			return errors.New("units is required")
+		}
+		units, ok := rawValue.([]any)
+		if !ok {
+			return errors.New("units must be an array of strings")
+		}
+		for _, unit := range units {
+			unitStr, ok := unit.(string)
+			if !ok || strings.TrimSpace(unitStr) == "" {
+				return errors.New("units must be an array of strings")
+			}
+		}
+	}
+	if strings.HasPrefix(sourceType, "webhook_") {
+		rawValue, ok := config["secret"]
+		if !ok {
+			return errors.New("secret is required")
+		}
+		if _, ok := rawValue.(string); !ok {
+			return errors.New("secret must be a string")
+		}
+	}
 	if sourceType == "filewatcher" {
 		rawValue, ok := config["redact_secrets"]
 		if !ok {

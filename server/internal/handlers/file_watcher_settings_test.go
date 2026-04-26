@@ -32,6 +32,7 @@ func TestAgentConfig_DefaultsToRedactionEnabled(t *testing.T) {
 	var resp map[string]interface{}
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
 	assert.Equal(t, true, resp["file_watcher_redact_secrets"])
+	assert.Equal(t, true, resp["file_watcher_enabled"])
 }
 
 func TestUpdateFileWatcherSettings_PersistsValue(t *testing.T) {
@@ -127,6 +128,9 @@ func TestAgentConfig_DeletedMigratedSystemdSourceDoesNotReviveLegacyUnits(t *tes
 		Units:    `["nginx.service","redis.service"]`,
 	}).Error)
 	require.NoError(t, handlers.MigrateDataSources(database, ""))
+	var legacyCount int64
+	require.NoError(t, database.Model(&models.SystemdUnitConfig{}).Where("node_name = ?", nodeName).Count(&legacyCount).Error)
+	require.Equal(t, int64(0), legacyCount)
 
 	var inst models.DataSourceInstance
 	require.NoError(t, database.Where("type = ? AND node_id = ?", "systemd", nodeName).First(&inst).Error)

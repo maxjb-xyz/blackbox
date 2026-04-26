@@ -49,6 +49,8 @@ export default function DataSourcesGroup() {
   const [excludeType, setExcludeType] = useState<'container' | 'stack'>('container')
   const [excludeError, setExcludeError] = useState<string | null>(null)
   const [addingExclude, setAddingExclude] = useState(false)
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null)
+  const [confirmingExcludeId, setConfirmingExcludeId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -106,12 +108,16 @@ export default function DataSourcesGroup() {
 
   async function handleDelete(id: string) {
     if (saving) return
-    if (!confirm('Remove this source?')) return
+    if (confirmingDeleteId !== id) {
+      setConfirmingDeleteId(id)
+      return
+    }
     setSaving(true)
     setSaveError(null)
     try {
       await deleteSource(id)
       setSelection(null)
+      setConfirmingDeleteId(null)
       await load()
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : 'Delete failed')
@@ -232,8 +238,10 @@ export default function DataSourcesGroup() {
             instance={selectedInstance}
             saving={saving}
             saveError={saveError}
+            deleteConfirming={confirmingDeleteId === selectedInstance.id}
             onSave={(input) => handleSave(selectedInstance.id, input)}
             onDelete={() => handleDelete(selectedInstance.id)}
+            onCancelDelete={() => setConfirmingDeleteId(null)}
           />
         )}
 
@@ -265,15 +273,22 @@ export default function DataSourcesGroup() {
               }
             }}
             onRemoveExclude={async (id) => {
+              if (confirmingExcludeId !== id) {
+                setConfirmingExcludeId(id)
+                return
+              }
               setExcludeError(null)
               try {
                 await deleteExcludedTarget(id)
+                setConfirmingExcludeId(null)
                 await loadExcludes()
               } catch (error) {
                 console.error('Failed to delete excluded target', error)
                 setExcludeError(error instanceof Error ? error.message : 'Failed to delete')
               }
             }}
+            confirmingExcludeId={confirmingExcludeId}
+            onCancelRemoveExclude={() => setConfirmingExcludeId(null)}
           />
         )}
 
@@ -330,12 +345,14 @@ function AddSourceButton({ onClick }: { onClick: () => void }) {
   )
 }
 
-function SourceConfigPanel({ instance, saving, saveError, onSave, onDelete }: {
+function SourceConfigPanel({ instance, saving, saveError, deleteConfirming, onSave, onDelete, onCancelDelete }: {
   instance: DataSourceInstance
   saving: boolean
   saveError: string | null
+  deleteConfirming: boolean
   onSave: (input: UpdateSourceInput) => void
   onDelete: () => void
+  onCancelDelete: () => void
 }) {
   const initialConfig = (): Record<string, unknown> => parseSourceConfig<Record<string, unknown>>(instance) ?? {}
   const [enabled, setEnabled] = useState(instance.enabled)
@@ -370,9 +387,16 @@ function SourceConfigPanel({ instance, saving, saveError, onSave, onDelete }: {
             </span>
           </div>
         </div>
-        <button type="button" onClick={onDelete} style={{ fontSize: 10, color: 'var(--muted)', border: '1px solid var(--border)', padding: '3px 8px', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit' }}>
-          Remove
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {deleteConfirming && (
+            <button type="button" onClick={onCancelDelete} style={{ fontSize: 10, color: 'var(--muted)', border: '1px solid var(--border)', padding: '3px 8px', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit' }}>
+              Cancel
+            </button>
+          )}
+          <button type="button" onClick={onDelete} style={{ fontSize: 10, color: deleteConfirming ? 'var(--danger)' : 'var(--muted)', border: '1px solid var(--border)', padding: '3px 8px', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit' }}>
+            {deleteConfirming ? 'Click again to confirm' : 'Remove'}
+          </button>
+        </div>
       </div>
 
       <div style={{ border: '1px solid var(--border)' }}>
@@ -454,7 +478,9 @@ function SourceConfigPanel({ instance, saving, saveError, onSave, onDelete }: {
             type="button"
             disabled={saving}
             onClick={() => {
-              const configPayload = { ...localCfg }
+              const configPayload = Object.fromEntries(
+                Object.entries(localCfg).filter(([key]) => !(key === 'secret' && !editedFields.has(key))),
+              )
               if (Array.isArray(configPayload.units)) {
                 configPayload.units = configPayload.units
                   .map(value => String(value).trim())
@@ -481,16 +507,18 @@ function ConfigRow({ label, children }: { label: string; children: React.ReactNo
   )
 }
 
-function DockerPanel({ excludes, excludeInput, excludeType, excludeError, addingExclude, onExcludeInputChange, onExcludeTypeChange, onAddExclude, onRemoveExclude }: {
+function DockerPanel({ excludes, excludeInput, excludeType, excludeError, addingExclude, confirmingExcludeId, onExcludeInputChange, onExcludeTypeChange, onAddExclude, onRemoveExclude, onCancelRemoveExclude }: {
   excludes: ExcludedTarget[]
   excludeInput: string
   excludeType: 'container' | 'stack'
   excludeError: string | null
   addingExclude: boolean
+  confirmingExcludeId: string | null
   onExcludeInputChange: (v: string) => void
   onExcludeTypeChange: (v: 'container' | 'stack') => void
   onAddExclude: () => void
   onRemoveExclude: (id: string) => void
+  onCancelRemoveExclude: () => void
 }) {
   const canAddExclude = excludeInput.trim() !== '' && !addingExclude
 
@@ -522,16 +550,24 @@ function DockerPanel({ excludes, excludeInput, excludeType, excludeError, adding
               <span style={{ fontSize: 9, color: 'var(--muted)', marginRight: 8, border: '1px solid var(--border)', padding: '1px 4px' }}>{ex.type}</span>
               {ex.name}
             </span>
-            <button
-              type="button"
-              onClick={() => {
-                if (!confirm(`Remove "${ex.name}" from excluded targets?`)) return
-                onRemoveExclude(ex.id)
-              }}
-              style={{ fontSize: 10, color: 'var(--muted)', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
-            >
-              Remove
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {confirmingExcludeId === ex.id && (
+                <button
+                  type="button"
+                  onClick={onCancelRemoveExclude}
+                  style={{ fontSize: 10, color: 'var(--muted)', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
+                >
+                  Cancel
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => onRemoveExclude(ex.id)}
+                style={{ fontSize: 10, color: confirmingExcludeId === ex.id ? 'var(--danger)' : 'var(--muted)', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
+              >
+                {confirmingExcludeId === ex.id ? 'Click again to confirm' : 'Remove'}
+              </button>
+            </div>
           </div>
         ))}
         <div style={{ padding: '10px 14px', display: 'flex', gap: 8, alignItems: 'center' }}>

@@ -85,7 +85,8 @@ func UpdateFileWatcherSettings(db *gorm.DB) http.HandlerFunc {
 
 // getFileWatcherSettingsForNode reads from data_source_instances first (type="filewatcher",
 // node_id=nodeName). An enabled row turns collection on; a disabled row is authoritative and
-// suppresses file events even when WATCH_PATHS is configured locally.
+// suppresses file events even when WATCH_PATHS is configured locally. A missing row falls back
+// to enabled=true so legacy WATCH_PATHS-only nodes keep working until migration seeds a source.
 func getFileWatcherSettingsForNode(db *gorm.DB, nodeName string) (bool, bool, error) {
 	globalRedactSecrets, err := getFileWatcherRedactSecrets(db)
 	if err != nil {
@@ -96,7 +97,7 @@ func getFileWatcherSettingsForNode(db *gorm.DB, nodeName string) (bool, bool, er
 	err = db.Where("type = ? AND node_id = ?", "filewatcher", nodeName).Order("created_at ASC").First(&inst).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return false, globalRedactSecrets, nil
+			return true, globalRedactSecrets, nil
 		}
 		return false, false, err
 	}
@@ -141,6 +142,7 @@ func getSystemdUnitsForNode(db *gorm.DB, nodeName string) ([]string, error) {
 		return nil, err
 	}
 
+	// This is intentional: an enabled source with malformed inst.Config fails closed to no units, whereas getFileWatcherSettingsForNode keeps collection enabled and falls back to the global redact setting.
 	var existingSource models.DataSourceInstance
 	if err := db.Where("type = ? AND node_id = ?", "systemd", nodeName).Order("created_at ASC").First(&existingSource).Error; err == nil {
 		return []string{}, nil

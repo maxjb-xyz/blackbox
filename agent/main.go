@@ -96,8 +96,7 @@ func main() {
 		if fileWatcherEnabled, redactSecrets, err := loadFileWatcherConfig(ctx, c, caps); err != nil {
 			log.Printf("file watcher: failed to load initial server config, keeping local defaults enabled=%t redact_secrets=%t: %v", fileWatcherSettings.Enabled(), fileWatcherSettings.RedactSecrets(), err)
 		} else {
-			fileWatcherSettings.SetEnabled(fileWatcherEnabled)
-			fileWatcherSettings.SetRedactSecrets(redactSecrets)
+			applyFileWatcherSettings(fileWatcherSettings, fileWatcherEnabled, redactSecrets)
 		}
 		go refreshFileWatcherSettings(ctx, c, caps, fileWatcherSettings)
 		count := files.Watch(ctx, nodeName, watchPaths, watchIgnore, fileWatcherSettings, out)
@@ -208,30 +207,44 @@ func loadFileWatcherConfig(ctx context.Context, c *client.Client, caps []string)
 func refreshFileWatcherSettings(ctx context.Context, c *client.Client, caps []string, settings *files.Settings) {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
-	refreshFileWatcherSettingsWithTicker(ctx, c, caps, settings, ticker.C)
+	refreshFileWatcherSettingsLoop(ctx, c, caps, settings, ticker.C, true)
 }
 
 func refreshFileWatcherSettingsWithTicker(ctx context.Context, c *client.Client, caps []string, settings *files.Settings, ticks <-chan time.Time) {
+	refreshFileWatcherSettingsLoop(ctx, c, caps, settings, ticks, false)
+}
+
+func refreshFileWatcherSettingsLoop(ctx context.Context, c *client.Client, caps []string, settings *files.Settings, ticks <-chan time.Time, runImmediately bool) {
+	shouldRefresh := runImmediately
 
 	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticks:
-			enabled, redactSecrets, err := loadFileWatcherConfig(ctx, c, caps)
-			if err != nil {
-				log.Printf("file watcher: failed to refresh config from server, keeping enabled=%t redact_secrets=%t: %v", settings.Enabled(), settings.RedactSecrets(), err)
-				continue
+		if !shouldRefresh {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticks:
 			}
-			if settings.Enabled() != enabled {
-				log.Printf("file watcher: updated enabled=%t from server config", enabled)
-				settings.SetEnabled(enabled)
-			}
-			if settings.RedactSecrets() != redactSecrets {
-				log.Printf("file watcher: updated redact_secrets=%t from server config", redactSecrets)
-				settings.SetRedactSecrets(redactSecrets)
-			}
+		} else {
+			shouldRefresh = false
 		}
+
+		enabled, redactSecrets, err := loadFileWatcherConfig(ctx, c, caps)
+		if err != nil {
+			log.Printf("file watcher: failed to refresh config from server, keeping enabled=%t redact_secrets=%t: %v", settings.Enabled(), settings.RedactSecrets(), err)
+			continue
+		}
+		applyFileWatcherSettings(settings, enabled, redactSecrets)
+	}
+}
+
+func applyFileWatcherSettings(settings *files.Settings, enabled bool, redactSecrets bool) {
+	if settings.Enabled() != enabled {
+		log.Printf("file watcher: updated enabled=%t from server config", enabled)
+		settings.SetEnabled(enabled)
+	}
+	if settings.RedactSecrets() != redactSecrets {
+		log.Printf("file watcher: updated redact_secrets=%t from server config", redactSecrets)
+		settings.SetRedactSecrets(redactSecrets)
 	}
 }
 
