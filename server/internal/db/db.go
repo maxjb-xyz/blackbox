@@ -115,7 +115,7 @@ func ensureDataSourceConstraints(database *gorm.DB) error {
 	if err := database.Exec(`
 CREATE UNIQUE INDEX IF NOT EXISTS idx_data_source_singleton_agent
 ON data_source_instances(type, node_id)
-WHERE scope = 'agent' AND type IN ('docker', 'systemd', 'filewatcher')
+WHERE scope = 'agent' AND type IN ('docker', 'systemd', 'filewatcher', 'proxmox')
 `).Error; err != nil {
 		return err
 	}
