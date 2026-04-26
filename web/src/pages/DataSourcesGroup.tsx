@@ -43,6 +43,7 @@ export default function DataSourcesGroup() {
   const [excludeInput, setExcludeInput] = useState('')
   const [excludeType, setExcludeType] = useState<'container' | 'stack'>('container')
   const [excludeError, setExcludeError] = useState<string | null>(null)
+  const [addingExclude, setAddingExclude] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -204,16 +205,20 @@ export default function DataSourcesGroup() {
             excludeInput={excludeInput}
             excludeType={excludeType}
             excludeError={excludeError}
+            addingExclude={addingExclude}
             onExcludeInputChange={setExcludeInput}
             onExcludeTypeChange={setExcludeType}
             onAddExclude={async () => {
               setExcludeError(null)
+              setAddingExclude(true)
               try {
                 await createExcludedTarget({ type: excludeType, name: excludeInput.trim() })
                 setExcludeInput('')
                 await loadExcludes()
               } catch (e) {
                 setExcludeError(e instanceof Error ? e.message : 'Failed to add')
+              } finally {
+                setAddingExclude(false)
               }
             }}
             onRemoveExclude={async (id) => {
@@ -292,11 +297,13 @@ function SourceConfigPanel({ instance, saving, saveError, onSave, onDelete }: {
   const [enabled, setEnabled] = useState(instance.enabled)
   const [name, setName] = useState(instance.name)
   const [localCfg, setLocalCfg] = useState<Record<string, unknown>>(cfg)
+  const [editedFields, setEditedFields] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     setEnabled(instance.enabled)
     setName(instance.name)
     setLocalCfg(parseConfig(instance.config))
+    setEditedFields(new Set())
   }, [instance.id, instance.enabled, instance.name, instance.config])
 
   const typeLabel = instance.type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
@@ -343,10 +350,18 @@ function SourceConfigPanel({ instance, saving, saveError, onSave, onDelete }: {
               <input
                 type="password"
                 value={String(localCfg.secret ?? '')}
-                onChange={e => setLocalCfg(c => ({ ...c, secret: e.target.value }))}
+                onChange={e => {
+                  setLocalCfg(c => ({ ...c, secret: e.target.value }))
+                  setEditedFields(f => new Set(f).add('secret'))
+                }}
                 placeholder="Enter webhook secret"
                 style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'inherit', fontSize: 11, padding: '4px 8px', width: '100%' }}
               />
+              {!editedFields.has('secret') && (
+                <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 3 }}>
+                  Leave blank to keep existing secret
+                </div>
+              )}
             </ConfigRow>
           </>
         )}
@@ -391,10 +406,18 @@ function SourceConfigPanel({ instance, saving, saveError, onSave, onDelete }: {
               <input
                 type="password"
                 value={String(localCfg.api_token ?? '')}
-                onChange={e => setLocalCfg(c => ({ ...c, api_token: e.target.value }))}
+                onChange={e => {
+                  setLocalCfg(c => ({ ...c, api_token: e.target.value }))
+                  setEditedFields(f => new Set(f).add('api_token'))
+                }}
                 placeholder="blackbox@pve!reader=uuid"
                 style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'inherit', fontSize: 11, padding: '4px 8px', width: '100%' }}
               />
+              {!editedFields.has('api_token') && (
+                <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 3 }}>
+                  Leave blank to keep existing token
+                </div>
+              )}
             </ConfigRow>
             <ConfigRow label="Skip TLS Verify">
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
@@ -423,7 +446,17 @@ function SourceConfigPanel({ instance, saving, saveError, onSave, onDelete }: {
           <button
             type="button"
             disabled={saving}
-            onClick={() => onSave({ name, enabled, config: localCfg })}
+            onClick={() => {
+              const cfg = { ...localCfg }
+              // Don't send password fields that weren't explicitly edited
+              if (!editedFields.has('secret') && 'secret' in cfg) {
+                delete cfg['secret']
+              }
+              if (!editedFields.has('api_token') && 'api_token' in cfg) {
+                delete cfg['api_token']
+              }
+              onSave({ name, enabled, config: cfg })
+            }}
             style={{ fontSize: 10, border: '1px solid var(--border)', padding: '4px 12px', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontFamily: 'inherit' }}
           >
             {saving ? 'Saving...' : 'Save'}
@@ -443,11 +476,12 @@ function ConfigRow({ label, children }: { label: string; children: React.ReactNo
   )
 }
 
-function DockerPanel({ excludes, excludeInput, excludeType, excludeError, onExcludeInputChange, onExcludeTypeChange, onAddExclude, onRemoveExclude }: {
+function DockerPanel({ excludes, excludeInput, excludeType, excludeError, addingExclude, onExcludeInputChange, onExcludeTypeChange, onAddExclude, onRemoveExclude }: {
   excludes: ExcludedTarget[]
   excludeInput: string
   excludeType: 'container' | 'stack'
   excludeError: string | null
+  addingExclude: boolean
   onExcludeInputChange: (v: string) => void
   onExcludeTypeChange: (v: 'container' | 'stack') => void
   onAddExclude: () => void
@@ -476,7 +510,14 @@ function DockerPanel({ excludes, excludeInput, excludeType, excludeError, onExcl
               <span style={{ fontSize: 9, color: 'var(--muted)', marginRight: 8, border: '1px solid var(--border)', padding: '1px 4px' }}>{ex.type}</span>
               {ex.name}
             </span>
-            <button type="button" onClick={() => onRemoveExclude(ex.id)} style={{ fontSize: 10, color: 'var(--muted)', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+            <button
+              type="button"
+              onClick={() => {
+                if (!confirm(`Remove "${ex.name}" from excluded targets?`)) return
+                onRemoveExclude(ex.id)
+              }}
+              style={{ fontSize: 10, color: 'var(--muted)', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
+            >
               Remove
             </button>
           </div>
@@ -497,8 +538,13 @@ function DockerPanel({ excludes, excludeInput, excludeType, excludeError, onExcl
             onKeyDown={e => { if (e.key === 'Enter') onAddExclude() }}
             style={{ flex: 1, background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'inherit', fontSize: 11, padding: '4px 8px' }}
           />
-          <button type="button" onClick={onAddExclude} style={{ fontSize: 10, border: '1px solid var(--border)', padding: '4px 10px', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontFamily: 'inherit' }}>
-            Add
+          <button
+            type="button"
+            onClick={onAddExclude}
+            disabled={addingExclude}
+            style={{ fontSize: 10, border: '1px solid var(--border)', padding: '4px 10px', background: 'transparent', color: addingExclude ? 'var(--muted)' : 'var(--text)', cursor: addingExclude ? 'default' : 'pointer', fontFamily: 'inherit' }}
+          >
+            {addingExclude ? 'Adding...' : 'Add'}
           </button>
         </div>
         {excludeError && <div style={{ padding: '0 14px 10px', fontSize: 10, color: 'var(--danger)' }}>{excludeError}</div>}
