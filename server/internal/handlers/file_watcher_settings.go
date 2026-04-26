@@ -123,6 +123,7 @@ func getProxmoxConfigForNode(db *gorm.DB, nodeName string) (*ProxmoxConfig, erro
 	}
 	var cfg ProxmoxConfig
 	if jsonErr := json.Unmarshal([]byte(inst.Config), &cfg); jsonErr != nil {
+		log.Printf("getProxmoxConfigForNode: corrupt config JSON for node %s: %v", nodeName, jsonErr)
 		return nil, nil
 	}
 	if strings.TrimSpace(cfg.URL) == "" || strings.TrimSpace(cfg.APIToken) == "" {
