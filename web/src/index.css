@@ -868,6 +868,13 @@ body {
   min-width: 0;
 }
 
+.admin-group-list {
+  display: flex;
+  align-items: flex-end;
+  gap: 0;
+  flex-wrap: wrap;
+}
+
 .admin-title-divider {
   width: 1px;
   height: 18px;
@@ -876,11 +883,73 @@ body {
   flex: 0 0 auto;
 }
 
+.admin-group-button {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #f0f0f0;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  line-height: 1;
+  padding: 0 0 6px;
+}
+
+.admin-group-button.active {
+  border-bottom-color: var(--accent);
+  color: var(--accent);
+}
+
+.admin-group-button:focus-visible,
+.admin-tab-button:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.admin-page-body {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.admin-shell {
+  display: grid;
+  gap: 16px;
+}
+
 .admin-tab-list {
   display: flex;
-  align-items: baseline;
-  gap: 12px;
-  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+}
+
+.admin-tab-button {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  line-height: 1;
+  padding: 9px 12px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.admin-tab-button.active {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.admin-shell-content {
+  min-width: 0;
 }
 
 .admin-tab-divider {
@@ -898,6 +967,49 @@ body {
 
 .oidc-provider-table {
   min-width: 760px;
+}
+
+@media (min-width: 961px) {
+  .admin-shell {
+    grid-template-columns: 200px minmax(0, 1fr);
+    gap: 24px;
+    align-items: start;
+  }
+
+  .admin-tab-list {
+    display: grid;
+    gap: 0;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    background:
+      linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+      #101010;
+    background-size: 12px 12px, 12px 12px, auto;
+  }
+
+  .admin-tab-button {
+    position: relative;
+    width: 100%;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    border-left: 2px solid transparent;
+    background: transparent;
+    color: var(--muted);
+    padding: 13px 14px 13px 16px;
+  }
+
+  .admin-tab-button:last-child {
+    border-bottom: none;
+  }
+
+  .admin-tab-button.active {
+    border-left-color: var(--accent);
+    background: linear-gradient(90deg, rgba(255, 51, 51, 0.2), rgba(255, 51, 51, 0.05) 68%, transparent);
+    box-shadow: inset 0 0 0 1px rgba(255, 51, 51, 0.12);
+    color: var(--text);
+    font-weight: 700;
+  }
 }
 
 /* ─── Mobile layout (≤ 640px) ──────────────────────────────── */
