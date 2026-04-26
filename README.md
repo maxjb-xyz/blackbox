@@ -127,6 +127,7 @@ docker compose up -d
 
 ### Sources
 - **Source catalog** - Manage supported event sources from Admin > Data Sources. The catalog is capability-aware per node, supports both server-scoped and agent-scoped sources, and preserves stored secrets when you edit an existing source.
+- **Proxmox VE** — Add a Proxmox source to any agent's node from Admin > Data Sources to ingest cluster task events (VM lifecycle, backups, migrations, etc.). The agent polls `/api2/json/cluster/tasks` every 10s and emits one entry per state transition. `PROXMOX_URL` and `PROXMOX_API_TOKEN` env vars on the agent act as a bootstrap fallback for the very first poll.
 
 ### Notifications
 - **Webhook notification support** — Send outbound notifications to Discord, Slack, ntfy, and other targets when Blackbox events occur. Configure destinations in Admin > Integrations > Notifications.
@@ -200,6 +201,9 @@ docker compose up -d
 | `WATCH_PATHS` | No | — | Colon-separated list of directories to watch for file changes as seen inside the agent container (e.g., `/watch/etc:/watch/appdata`). |
 | `WATCH_IGNORE` | No | — | Colon-separated glob patterns to exclude from file watching. |
 | `WATCH_SYSTEMD` | No | `false` | Set to `true` on Linux agents to enable journal-based systemd monitoring for the units configured in the Admin UI. |
+| `PROXMOX_URL` | No | — | Bootstrap fallback for Proxmox VE API base URL (e.g. `https://pve01.example.com:8006`). Used only when no Proxmox source is configured for this node in Admin > Data Sources. |
+| `PROXMOX_API_TOKEN` | No | — | Bootstrap fallback for the PVE API token (`user@realm!tokenid=uuid`). Required alongside `PROXMOX_URL`. See [Proxmox API Tokens](https://pve.proxmox.com/wiki/Proxmox_VE_API#API_Tokens). |
+| `PROXMOX_INSECURE_SKIP_VERIFY` | No | `false` | Bootstrap fallback for skipping TLS verification (self-signed homelab certs). |
 | `QUEUE_DB_PATH` | No | `/data/queue.db` | Path to the agent's persistent event queue database. |
 | `PUID` | No | `65532` | UID the agent process runs as. Set to your host user's UID (`id -u`) when you own the watched paths. |
 | `PGID` | No | `65532` | GID the agent process runs as. Set to your host user's GID (`id -g`) when you own the watched paths. |
