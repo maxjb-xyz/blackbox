@@ -16,6 +16,7 @@ export default function SourceIcon({ type, size = 18, strokeWidth = 1.8, style }
   if (spec.kind === 'brand') {
     if (spec.name === 'docker') return <DockerMark size={size} style={style} />
     if (spec.name === 'uptime-kuma') return <UptimeKumaMark size={size} style={style} />
+    if (spec.name === 'proxmox') return <ProxmoxMark size={size} style={style} />
     return <WatchtowerMark size={size} style={style} />
   }
 
@@ -53,6 +54,21 @@ function UptimeKumaMark({ size, style }: { size: number; style?: CSSProperties }
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+    </svg>
+  )
+}
+
+function ProxmoxMark({ size, style }: { size: number; style?: CSSProperties }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true" style={style}>
+      <g fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3.5" y="5" width="17" height="4" rx="0.6" />
+        <rect x="3.5" y="10.5" width="17" height="4" rx="0.6" />
+        <rect x="3.5" y="16" width="17" height="4" rx="0.6" />
+        <circle cx="6.5" cy="7" r="0.6" fill="currentColor" stroke="none" />
+        <circle cx="6.5" cy="12.5" r="0.6" fill="currentColor" stroke="none" />
+        <circle cx="6.5" cy="18" r="0.6" fill="currentColor" stroke="none" />
+      </g>
     </svg>
   )
 }
