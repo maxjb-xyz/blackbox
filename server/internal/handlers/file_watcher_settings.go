@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"blackbox/server/internal/auth"
@@ -81,15 +82,83 @@ func UpdateFileWatcherSettings(db *gorm.DB) http.HandlerFunc {
 	}
 }
 
+// getFileWatcherRedactSecretsForNode reads from data_source_instances first (type="filewatcher",
+// enabled=true, node_id=nodeName). Falls back to the global AppSetting if not found.
+func getFileWatcherRedactSecretsForNode(db *gorm.DB, nodeName string) (bool, error) {
+	var inst models.DataSourceInstance
+	err := db.Where("type = ? AND enabled = ? AND node_id = ?", "filewatcher", true, nodeName).First(&inst).Error
+	if err == nil {
+		var cfg struct {
+			RedactSecrets bool `json:"redact_secrets"`
+		}
+		if jsonErr := json.Unmarshal([]byte(inst.Config), &cfg); jsonErr == nil {
+			return cfg.RedactSecrets, nil
+		}
+	}
+	// Fall back to global setting
+	return getFileWatcherRedactSecrets(db)
+}
+
+// getSystemdUnitsForNode reads from data_source_instances first (type="systemd",
+// enabled=true, node_id=nodeName). Falls back to the legacy systemd_unit_configs table.
+func getSystemdUnitsForNode(db *gorm.DB, nodeName string) ([]string, error) {
+	var inst models.DataSourceInstance
+	err := db.Where("type = ? AND enabled = ? AND node_id = ?", "systemd", true, nodeName).First(&inst).Error
+	if err == nil {
+		var cfg struct {
+			Units []string `json:"units"`
+		}
+		if jsonErr := json.Unmarshal([]byte(inst.Config), &cfg); jsonErr == nil {
+			if cfg.Units == nil {
+				cfg.Units = []string{}
+			}
+			return cfg.Units, nil
+		}
+	}
+	// Fall back to legacy table
+	var config models.SystemdUnitConfig
+	if err := db.First(&config, "node_name = ?", nodeName).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return []string{}, nil
+		}
+		return nil, err
+	}
+	var units []string
+	if err := json.Unmarshal([]byte(config.Units), &units); err != nil {
+		return nil, err
+	}
+	return units, nil
+}
+
 func AgentConfig(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Primary path: node name set by AgentAuth middleware
 		nodeName, ok := middleware.AgentNodeFromContext(r.Context())
 		if !ok {
-			writeError(w, http.StatusUnauthorized, "unauthorized")
-			return
+			// Fallback for tests/direct calls: read from header
+			nodeName = strings.TrimSpace(r.Header.Get("X-Blackbox-Node-Name"))
+			if nodeName == "" {
+				writeError(w, http.StatusUnauthorized, "unauthorized")
+				return
+			}
 		}
 
-		redactSecrets, err := getFileWatcherRedactSecrets(db)
+		// Store agent capabilities if provided
+		if capsHeader := r.Header.Get("X-Blackbox-Agent-Capabilities"); capsHeader != "" {
+			parts := strings.Split(capsHeader, ",")
+			caps := make([]string, 0, len(parts))
+			for _, p := range parts {
+				p = strings.TrimSpace(p)
+				if p != "" {
+					caps = append(caps, p)
+				}
+			}
+			if capsJSON, err := json.Marshal(caps); err == nil {
+				db.Model(&models.Node{}).Where("name = ?", nodeName).Update("capabilities", string(capsJSON))
+			}
+		}
+
+		redactSecrets, err := getFileWatcherRedactSecretsForNode(db, nodeName)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to load agent config")
 			return
@@ -107,19 +176,4 @@ func AgentConfig(db *gorm.DB) http.HandlerFunc {
 			"systemd_units":               systemdUnits,
 		})
 	}
-}
-
-func getSystemdUnitsForNode(db *gorm.DB, nodeName string) ([]string, error) {
-	var config models.SystemdUnitConfig
-	if err := db.First(&config, "node_name = ?", nodeName).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return []string{}, nil
-		}
-		return nil, err
-	}
-	var units []string
-	if err := json.Unmarshal([]byte(config.Units), &units); err != nil {
-		return nil, err
-	}
-	return units, nil
 }
