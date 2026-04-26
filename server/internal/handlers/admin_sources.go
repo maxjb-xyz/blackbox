@@ -78,7 +78,7 @@ func ListSources(db *gorm.DB) http.HandlerFunc {
 			if err := json.Unmarshal([]byte(n.Capabilities), &caps); err != nil {
 				log.Printf("ListSources: node %s has invalid capabilities JSON: %v", n.Name, err)
 				caps = []string{"docker", "systemd", "filewatcher"}
-			} else if n.Capabilities == "" || len(caps) == 0 {
+			} else if len(caps) == 0 {
 				log.Printf("ListSources: node %s has no stored capabilities yet; using legacy fallback", n.Name)
 				caps = []string{"docker", "systemd", "filewatcher"}
 			}
@@ -233,7 +233,12 @@ func UpdateSource(db *gorm.DB) http.HandlerFunc {
 		id := chi.URLParam(r, "id")
 		var inst models.DataSourceInstance
 		if err := db.First(&inst, "id = ?", id).Error; err != nil {
-			writeError(w, http.StatusNotFound, "source not found")
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				writeError(w, http.StatusNotFound, "source not found")
+				return
+			}
+			log.Printf("UpdateSource: lookup failed for %s: %v", id, err)
+			writeError(w, http.StatusInternalServerError, "database error")
 			return
 		}
 		var req updateSourceRequest
@@ -272,7 +277,12 @@ func DeleteSource(db *gorm.DB) http.HandlerFunc {
 		id := chi.URLParam(r, "id")
 		var inst models.DataSourceInstance
 		if err := db.First(&inst, "id = ?", id).Error; err != nil {
-			writeError(w, http.StatusNotFound, "source not found")
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				writeError(w, http.StatusNotFound, "source not found")
+				return
+			}
+			log.Printf("DeleteSource: lookup failed for %s: %v", id, err)
+			writeError(w, http.StatusInternalServerError, "database error")
 			return
 		}
 		result := db.Delete(&models.DataSourceInstance{}, "id = ?", id)
@@ -300,7 +310,11 @@ func redactConfig(sourceType, config string) string {
 			m[key] = ""
 		}
 	}
-	out, _ := json.Marshal(m)
+	out, err := json.Marshal(m)
+	if err != nil {
+		log.Printf("redactConfig: failed to marshal redacted %s config: %v", sourceType, err)
+		return "{}"
+	}
 	return string(out)
 }
 

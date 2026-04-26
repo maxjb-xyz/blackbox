@@ -118,7 +118,7 @@ export default function SourceCatalog({ nodeName, nodeInfo, sourceTypes, existin
             <div style={{ fontSize: 10, color: 'var(--muted)', letterSpacing: '0.06em' }}>Server</div>
           )}
           <button type="button" aria-label="Close dialog" onClick={onClose} style={{ fontSize: 14, color: 'var(--muted)', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', lineHeight: 1 }}>
-            ✕
+            ×
           </button>
         </div>
       </div>
@@ -147,7 +147,7 @@ export default function SourceCatalog({ nodeName, nodeInfo, sourceTypes, existin
           <>
             <div style={{ fontSize: 9, letterSpacing: '0.14em', color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 6 }}>Not available on this node</div>
             <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 14 }}>Update the agent to unlock these sources</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, opacity: 0.25, pointerEvents: 'none' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
               {unavailable.map(typeDef => (
                 <SourceCard key={typeDef.type} typeDef={typeDef} added={false} virtual={false} unavailable={true} onClick={() => {}} />
               ))}
@@ -170,7 +170,6 @@ function SourceCard({ typeDef, added, virtual, unavailable = false, onClick }: {
       type="button"
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
-      aria-disabled={disabled}
       style={{
         border: `1px solid ${colors.border}`,
         background: colors.bg,
@@ -209,13 +208,13 @@ function SourceCard({ typeDef, added, virtual, unavailable = false, onClick }: {
             </div>
           )}
         </div>
-        <div style={{ fontSize: 12, letterSpacing: '0.08em', color: '#c0c0c0', marginBottom: 5 }}>{typeDef.name}</div>
-        <div style={{ fontSize: 10, color: '#3a3a3a', lineHeight: 1.6 }}>{typeDef.description}</div>
+        <div style={{ fontSize: 12, letterSpacing: '0.08em', color: 'var(--text-secondary)', marginBottom: 5 }}>{typeDef.name}</div>
+        <div style={{ fontSize: 10, color: 'var(--text-tertiary)', lineHeight: 1.6 }}>{typeDef.description}</div>
       </div>
 
-      <div style={{ padding: '8px 16px', borderTop: '1px solid #181818', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontSize: 9, color: '#2a2a2a', letterSpacing: '0.08em' }}>{typeDef.mechanism}</span>
-        {!disabled && <span style={{ fontSize: 11, color: '#2a2a2a' }}>→</span>}
+      <div style={{ padding: '8px 16px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span style={{ fontSize: 9, color: 'var(--muted)', letterSpacing: '0.08em' }}>{typeDef.mechanism}</span>
+        {!disabled && <span style={{ fontSize: 11, color: 'var(--muted)' }}>→</span>}
       </div>
     </button>
   )

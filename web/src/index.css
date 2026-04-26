@@ -6,6 +6,8 @@
   --surface: #111111;
   --border: #222222;
   --text: #E8E8E8;
+  --text-secondary: #c0c0c0;
+  --text-tertiary: #8a8a8a;
   --muted: #666666;
   --accent: #FF3333;
   --success: #00CC44;
@@ -24,6 +26,7 @@
   --danger-bg: color-mix(in srgb, var(--danger) 8%, transparent);
   --info-bg: color-mix(in srgb, var(--info) 8%, transparent);
   --warning-bg: color-mix(in srgb, var(--warning) 8%, transparent);
+  --bottom-nav-height: 56px;
 }
 
 * {
@@ -578,7 +581,7 @@ body {
   letter-spacing: 0.1em;
   padding: 4px 10px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.15s, opacity 0.15s;
 }
 
 .time-filter-button-active {
@@ -1024,10 +1027,6 @@ body {
 }
 
 /* ─── Mobile layout (≤ 640px) ──────────────────────────────── */
-:root {
-  --bottom-nav-height: 56px;
-}
-
 /* Topbar: hide nav links on mobile */
 @media (max-width: 640px) {
   .mobile-hide-nav {

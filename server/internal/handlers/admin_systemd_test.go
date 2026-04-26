@@ -12,6 +12,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type systemdConfigPayload struct {
+	Units []string `json:"units"`
+}
+
 func TestGetSystemdSettings_ReturnsEmptyMapWhenNoneConfigured(t *testing.T) {
 	database := newTestDB(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/admin/settings/systemd", nil)
@@ -36,7 +40,7 @@ func TestUpdateSystemdSettings_UpsertsUnitList(t *testing.T) {
 
 	var inst models.DataSourceInstance
 	require.NoError(t, database.Where("type = ? AND node_id = ?", "systemd", "node-01").First(&inst).Error)
-	var cfg struct{ Units []string `json:"units"` }
+	var cfg systemdConfigPayload
 	require.NoError(t, json.Unmarshal([]byte(inst.Config), &cfg))
 	require.Equal(t, []string{"nginx.service", "postgres.service"}, cfg.Units)
 }
@@ -61,7 +65,7 @@ func TestUpdateSystemdSettings_OverwritesExistingList(t *testing.T) {
 
 	var inst models.DataSourceInstance
 	require.NoError(t, database.Where("type = ? AND node_id = ?", "systemd", "node-01").First(&inst).Error)
-	var cfg struct{ Units []string `json:"units"` }
+	var cfg systemdConfigPayload
 	require.NoError(t, json.Unmarshal([]byte(inst.Config), &cfg))
 	require.Equal(t, []string{"nginx.service"}, cfg.Units)
 }
@@ -105,7 +109,7 @@ func TestUpdateSystemdSettings_PersistsEmptyUnitList(t *testing.T) {
 
 	var inst models.DataSourceInstance
 	require.NoError(t, database.Where("type = ? AND node_id = ?", "systemd", "node-01").First(&inst).Error)
-	var cfg struct{ Units []string `json:"units"` }
+	var cfg systemdConfigPayload
 	require.NoError(t, json.Unmarshal([]byte(inst.Config), &cfg))
 	require.Empty(t, cfg.Units)
 }
@@ -123,7 +127,7 @@ func TestUpdateSystemdSettings_DeduplicatesMixedForms(t *testing.T) {
 
 	var inst models.DataSourceInstance
 	require.NoError(t, database.Where("type = ? AND node_id = ?", "systemd", "node-01").First(&inst).Error)
-	var cfg struct{ Units []string `json:"units"` }
+	var cfg systemdConfigPayload
 	require.NoError(t, json.Unmarshal([]byte(inst.Config), &cfg))
 	require.Equal(t, []string{"nginx.service", "redis.service"}, cfg.Units)
 }
@@ -141,7 +145,7 @@ func TestUpdateSystemdSettings_NormalizesBareName(t *testing.T) {
 
 	var inst models.DataSourceInstance
 	require.NoError(t, database.Where("type = ? AND node_id = ?", "systemd", "node-01").First(&inst).Error)
-	var cfg struct{ Units []string `json:"units"` }
+	var cfg systemdConfigPayload
 	require.NoError(t, json.Unmarshal([]byte(inst.Config), &cfg))
 	require.Equal(t, []string{"nginx.service", "redis.service"}, cfg.Units)
 }
@@ -159,7 +163,7 @@ func TestUpdateSystemdSettings_DottedBareNameGetsSuffix(t *testing.T) {
 
 	var inst models.DataSourceInstance
 	require.NoError(t, database.Where("type = ? AND node_id = ?", "systemd", "node-01").First(&inst).Error)
-	var cfg struct{ Units []string `json:"units"` }
+	var cfg systemdConfigPayload
 	require.NoError(t, json.Unmarshal([]byte(inst.Config), &cfg))
 	require.Equal(t, []string{"dbus-org.freedesktop.resolve1.service"}, cfg.Units)
 }

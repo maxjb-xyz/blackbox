@@ -95,6 +95,8 @@ func getFileWatcherRedactSecretsForNode(db *gorm.DB, nodeName string) (bool, err
 		}
 		if jsonErr := json.Unmarshal([]byte(inst.Config), &cfg); jsonErr == nil {
 			return cfg.RedactSecrets, nil
+		} else {
+			log.Printf("getFileWatcherRedactSecretsForNode: failed to parse config for source %s: %v", inst.ID, jsonErr)
 		}
 	}
 	// Fall back to global setting
@@ -116,6 +118,8 @@ func getSystemdUnitsForNode(db *gorm.DB, nodeName string) ([]string, error) {
 				cfg.Units = []string{}
 			}
 			return cfg.Units, nil
+		} else {
+			log.Printf("getSystemdUnitsForNode: failed to parse config for source %s: %v", inst.ID, jsonErr)
 		}
 	}
 	// Fall back to legacy table
@@ -171,23 +175,11 @@ func AgentConfig(db *gorm.DB) http.HandlerFunc {
 			}
 			if capsJSON, err := json.Marshal(caps); err == nil {
 				newValue := string(capsJSON)
-				var existing struct {
-					Capabilities *string
-				}
-				err = db.Model(&models.Node{}).Select("capabilities").Where("name = ?", nodeName).Take(&existing).Error
-				if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-					log.Printf("AgentConfig: failed to read capabilities for node %s: %v", nodeName, err)
-				} else {
-					current := ""
-					if existing.Capabilities != nil {
-						current = *existing.Capabilities
-					}
-					if current != newValue {
-						result := db.Model(&models.Node{}).Where("name = ?", nodeName).Update("capabilities", newValue)
-						if result.Error != nil {
-							log.Printf("AgentConfig: failed to store capabilities for node %s: %v", nodeName, result.Error)
-						}
-					}
+				result := db.Model(&models.Node{}).
+					Where("name = ? AND (capabilities IS NULL OR capabilities != ?)", nodeName, newValue).
+					Update("capabilities", newValue)
+				if result.Error != nil {
+					log.Printf("AgentConfig: failed to store capabilities for node %s: %v", nodeName, result.Error)
 				}
 			}
 		}

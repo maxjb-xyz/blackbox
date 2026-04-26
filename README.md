@@ -106,7 +106,10 @@ docker compose up -d
 
 **3. Open `http://your-server:8080` and complete the setup wizard.**
 
-**4. Optional: open Admin > Data Sources to manage per-node and server-wide data sources, including capability-aware systemd, file watcher, webhook, and Docker exclusion setup. Open Admin > System to configure file-diff redaction and Ollama-based incident analysis.**
+**4. Optional:**
+
+- Open `Admin > Data Sources` to manage per-node and server-wide data sources and set up capability-aware systemd, file watcher, webhook, and Docker exclusions.
+- Open `Admin > System` to configure file-diff redaction and Ollama-based incident analysis.
 
 ---
 

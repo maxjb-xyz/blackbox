@@ -116,18 +116,25 @@ ON excluded_targets(type, lower(name));
 // Keep these singleton allowlists in sync with handlers.knownSourceTypes and
 // the singleton enforcement in handlers.CreateSource.
 func ensureDataSourceConstraints(database *gorm.DB) error {
-	if err := database.Exec(`
+	agentSingletons := quoteSQLStrings(models.GetAgentScopedSingletonSourceTypes())
+	serverSingletons := quoteSQLStrings(models.GetServerScopedSingletonSourceTypes())
+	if len(agentSingletons) > 0 {
+		if err := database.Exec(fmt.Sprintf(`
 CREATE UNIQUE INDEX IF NOT EXISTS idx_data_source_singleton_agent
 ON data_source_instances(type, node_id)
-WHERE scope = 'agent' AND type IN ('docker', 'systemd', 'filewatcher')
-`).Error; err != nil {
-		return err
+WHERE scope = 'agent' AND type IN (%s)
+`, strings.Join(agentSingletons, ", "))).Error; err != nil {
+			return err
+		}
 	}
-	return database.Exec(`
+	if len(serverSingletons) == 0 {
+		return nil
+	}
+	return database.Exec(fmt.Sprintf(`
 CREATE UNIQUE INDEX IF NOT EXISTS idx_data_source_singleton_server
 ON data_source_instances(type)
-WHERE scope = 'server' AND type IN ('webhook_uptime_kuma', 'webhook_watchtower')
-`).Error
+WHERE scope = 'server' AND type IN (%s)
+`, strings.Join(serverSingletons, ", "))).Error
 }
 
 func appendSQLitePragma(dsn, pragma string) string {
@@ -136,6 +143,15 @@ func appendSQLitePragma(dsn, pragma string) string {
 		separator = "&"
 	}
 	return dsn + separator + pragma
+}
+
+func quoteSQLStrings(values []string) []string {
+	quoted := make([]string, 0, len(values))
+	for _, value := range values {
+		escaped := strings.ReplaceAll(value, "'", "''")
+		quoted = append(quoted, fmt.Sprintf("'%s'", escaped))
+	}
+	return quoted
 }
 
 func ensureDataSourceCleanupTriggers(database *gorm.DB) error {

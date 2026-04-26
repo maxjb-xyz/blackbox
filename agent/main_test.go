@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -142,6 +143,27 @@ func TestRefreshSystemdSettingsUpdatesUnitsOnSuccess(t *testing.T) {
 	want := []string{"redis.service"}
 	if got := settings.Units(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("settings.Units() = %v, want %v", got, want)
+	}
+}
+
+func TestBuildCapabilities_OnlyAdvertisesSystemdWhenSupportedAndEnabled(t *testing.T) {
+	t.Setenv("WATCH_SYSTEMD", "true")
+
+	caps := buildCapabilities([]string{"/etc"})
+
+	if !slices.Contains(caps, "docker") {
+		t.Fatalf("buildCapabilities() = %v, missing docker", caps)
+	}
+	if !slices.Contains(caps, "filewatcher") {
+		t.Fatalf("buildCapabilities() = %v, missing filewatcher", caps)
+	}
+
+	hasSystemd := slices.Contains(caps, "systemd")
+	if systemd.Supported() && !hasSystemd {
+		t.Fatalf("buildCapabilities() = %v, missing systemd when supported", caps)
+	}
+	if !systemd.Supported() && hasSystemd {
+		t.Fatalf("buildCapabilities() = %v, unexpectedly includes systemd when unsupported", caps)
 	}
 }
 

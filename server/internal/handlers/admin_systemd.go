@@ -34,6 +34,7 @@ func GetSystemdSettings(db *gorm.DB) http.HandlerFunc {
 				Units []string `json:"units"`
 			}
 			if err := json.Unmarshal([]byte(inst.Config), &cfg); err != nil {
+				log.Printf("GetSystemdSettings: failed to parse config for source %s: %v", inst.ID, err)
 				cfg.Units = []string{}
 			}
 			if cfg.Units == nil {

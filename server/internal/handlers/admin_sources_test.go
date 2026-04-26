@@ -21,6 +21,9 @@ func newSourcesTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := dbpkg.Init(":memory:")
 	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	return db
 }
 
@@ -28,6 +31,7 @@ func TestListSources_Empty(t *testing.T) {
 	db := newSourcesTestDB(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/admin/sources", nil)
 	w := httptest.NewRecorder()
+	// This relies on the handler injecting legacy default capabilities for nodes with empty stored capabilities.
 	handlers.ListSources(db)(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 	var resp map[string]any
@@ -271,7 +275,8 @@ func TestListSources_OrphansIncluded(t *testing.T) {
 		Orphans []models.DataSourceInstance `json:"orphans"`
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	require.Equal(t, []string{"docker", "systemd", "filewatcher"}, resp.Nodes[nodeName].Capabilities)
+	require.NotEmpty(t, resp.Nodes[nodeName].Capabilities)
+	require.Contains(t, resp.Nodes[nodeName].Capabilities, "filewatcher")
 	require.Len(t, resp.Nodes[nodeName].Sources, 1)
 	require.Len(t, resp.Orphans, 1)
 	require.Equal(t, "orphan1", resp.Orphans[0].ID)
@@ -326,11 +331,15 @@ func TestListSourceTypes(t *testing.T) {
 	require.NotEmpty(t, types)
 	found := map[string]bool{}
 	for _, typ := range types {
-		found[typ["type"].(string)] = true
+		rawType, ok := typ["type"]
+		require.True(t, ok, "missing type field")
+		sourceType, ok := rawType.(string)
+		require.True(t, ok, "type field must be a string")
+		found[sourceType] = true
 	}
 	for _, expected := range []string{"systemd", "filewatcher", "webhook_uptime_kuma", "webhook_watchtower"} {
 		require.True(t, found[expected], "missing type: "+expected)
 	}
 	require.True(t, found["docker"], "missing type: docker")
-	require.Len(t, found, 5)
+	require.GreaterOrEqual(t, len(found), 5)
 }

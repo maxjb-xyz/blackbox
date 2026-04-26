@@ -156,14 +156,19 @@ func (c *Client) SendBatch(ctx context.Context, entries []types.Entry) (accepted
 }
 
 func (c *Client) GetAgentConfig(ctx context.Context, capabilities []string) (AgentConfig, error) {
+	cleanCapabilities, err := sanitizeCapabilities(capabilities)
+	if err != nil {
+		return AgentConfig{}, err
+	}
+
 	req, err := http.NewRequest(http.MethodGet, c.serverURL+"/api/agent/config", nil)
 	if err != nil {
 		return AgentConfig{}, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("X-Blackbox-Agent-Key", c.token)
 	req.Header.Set("X-Blackbox-Node-Name", c.nodeName)
-	if len(capabilities) > 0 {
-		req.Header.Set("X-Blackbox-Agent-Capabilities", strings.Join(capabilities, ","))
+	if len(cleanCapabilities) > 0 {
+		req.Header.Set("X-Blackbox-Agent-Capabilities", strings.Join(cleanCapabilities, ","))
 	}
 	req = req.WithContext(ctx)
 
@@ -181,6 +186,9 @@ func (c *Client) GetAgentConfig(ctx context.Context, capabilities []string) (Age
 		if readErr != nil {
 			msg = fmt.Sprintf("(could not read body: %v)", readErr)
 		}
+		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+			return AgentConfig{}, &PermanentError{StatusCode: resp.StatusCode, Message: msg}
+		}
 		return AgentConfig{}, fmt.Errorf("server returned %d: %s", resp.StatusCode, msg)
 	}
 
@@ -189,4 +197,19 @@ func (c *Client) GetAgentConfig(ctx context.Context, capabilities []string) (Age
 		return AgentConfig{}, fmt.Errorf("decode agent config: %w", err)
 	}
 	return config, nil
+}
+
+func sanitizeCapabilities(capabilities []string) ([]string, error) {
+	cleaned := make([]string, 0, len(capabilities))
+	for _, capability := range capabilities {
+		capability = strings.TrimSpace(capability)
+		if capability == "" {
+			continue
+		}
+		if strings.Contains(capability, ",") {
+			return nil, fmt.Errorf("invalid capability %q: capability values must not contain commas", capability)
+		}
+		cleaned = append(cleaned, capability)
+	}
+	return cleaned, nil
 }

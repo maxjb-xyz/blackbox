@@ -103,19 +103,17 @@ func main() {
 		log.Println("file watcher: WATCH_PATHS not set, file watching disabled")
 	}
 
-	if os.Getenv("WATCH_SYSTEMD") == "true" {
-		if !systemd.Supported() {
-			log.Println("systemd watcher: disabled in this build; rebuild on Linux with cgo, libsystemd headers, and -tags systemd to enable")
-		} else {
-			initialUnits, err := loadSystemdUnits(ctx, c, caps)
-			if err != nil {
-				log.Printf("systemd watcher: failed to load units from server, starting with empty list: %v", err)
-			}
-			systemdSettings := systemd.NewSettings(initialUnits)
-			go refreshSystemdSettings(ctx, c, caps, systemdSettings)
-			go systemd.Watch(ctx, nodeName, systemdSettings, out)
-			log.Printf("systemd watcher: started, watching %d units", len(initialUnits))
+	if isSystemdWatchEnabled() {
+		initialUnits, err := loadSystemdUnits(ctx, c, caps)
+		if err != nil {
+			log.Printf("systemd watcher: failed to load units from server, starting with empty list: %v", err)
 		}
+		systemdSettings := systemd.NewSettings(initialUnits)
+		go refreshSystemdSettings(ctx, c, caps, systemdSettings)
+		go systemd.Watch(ctx, nodeName, systemdSettings, out)
+		log.Printf("systemd watcher: started, watching %d units", len(initialUnits))
+	} else if os.Getenv("WATCH_SYSTEMD") == "true" {
+		log.Println("systemd watcher: disabled in this build; rebuild on Linux with cgo, libsystemd headers, and -tags systemd to enable")
 	} else {
 		log.Println("systemd watcher: WATCH_SYSTEMD not set, systemd watching disabled")
 	}
@@ -176,10 +174,14 @@ func buildCapabilities(watchPaths []string) []string {
 	if len(watchPaths) > 0 {
 		caps = append(caps, "filewatcher")
 	}
-	if os.Getenv("WATCH_SYSTEMD") == "true" {
+	if isSystemdWatchEnabled() {
 		caps = append(caps, "systemd")
 	}
 	return caps
+}
+
+func isSystemdWatchEnabled() bool {
+	return os.Getenv("WATCH_SYSTEMD") == "true" && systemd.Supported()
 }
 
 func loadFileWatcherRedactSecrets(ctx context.Context, c *client.Client, caps []string) bool {

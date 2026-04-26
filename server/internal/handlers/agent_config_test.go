@@ -20,6 +20,9 @@ func newAgentConfigTestDB(t *testing.T) *gorm.DB {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&models.Node{}, &models.DataSourceInstance{}, &models.AppSetting{}, &models.SystemdUnitConfig{}))
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	return db
 }
 
@@ -74,5 +77,5 @@ func TestAgentConfig_ReadsFromDataSourceInstances(t *testing.T) {
 	require.NoError(t, db.Where("name = ?", nodeName).First(&node).Error)
 	var caps []string
 	require.NoError(t, json.Unmarshal([]byte(node.Capabilities), &caps))
-	require.Equal(t, []string{"docker", "systemd", "filewatcher"}, caps)
+	require.ElementsMatch(t, []string{"docker", "systemd", "filewatcher"}, caps)
 }

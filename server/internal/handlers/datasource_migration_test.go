@@ -27,7 +27,8 @@ func newMigrationTestDB(t *testing.T) *gorm.DB {
 func TestMigrateDataSources_SystemdRows(t *testing.T) {
 	db := newMigrationTestDB(t)
 
-	units, _ := json.Marshal([]string{"nginx.service", "caddy.service"})
+	units, err := json.Marshal([]string{"nginx.service", "caddy.service"})
+	require.NoError(t, err)
 	require.NoError(t, db.Create(&models.SystemdUnitConfig{
 		NodeName: "homelab-01",
 		Units:    string(units),
@@ -105,9 +106,11 @@ func TestMigrateDataSources_WebhookInstances(t *testing.T) {
 func TestMigrateDataSources_Idempotent(t *testing.T) {
 	db := newMigrationTestDB(t)
 	require.NoError(t, db.Create(&models.Node{ID: "n1", Name: "homelab-01", Capabilities: "[]"}).Error)
+	units, err := json.Marshal([]string{"nginx.service"})
+	require.NoError(t, err)
 	require.NoError(t, db.Create(&models.SystemdUnitConfig{
 		NodeName: "homelab-01",
-		Units:    `["nginx.service"]`,
+		Units:    string(units),
 	}).Error)
 	require.NoError(t, handlers.MigrateDataSources(db, "s"))
 	require.NoError(t, handlers.MigrateDataSources(db, "s"))

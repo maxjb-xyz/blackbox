@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
+	"slices"
+	"strings"
 	"time"
 
 	"blackbox/server/internal/models"
@@ -25,12 +28,17 @@ func MigrateDataSources(db *gorm.DB, envWebhookSecret string) error {
 		nodeName := cfg.NodeName
 		var units []string
 		if err := json.Unmarshal([]byte(cfg.Units), &units); err != nil {
+			log.Printf("MigrateDataSources: invalid systemd units for node %s: %v (raw=%q)", nodeName, err, cfg.Units)
 			units = []string{}
 		}
-		cfgJSON, _ := json.Marshal(map[string]any{"units": units})
+		cfgJSON, err := json.Marshal(map[string]any{"units": units})
+		if err != nil {
+			log.Printf("MigrateDataSources: failed to marshal systemd config for node %s: %v", nodeName, err)
+			return fmt.Errorf("marshal systemd config for %s: %w", nodeName, err)
+		}
 
 		var existing models.DataSourceInstance
-		err := db.Where("type = ? AND node_id = ?", "systemd", nodeName).First(&existing).Error
+		err = db.Where("type = ? AND node_id = ?", "systemd", nodeName).First(&existing).Error
 		if err == nil {
 			continue // already migrated
 		}
@@ -52,13 +60,16 @@ func MigrateDataSources(db *gorm.DB, envWebhookSecret string) error {
 	redact := true
 	var fwSetting models.AppSetting
 	if err := db.First(&fwSetting, "key = ?", fileWatcherRedactSecretsKey).Error; err == nil {
-		redact = fwSetting.Value != "false"
+		redact = !strings.EqualFold(fwSetting.Value, "false")
 	}
 	var nodes []models.Node
 	if err := db.Find(&nodes).Error; err != nil {
 		return fmt.Errorf("load nodes: %w", err)
 	}
-	fwCfg, _ := json.Marshal(map[string]any{"redact_secrets": redact})
+	fwCfg, err := json.Marshal(map[string]any{"redact_secrets": redact})
+	if err != nil {
+		return fmt.Errorf("marshal filewatcher config: %w", err)
+	}
 	for _, node := range nodes {
 		nodeName := node.Name
 		enabled := nodeHasCapability(node.Capabilities, "filewatcher")
@@ -76,6 +87,7 @@ func MigrateDataSources(db *gorm.DB, envWebhookSecret string) error {
 			Config: string(fwCfg), Enabled: enabled,
 			CreatedAt: now, UpdatedAt: now,
 		}
+		// Use a field map here so SQLite/GORM persists Enabled=false instead of reapplying the default:true tag.
 		if err := db.Model(&models.DataSourceInstance{}).Create(map[string]any{
 			"id":         inst.ID,
 			"type":       inst.Type,
@@ -124,10 +136,5 @@ func nodeHasCapability(rawCapabilities, capability string) bool {
 	if err := json.Unmarshal([]byte(rawCapabilities), &capabilities); err != nil {
 		return false
 	}
-	for _, candidate := range capabilities {
-		if candidate == capability {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(capabilities, capability)
 }

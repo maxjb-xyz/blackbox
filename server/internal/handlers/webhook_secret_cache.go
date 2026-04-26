@@ -3,12 +3,14 @@ package handlers
 import (
 	"sync"
 
+	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 )
 
 var (
 	webhookSecretCache     sync.Map
 	webhookSecretFallbacks sync.Map
+	webhookSecretRefreshes singleflight.Group
 )
 
 func PrimeWebhookSecretCache(db *gorm.DB, sourceType, envFallback string) string {
@@ -18,19 +20,27 @@ func PrimeWebhookSecretCache(db *gorm.DB, sourceType, envFallback string) string
 
 func GetCachedWebhookSecret(db *gorm.DB, sourceType, envFallback string) string {
 	if cached, ok := webhookSecretCache.Load(sourceType); ok {
-		return cached.(string)
+		if secret, ok := cached.(string); ok {
+			return secret
+		}
+		webhookSecretCache.Delete(sourceType)
+	}
+	if _, ok := webhookSecretFallbacks.Load(sourceType); !ok {
+		webhookSecretFallbacks.Store(sourceType, envFallback)
 	}
 	return RefreshWebhookSecretCache(db, sourceType)
 }
 
 func RefreshWebhookSecretCache(db *gorm.DB, sourceType string) string {
-	envFallback := ""
-	if fallback, ok := webhookSecretFallbacks.Load(sourceType); ok {
-		envFallback = fallback.(string)
+	resolved, _, _ := webhookSecretRefreshes.Do(sourceType, func() (interface{}, error) {
+		secret := GetWebhookSecret(db, sourceType, loadWebhookSecretFallback(sourceType))
+		webhookSecretCache.Store(sourceType, secret)
+		return secret, nil
+	})
+	if secret, ok := resolved.(string); ok {
+		return secret
 	}
-	secret := GetWebhookSecret(db, sourceType, envFallback)
-	webhookSecretCache.Store(sourceType, secret)
-	return secret
+	return loadWebhookSecretFallback(sourceType)
 }
 
 func refreshWebhookSecretCacheIfNeeded(db *gorm.DB, sourceType string) {
@@ -40,4 +50,13 @@ func refreshWebhookSecretCacheIfNeeded(db *gorm.DB, sourceType string) {
 	if _, ok := webhookSecretFallbacks.Load(sourceType); ok {
 		RefreshWebhookSecretCache(db, sourceType)
 	}
+}
+
+func loadWebhookSecretFallback(sourceType string) string {
+	if fallback, ok := webhookSecretFallbacks.Load(sourceType); ok {
+		if secret, ok := fallback.(string); ok {
+			return secret
+		}
+	}
+	return ""
 }

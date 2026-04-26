@@ -100,13 +100,18 @@ export default function DataSourcesGroup() {
   }
 
   async function handleDelete(id: string) {
+    if (saving) return
     if (!confirm('Remove this source?')) return
+    setSaving(true)
+    setSaveError(null)
     try {
       await deleteSource(id)
       setSelection(null)
       await load()
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : 'Delete failed')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -237,10 +242,15 @@ export default function DataSourcesGroup() {
             onExcludeInputChange={setExcludeInput}
             onExcludeTypeChange={setExcludeType}
             onAddExclude={async () => {
+              const trimmedName = excludeInput.trim()
+              if (trimmedName === '') {
+                setExcludeError('Name is required')
+                return
+              }
               setExcludeError(null)
               setAddingExclude(true)
               try {
-                await createExcludedTarget({ type: excludeType, name: excludeInput.trim() })
+                await createExcludedTarget({ type: excludeType, name: trimmedName })
                 setExcludeInput('')
                 await loadExcludes()
               } catch (e) {
@@ -408,7 +418,7 @@ function SourceConfigPanel({ instance, saving, saveError, onSave, onDelete }: {
               rows={4}
               value={unitsArray.join('\n')}
               onChange={e => {
-                const parsedLines = e.target.value.split('\n').map(s => s.trim()).filter(Boolean)
+                const parsedLines = e.target.value.split('\n')
                 setLocalCfg(c => ({ ...c, units: parsedLines }))
               }}
               placeholder="nginx.service&#10;caddy.service"
@@ -438,6 +448,11 @@ function SourceConfigPanel({ instance, saving, saveError, onSave, onDelete }: {
             disabled={saving}
             onClick={() => {
               const configPayload = { ...localCfg }
+              if (Array.isArray(configPayload.units)) {
+                configPayload.units = configPayload.units
+                  .map(value => String(value).trim())
+                  .filter(value => value !== '')
+              }
               onSave({ name, enabled, config: configPayload })
             }}
             style={{ fontSize: 10, border: '1px solid var(--border)', padding: '4px 12px', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontFamily: 'inherit' }}
@@ -452,7 +467,7 @@ function SourceConfigPanel({ instance, saving, saveError, onSave, onDelete }: {
 
 function ConfigRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-start', padding: '10px 14px', borderBottom: '1px solid #161616', gap: 12 }}>
+    <div style={{ display: 'flex', alignItems: 'flex-start', padding: '10px 14px', borderBottom: '1px solid var(--border)', gap: 12 }}>
       <div style={{ fontSize: 10, color: 'var(--muted)', width: 130, flexShrink: 0, paddingTop: 2 }}>{label}</div>
       <div style={{ flex: 1 }}>{children}</div>
     </div>
@@ -470,6 +485,8 @@ function DockerPanel({ excludes, excludeInput, excludeType, excludeError, adding
   onAddExclude: () => void
   onRemoveExclude: (id: string) => void
 }) {
+  const canAddExclude = excludeInput.trim() !== '' && !addingExclude
+
   return (
     <div>
       <div style={{ marginBottom: 16 }}>
@@ -486,14 +503,14 @@ function DockerPanel({ excludes, excludeInput, excludeType, excludeError, adding
       </div>
 
       <div style={{ border: '1px solid var(--border)' }}>
-        <div style={{ padding: '10px 14px', borderBottom: '1px solid #161616', fontSize: 10, color: 'var(--muted)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+        <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', fontSize: 10, color: 'var(--muted)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
           Excluded Targets
         </div>
         {excludes.length === 0 && (
           <div style={{ padding: '10px 14px', fontSize: 10, color: 'var(--muted)' }}>No exclusions configured.</div>
         )}
         {excludes.map(ex => (
-          <div key={ex.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 14px', borderBottom: '1px solid #161616', fontSize: 11 }}>
+          <div key={ex.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 14px', borderBottom: '1px solid var(--border)', fontSize: 11 }}>
             <span>
               <span style={{ fontSize: 9, color: 'var(--muted)', marginRight: 8, border: '1px solid var(--border)', padding: '1px 4px' }}>{ex.type}</span>
               {ex.name}
@@ -523,14 +540,21 @@ function DockerPanel({ excludes, excludeInput, excludeType, excludeError, adding
             value={excludeInput}
             onChange={e => onExcludeInputChange(e.target.value)}
             placeholder="container-name"
-            onKeyDown={e => { if (e.key === 'Enter') onAddExclude() }}
+            onKeyDown={e => {
+              if (e.key !== 'Enter') return
+              if (!canAddExclude) {
+                e.preventDefault()
+                return
+              }
+              onAddExclude()
+            }}
             style={{ flex: 1, background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'inherit', fontSize: 11, padding: '4px 8px' }}
           />
           <button
             type="button"
             onClick={onAddExclude}
-            disabled={addingExclude}
-            style={{ fontSize: 10, border: '1px solid var(--border)', padding: '4px 10px', background: 'transparent', color: addingExclude ? 'var(--muted)' : 'var(--text)', cursor: addingExclude ? 'default' : 'pointer', fontFamily: 'inherit' }}
+            disabled={!canAddExclude}
+            style={{ fontSize: 10, border: '1px solid var(--border)', padding: '4px 10px', background: 'transparent', color: canAddExclude ? 'var(--text)' : 'var(--muted)', cursor: canAddExclude ? 'pointer' : 'default', fontFamily: 'inherit' }}
           >
             {addingExclude ? 'Adding...' : 'Add'}
           </button>

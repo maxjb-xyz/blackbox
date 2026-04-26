@@ -800,7 +800,7 @@ export async function listExcludedTargets(): Promise<ExcludedTarget[]> {
   return res.json() as Promise<ExcludedTarget[]>
 }
 
-export async function createExcludedTarget(input: { type: string; name: string }): Promise<ExcludedTarget> {
+export async function createExcludedTarget(input: { type: ExcludedTarget['type']; name: string }): Promise<ExcludedTarget> {
   const res = await apiFetch('/api/admin/excluded-targets', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

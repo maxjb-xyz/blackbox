@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  COLORS,
   getSourceCardColors,
   getSourceIconSpec,
 } from '../src/components/sourceIcons.ts'
@@ -16,6 +17,9 @@ test('non-branded sources resolve to generic icon specs', () => {
   assert.deepEqual(getSourceIconSpec('systemd'), { kind: 'generic', name: 'systemd' })
   assert.deepEqual(getSourceIconSpec('filewatcher'), { kind: 'generic', name: 'filewatcher' })
   assert.deepEqual(getSourceIconSpec('unknown_source'), { kind: 'generic', name: 'fallback' })
+  assert.deepEqual(getSourceIconSpec(''), { kind: 'generic', name: 'fallback' })
+  assert.deepEqual(getSourceIconSpec(null), { kind: 'generic', name: 'fallback' })
+  assert.deepEqual(getSourceIconSpec(undefined), { kind: 'generic', name: 'fallback' })
 })
 
 test('watchtower keeps its own color identity distinct from uptime kuma', () => {
@@ -23,5 +27,5 @@ test('watchtower keeps its own color identity distinct from uptime kuma', () => 
   const watchtower = getSourceCardColors('webhook_watchtower')
 
   assert.notDeepEqual(watchtower, kuma)
-  assert.equal(watchtower.text, '#57b8d9')
+  assert.equal(watchtower.text, COLORS.watchtower.text)
 })

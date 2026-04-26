@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -102,6 +103,8 @@ func TestInit_EnforcesSingletonDataSourceUniqueness(t *testing.T) {
 		ID: "sys-2", Type: "systemd", Scope: "agent", NodeID: &nodeName, Name: "Systemd 2", Config: "{}",
 	}).Error
 	require.Error(t, err)
+	sysErr := strings.ToLower(err.Error())
+	require.Truef(t, strings.Contains(sysErr, "unique") || strings.Contains(sysErr, "duplicate"), "unexpected duplicate error: %v", err)
 
 	require.NoError(t, database.Create(&models.DataSourceInstance{
 		ID: "wh-1", Type: "webhook_uptime_kuma", Scope: "server", Name: "UK", Config: "{}",
@@ -110,6 +113,8 @@ func TestInit_EnforcesSingletonDataSourceUniqueness(t *testing.T) {
 		ID: "wh-2", Type: "webhook_uptime_kuma", Scope: "server", Name: "UK 2", Config: "{}",
 	}).Error
 	require.Error(t, err)
+	webhookErr := strings.ToLower(err.Error())
+	require.Truef(t, strings.Contains(webhookErr, "unique") || strings.Contains(webhookErr, "duplicate"), "unexpected duplicate error: %v", err)
 }
 
 func TestInit_CascadesAgentScopedDataSourcesWhenNodeDeleted(t *testing.T) {
@@ -122,12 +127,17 @@ func TestInit_CascadesAgentScopedDataSourcesWhenNodeDeleted(t *testing.T) {
 	require.NoError(t, database.Create(&models.DataSourceInstance{
 		ID: "sys-1", Type: "systemd", Scope: "agent", NodeID: &nodeName, Name: "Systemd", Config: "{}",
 	}).Error)
+	require.NoError(t, database.Create(&models.DataSourceInstance{
+		ID: "srv-1", Type: "webhook_uptime_kuma", Scope: "server", Name: "UK", Config: "{}",
+	}).Error)
 
 	require.NoError(t, database.Delete(&models.Node{}, "name = ?", nodeName).Error)
 
 	var count int64
 	require.NoError(t, database.Model(&models.DataSourceInstance{}).Where("id = ?", "sys-1").Count(&count).Error)
 	require.Equal(t, int64(0), count)
+	require.NoError(t, database.Model(&models.DataSourceInstance{}).Where("id = ?", "srv-1").Count(&count).Error)
+	require.Equal(t, int64(1), count)
 }
 
 func TestInit_DropsLegacyTimestampOnlyEntryIndex(t *testing.T) {
