@@ -10,4 +10,5 @@ type Node struct {
 	AgentVersion string    `json:"agent_version"`
 	IPAddress    string    `json:"ip_address"`
 	OsInfo       string    `json:"os_info"`
+	Capabilities string    `gorm:"not null;default:'[]'" json:"capabilities"` // JSON []string
 }
