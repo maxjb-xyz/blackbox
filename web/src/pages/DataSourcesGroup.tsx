@@ -19,6 +19,8 @@ import {
   parseSourceConfig,
 } from '../api/client'
 import type { ExcludedTarget } from '../api/client'
+import SourceIcon from '../components/SourceIcon'
+import { getSourceCardColors } from '../components/sourceIcons'
 import SourceCatalog from './SourceCatalog'
 
 type Selection =
@@ -270,7 +272,7 @@ export default function DataSourcesGroup() {
 function SidebarTab({ label, type, active, enabled, onClick }: {
   label: string; type: string; active: boolean; enabled: boolean; onClick: () => void
 }) {
-  const color = typeColor(type)
+  const color = getSourceCardColors(type).text
   return (
     <button
       type="button"
@@ -285,7 +287,9 @@ function SidebarTab({ label, type, active, enabled, onClick }: {
         opacity: enabled ? 1 : 0.5,
       }}
     >
-      <span style={{ width: 5, height: 5, background: color, flexShrink: 0, display: 'inline-block' }} />
+      <span style={{ width: 16, height: 16, color, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+        <SourceIcon type={type} size={14} strokeWidth={1.7} />
+      </span>
       {label}
     </button>
   )
@@ -306,14 +310,6 @@ function AddSourceButton({ onClick }: { onClick: () => void }) {
       + add source
     </button>
   )
-}
-
-function typeColor(type: string): string {
-  const map: Record<string, string> = {
-    docker: '#1a3a5a', systemd: '#3a2a5a', filewatcher: '#5a3a1a',
-    webhook_uptime_kuma: '#1a5a3a', webhook_watchtower: '#1a5a3a',
-  }
-  return map[type] ?? 'var(--muted)'
 }
 
 function SourceConfigPanel({ instance, saving, saveError, onSave, onDelete }: {
@@ -339,15 +335,21 @@ function SourceConfigPanel({ instance, saving, saveError, onSave, onDelete }: {
   const typeLabel = instance.type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
   const isWebhook = instance.type.startsWith('webhook_')
   const endpointPath = instance.type === 'webhook_uptime_kuma' ? '/api/webhooks/uptime' : '/api/webhooks/watchtower'
+  const typeColor = getSourceCardColors(instance.type).text
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 16 }}>
-        <div style={{ fontSize: 11, letterSpacing: '0.1em', color: 'var(--muted)', textTransform: 'uppercase' }}>
-          {name}
-          <span style={{ marginLeft: 8, fontSize: 9, color: 'var(--muted)', border: '1px solid var(--border)', padding: '1px 5px', letterSpacing: '0.08em' }}>
-            {typeLabel}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+          <span style={{ color: typeColor, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <SourceIcon type={instance.type} size={18} strokeWidth={1.7} />
           </span>
+          <div style={{ fontSize: 11, letterSpacing: '0.1em', color: 'var(--muted)', textTransform: 'uppercase', minWidth: 0 }}>
+            {name}
+            <span style={{ marginLeft: 8, fontSize: 9, color: 'var(--muted)', border: '1px solid var(--border)', padding: '1px 5px', letterSpacing: '0.08em' }}>
+              {typeLabel}
+            </span>
+          </div>
         </div>
         <button type="button" onClick={onDelete} style={{ fontSize: 10, color: 'var(--muted)', border: '1px solid var(--border)', padding: '3px 8px', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit' }}>
           Remove
@@ -464,9 +466,14 @@ function DockerPanel({ excludes, excludeInput, excludeType, excludeError, adding
   return (
     <div>
       <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 11, letterSpacing: '0.1em', color: 'var(--muted)', textTransform: 'uppercase' }}>
-          Docker
-          <span style={{ marginLeft: 8, fontSize: 9, color: 'var(--muted)', border: '1px solid var(--border)', padding: '1px 5px' }}>Always on</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 11, letterSpacing: '0.1em', color: 'var(--muted)', textTransform: 'uppercase' }}>
+          <span style={{ color: getSourceCardColors('docker').text, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+            <SourceIcon type="docker" size={18} strokeWidth={1.7} />
+          </span>
+          <span>
+            Docker
+            <span style={{ marginLeft: 8, fontSize: 9, color: 'var(--muted)', border: '1px solid var(--border)', padding: '1px 5px' }}>Always on</span>
+          </span>
         </div>
         <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 3 }}>Container lifecycle events — runs on every agent automatically.</div>
       </div>

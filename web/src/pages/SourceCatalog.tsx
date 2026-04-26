@@ -1,5 +1,7 @@
 import { useEffect, useId, useRef, type KeyboardEvent } from 'react'
 import type { NodeSources, SourceTypeDef, DataSourceInstance, CreateSourceInput } from '../api/client'
+import SourceIcon from '../components/SourceIcon'
+import { getSourceCardColors } from '../components/sourceIcons'
 
 interface Props {
   nodeName: string | null
@@ -155,24 +157,10 @@ export default function SourceCatalog({ nodeName, nodeInfo, sourceTypes, existin
   )
 }
 
-const TYPE_COLORS: Record<string, { border: string; bg: string; text: string; topBar: string }> = {
-  docker:              { border: '#1a3a5a', bg: '#0d1e2e', text: '#3a7abd', topBar: 'linear-gradient(90deg,#1a4a7a,transparent 60%)' },
-  systemd:             { border: '#3a2a5a', bg: '#1a1228', text: '#7a5abd', topBar: 'linear-gradient(90deg,#4a3a7a,transparent 60%)' },
-  filewatcher:         { border: '#5a3a1a', bg: '#281a0d', text: '#bd7a3a', topBar: 'linear-gradient(90deg,#7a4a1a,transparent 60%)' },
-  webhook_uptime_kuma: { border: '#1a5a3a', bg: '#0d2818', text: '#3abd7a', topBar: 'linear-gradient(90deg,#1a7a4a,transparent 60%)' },
-  webhook_watchtower:  { border: '#24516a', bg: '#0d1f2b', text: '#57b8d9', topBar: 'linear-gradient(90deg,#2f7398,transparent 60%)' },
-}
-
-const TYPE_SHORT: Record<string, string> = {
-  docker: 'DCK', systemd: 'SYS', filewatcher: 'FILE',
-  webhook_uptime_kuma: 'KUMA', webhook_watchtower: 'WTCH',
-}
-
 function SourceCard({ typeDef, added, virtual, onClick }: {
   typeDef: SourceTypeDef; added: boolean; virtual: boolean; onClick: () => void
 }) {
-  const colors = TYPE_COLORS[typeDef.type] ?? { border: '#222', bg: '#111', text: '#666', topBar: 'none' }
-  const short = TYPE_SHORT[typeDef.type] ?? '???'
+  const colors = getSourceCardColors(typeDef.type)
   const disabled = added || virtual
 
   return (
@@ -198,8 +186,19 @@ function SourceCard({ typeDef, added, virtual, onClick }: {
 
       <div style={{ padding: '14px 16px 16px' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
-          <div style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 'bold', letterSpacing: '0.08em', border: `1px solid ${colors.border}`, background: colors.bg, color: colors.text }}>
-            {short}
+          <div
+            style={{
+              width: 32,
+              height: 32,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              border: `1px solid ${colors.border}`,
+              background: 'rgba(255,255,255,0.02)',
+              color: colors.text,
+            }}
+          >
+            <SourceIcon type={typeDef.type} size={18} />
           </div>
           {(added || virtual) && (
             <div style={{ fontSize: 9, padding: '2px 6px', letterSpacing: '0.08em', border: `1px solid ${colors.border}`, color: colors.text }}>
