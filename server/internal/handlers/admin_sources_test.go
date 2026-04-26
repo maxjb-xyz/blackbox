@@ -39,8 +39,8 @@ func TestListSources_Empty(t *testing.T) {
 func TestCreateSource_Valid(t *testing.T) {
 	db := newSourcesTestDB(t)
 	body, _ := json.Marshal(map[string]any{
-		"type": "proxmox", "scope": "agent", "node_id": "homelab-01",
-		"name": "pve01", "config": map[string]any{"url": "https://pve01:8006", "api_token": "tok", "insecure_skip_verify": false, "poll_interval_seconds": 10},
+		"type": "filewatcher", "scope": "agent", "node_id": "homelab-01",
+		"name": "watcher", "config": map[string]any{"redact_secrets": false},
 		"enabled": true,
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/admin/sources", bytes.NewReader(body))
@@ -50,8 +50,8 @@ func TestCreateSource_Valid(t *testing.T) {
 	require.Equal(t, http.StatusCreated, w.Code)
 
 	var inst models.DataSourceInstance
-	require.NoError(t, db.Where("type = ?", "proxmox").First(&inst).Error)
-	require.Equal(t, "pve01", inst.Name)
+	require.NoError(t, db.Where("type = ?", "filewatcher").First(&inst).Error)
+	require.Equal(t, "watcher", inst.Name)
 }
 
 func TestCreateSource_UnknownType(t *testing.T) {
@@ -68,12 +68,12 @@ func TestUpdateSource(t *testing.T) {
 	db := newSourcesTestDB(t)
 	nodeName := "homelab-01"
 	inst := models.DataSourceInstance{
-		ID: "testid", Type: "proxmox", Scope: "agent", NodeID: &nodeName,
-		Name: "pve01", Config: `{"url":"https://old:8006"}`, Enabled: true,
+		ID: "testid", Type: "filewatcher", Scope: "agent", NodeID: &nodeName,
+		Name: "watcher", Config: `{"redact_secrets":true}`, Enabled: true,
 	}
 	require.NoError(t, db.Create(&inst).Error)
 
-	body, _ := json.Marshal(map[string]any{"name": "pve01-updated", "enabled": false, "config": map[string]any{"url": "https://new:8006"}})
+	body, _ := json.Marshal(map[string]any{"name": "watcher-updated", "enabled": false, "config": map[string]any{"redact_secrets": false}})
 	r := chi.NewRouter()
 	r.Put("/api/admin/sources/{id}", handlers.UpdateSource(db))
 	req := httptest.NewRequest(http.MethodPut, "/api/admin/sources/testid", bytes.NewReader(body))
@@ -84,22 +84,21 @@ func TestUpdateSource(t *testing.T) {
 
 	var updated models.DataSourceInstance
 	require.NoError(t, db.First(&updated, "id = ?", "testid").Error)
-	require.Equal(t, "pve01-updated", updated.Name)
+	require.Equal(t, "watcher-updated", updated.Name)
 	require.False(t, updated.Enabled)
 }
 
 func TestUpdateSource_PreservesSensitiveConfigWhenOmitted(t *testing.T) {
 	db := newSourcesTestDB(t)
-	nodeName := "homelab-01"
 	inst := models.DataSourceInstance{
-		ID: "testid", Type: "proxmox", Scope: "agent", NodeID: &nodeName,
-		Name: "pve01", Config: `{"url":"https://old:8006","api_token":"keep-me","insecure_skip_verify":false}`,
+		ID: "testid", Type: "webhook_uptime_kuma", Scope: "server",
+		Name: "UK", Config: `{"secret":"keep-me","note":"existing"}`,
 		Enabled: true,
 	}
 	require.NoError(t, db.Create(&inst).Error)
 
 	body, err := json.Marshal(map[string]any{
-		"config": map[string]any{"url": "https://new:8006"},
+		"config": map[string]any{"note": "updated"},
 	})
 	require.NoError(t, err)
 
@@ -115,14 +114,13 @@ func TestUpdateSource_PreservesSensitiveConfigWhenOmitted(t *testing.T) {
 	require.NoError(t, db.First(&updated, "id = ?", "testid").Error)
 	var cfg map[string]any
 	require.NoError(t, json.Unmarshal([]byte(updated.Config), &cfg))
-	require.Equal(t, "https://new:8006", cfg["url"])
-	require.Equal(t, "keep-me", cfg["api_token"])
-	require.Equal(t, false, cfg["insecure_skip_verify"])
+	require.Equal(t, "updated", cfg["note"])
+	require.Equal(t, "keep-me", cfg["secret"])
 }
 
 func TestDeleteSource(t *testing.T) {
 	db := newSourcesTestDB(t)
-	require.NoError(t, db.Create(&models.DataSourceInstance{ID: "del1", Type: "proxmox", Scope: "agent", Name: "x", Config: "{}"}).Error)
+	require.NoError(t, db.Create(&models.DataSourceInstance{ID: "del1", Type: "filewatcher", Scope: "agent", Name: "x", Config: "{}"}).Error)
 
 	r := chi.NewRouter()
 	r.Delete("/api/admin/sources/{id}", handlers.DeleteSource(db))
@@ -242,15 +240,15 @@ func TestListSources_WebhookSecretRedacted(t *testing.T) {
 	require.NotContains(t, body, "supersecret")
 }
 
-func TestListSources_ProxmoxApiTokenRedactedAndOrphansIncluded(t *testing.T) {
+func TestListSources_OrphansIncluded(t *testing.T) {
 	db := newSourcesTestDB(t)
 	nodeName := "homelab-01"
 	require.NoError(t, db.Create(&models.Node{
 		ID: "n1", Name: nodeName, Capabilities: "[]",
 	}).Error)
 	require.NoError(t, db.Create(&models.DataSourceInstance{
-		ID: "pve1", Type: "proxmox", Scope: "agent", NodeID: &nodeName,
-		Name: "PVE", Config: `{"url":"https://pve01:8006","api_token":"supersecret"}`, Enabled: true,
+		ID: "fw1", Type: "filewatcher", Scope: "agent", NodeID: &nodeName,
+		Name: "Watcher", Config: `{"redact_secrets":true}`, Enabled: true,
 	}).Error)
 	require.NoError(t, db.Create(&models.DataSourceInstance{
 		ID: "orphan1", Type: "filewatcher", Scope: "agent",
@@ -274,16 +272,12 @@ func TestListSources_ProxmoxApiTokenRedactedAndOrphansIncluded(t *testing.T) {
 	require.Len(t, resp.Nodes[nodeName].Sources, 1)
 	require.Len(t, resp.Orphans, 1)
 	require.Equal(t, "orphan1", resp.Orphans[0].ID)
-
-	var cfg map[string]any
-	require.NoError(t, json.Unmarshal([]byte(resp.Nodes[nodeName].Sources[0].Config), &cfg))
-	require.Equal(t, "", cfg["api_token"])
 }
 
 func TestCreateSource_InvalidConfigRejected(t *testing.T) {
 	db := newSourcesTestDB(t)
 	// Send a non-object JSON value as config
-	raw := []byte(`{"type":"proxmox","scope":"agent","node_id":"homelab-01","name":"pve01","config":42,"enabled":true}`)
+	raw := []byte(`{"type":"filewatcher","scope":"agent","node_id":"homelab-01","name":"watcher","config":42,"enabled":true}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/admin/sources", bytes.NewReader(raw))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -303,7 +297,9 @@ func TestListSourceTypes(t *testing.T) {
 	for _, typ := range types {
 		found[typ["type"].(string)] = true
 	}
-	for _, expected := range []string{"systemd", "filewatcher", "proxmox", "webhook_uptime_kuma", "webhook_watchtower"} {
+	for _, expected := range []string{"systemd", "filewatcher", "webhook_uptime_kuma", "webhook_watchtower"} {
 		require.True(t, found[expected], "missing type: "+expected)
 	}
+	require.True(t, found["docker"], "missing type: docker")
+	require.Len(t, found, 5)
 }

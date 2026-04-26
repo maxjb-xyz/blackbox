@@ -159,14 +159,13 @@ const TYPE_COLORS: Record<string, { border: string; bg: string; text: string; to
   docker:              { border: '#1a3a5a', bg: '#0d1e2e', text: '#3a7abd', topBar: 'linear-gradient(90deg,#1a4a7a,transparent 60%)' },
   systemd:             { border: '#3a2a5a', bg: '#1a1228', text: '#7a5abd', topBar: 'linear-gradient(90deg,#4a3a7a,transparent 60%)' },
   filewatcher:         { border: '#5a3a1a', bg: '#281a0d', text: '#bd7a3a', topBar: 'linear-gradient(90deg,#7a4a1a,transparent 60%)' },
-  proxmox:             { border: '#5a2018', bg: '#28100d', text: '#bd4a3a', topBar: 'linear-gradient(90deg,#7a2a1a,transparent 60%)' },
   webhook_uptime_kuma: { border: '#1a5a3a', bg: '#0d2818', text: '#3abd7a', topBar: 'linear-gradient(90deg,#1a7a4a,transparent 60%)' },
   webhook_watchtower:  { border: '#24516a', bg: '#0d1f2b', text: '#57b8d9', topBar: 'linear-gradient(90deg,#2f7398,transparent 60%)' },
 }
 
 const TYPE_SHORT: Record<string, string> = {
   docker: 'DCK', systemd: 'SYS', filewatcher: 'FILE',
-  proxmox: 'PVE', webhook_uptime_kuma: 'KUMA', webhook_watchtower: 'WTCH',
+  webhook_uptime_kuma: 'KUMA', webhook_watchtower: 'WTCH',
 }
 
 function SourceCard({ typeDef, added, virtual, onClick }: {
@@ -224,7 +223,6 @@ function buildDefaultConfig(type: string): Record<string, unknown> {
   switch (type) {
     case 'systemd': return { units: [] }
     case 'filewatcher': return { redact_secrets: true }
-    case 'proxmox': return { url: '', api_token: '', insecure_skip_verify: false, poll_interval_seconds: 10 }
     case 'webhook_uptime_kuma':
     case 'webhook_watchtower': return { secret: '' }
     default: return {}

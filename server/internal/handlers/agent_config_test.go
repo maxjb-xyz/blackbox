@@ -54,7 +54,7 @@ func TestAgentConfig_ReadsFromDataSourceInstances(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/agent/config", nil)
 	req.Header.Set("X-Blackbox-Node-Name", nodeName)
 	req.Header.Set("X-Blackbox-Agent-Key", agentToken)
-	req.Header.Set("X-Blackbox-Agent-Capabilities", "docker,systemd,filewatcher,proxmox")
+	req.Header.Set("X-Blackbox-Agent-Capabilities", "docker,systemd,filewatcher")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
@@ -74,5 +74,5 @@ func TestAgentConfig_ReadsFromDataSourceInstances(t *testing.T) {
 	require.NoError(t, db.Where("name = ?", nodeName).First(&node).Error)
 	var caps []string
 	require.NoError(t, json.Unmarshal([]byte(node.Capabilities), &caps))
-	require.Contains(t, caps, "proxmox")
+	require.Equal(t, []string{"docker", "systemd", "filewatcher"}, caps)
 }

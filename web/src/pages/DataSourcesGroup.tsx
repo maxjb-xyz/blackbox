@@ -311,7 +311,7 @@ function AddSourceButton({ onClick }: { onClick: () => void }) {
 function typeColor(type: string): string {
   const map: Record<string, string> = {
     docker: '#1a3a5a', systemd: '#3a2a5a', filewatcher: '#5a3a1a',
-    proxmox: '#5a2a1a', webhook_uptime_kuma: '#1a5a3a', webhook_watchtower: '#1a5a3a',
+    webhook_uptime_kuma: '#1a5a3a', webhook_watchtower: '#1a5a3a',
   }
   return map[type] ?? 'var(--muted)'
 }
@@ -420,55 +420,6 @@ function SourceConfigPanel({ instance, saving, saveError, onSave, onDelete }: {
               <span style={{ fontSize: 11, color: 'var(--muted)' }}>Strip likely secrets from file change diffs</span>
             </label>
           </ConfigRow>
-        )}
-
-        {instance.type === 'proxmox' && (
-          <>
-            <ConfigRow label="Proxmox URL">
-              <input
-                value={String(localCfg.url ?? '')}
-                onChange={e => setLocalCfg(c => ({ ...c, url: e.target.value }))}
-                placeholder="https://pve01.example.com:8006"
-                style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'inherit', fontSize: 11, padding: '4px 8px', width: '100%' }}
-              />
-            </ConfigRow>
-            <ConfigRow label="API Token">
-              <input
-                type="password"
-                value={String(localCfg.api_token ?? '')}
-                onChange={e => {
-                  setLocalCfg(c => ({ ...c, api_token: e.target.value }))
-                  setEditedFields(f => new Set(f).add('api_token'))
-                }}
-                placeholder="blackbox@pve!reader=uuid"
-                style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'inherit', fontSize: 11, padding: '4px 8px', width: '100%' }}
-              />
-              {!editedFields.has('api_token') && (
-                <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 3 }}>
-                  Leave blank to keep existing token
-                </div>
-              )}
-            </ConfigRow>
-            <ConfigRow label="Skip TLS Verify">
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={Boolean(localCfg.insecure_skip_verify)}
-                  onChange={e => setLocalCfg(c => ({ ...c, insecure_skip_verify: e.target.checked }))}
-                />
-                <span style={{ fontSize: 11, color: 'var(--muted)' }}>Allow self-signed certificates</span>
-              </label>
-            </ConfigRow>
-            <ConfigRow label="Poll Interval (s)">
-              <input
-                type="number"
-                value={Number(localCfg.poll_interval_seconds ?? 10)}
-                onChange={e => setLocalCfg(c => ({ ...c, poll_interval_seconds: Number(e.target.value) }))}
-                min={5} max={300}
-                style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'inherit', fontSize: 11, padding: '4px 8px', width: 80 }}
-              />
-            </ConfigRow>
-          </>
         )}
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderTop: '1px solid var(--border)' }}>
