@@ -683,17 +683,15 @@ The database is automatically migrated on startup — no manual schema managemen
 - [x] Mobile-friendly view
 - [x] Support OpenAI/Other AI Providers
 - [x] Webhook notification support
-<<<<<<< feature/mcp-server
 - [x] MCP server for AI assistant integration
-=======
 - [x] GitHub tab in admin (release notes, feature requests, bug reports)
->>>>>>> main
 - [x] AI review notifications — notify subscribed destinations when Ollama completes incident analysis
 - [x] Container and stack exclusion list
 - [x] FTS5 full-text timeline search
 - [x] Admin audit log
 - [x] Webhook delivery log
 - [x] Resolved incident PDF report export
+- [x] Data source catalog and revamped UI
 - [ ] Timeline UI polish and interaction improvements
 - [ ] Grafana data source plugin
 - [ ] Bi-directional agent analysis
