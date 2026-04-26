@@ -78,7 +78,7 @@ export default function DataSourcesGroup() {
 
   useEffect(() => {
     if (selection?.kind === 'docker') void loadExcludes()
-  }, [selection, loadExcludes])
+  }, [selection?.kind, loadExcludes])
 
   const selectedInstance: DataSourceInstance | null = (() => {
     if (!sources) return null

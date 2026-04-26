@@ -120,6 +120,9 @@ func TestUpdateSource_PreservesSensitiveConfigWhenOmitted(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(updated.Config), &cfg))
 	require.Equal(t, "updated", cfg["note"])
 	require.Equal(t, "keep-me", cfg["secret"])
+	var respInst models.DataSourceInstance
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &respInst))
+	require.NotContains(t, respInst.Config, "keep-me")
 }
 
 func TestUpdateSource_PreservesSensitiveConfigWhenNullOrNonString(t *testing.T) {
@@ -282,11 +285,10 @@ func TestGetWebhookSecret_EmptyDBSecretDisablesWebhook(t *testing.T) {
 
 func TestGetWebhookSecret_DisabledOrMissingSourceDisablesWebhook(t *testing.T) {
 	db := newSourcesTestDB(t)
-	require.NoError(t, db.Create(&models.DataSourceInstance{
+	require.NoError(t, db.Select("*").Create(&models.DataSourceInstance{
 		ID: "wh1", Type: "webhook_uptime_kuma", Scope: "server",
 		Name: "UK", Config: `{"secret":"db-secret"}`, Enabled: false,
 	}).Error)
-	require.NoError(t, db.Model(&models.DataSourceInstance{}).Where("id = ?", "wh1").Update("enabled", false).Error)
 	require.Equal(t, "", handlers.GetWebhookSecret(db, "webhook_uptime_kuma", "env-secret"))
 
 	require.NoError(t, db.Delete(&models.DataSourceInstance{}, "id = ?", "wh1").Error)
@@ -399,6 +401,17 @@ func TestCreateSource_FileWatcherRequiresRedactSecrets(t *testing.T) {
 	require.Contains(t, w.Body.String(), "redact_secrets is required")
 }
 
+func TestCreateSource_FileWatcherRequiresBooleanRedactSecrets(t *testing.T) {
+	db := newSourcesTestDB(t)
+	raw := []byte(`{"type":"filewatcher","scope":"agent","node_id":"homelab-01","name":"watcher","config":{"redact_secrets":"false"},"enabled":true}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/sources", bytes.NewReader(raw))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	handlers.CreateSource(db)(w, req)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Contains(t, w.Body.String(), "redact_secrets must be a boolean")
+}
+
 func TestCreateSource_NullConfigRejected(t *testing.T) {
 	db := newSourcesTestDB(t)
 	raw := []byte(`{"type":"filewatcher","scope":"agent","node_id":"homelab-01","name":"watcher","config":null,"enabled":true}`)
@@ -445,7 +458,7 @@ func TestUpdateSource_EmptyNameRejected(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, w.Code)
 }
 
-func TestUpdateSource_FileWatcherRequiresRedactSecrets(t *testing.T) {
+func TestUpdateSource_FileWatcherEmptyPartialConfigPreservesRedactSecrets(t *testing.T) {
 	db := newSourcesTestDB(t)
 	nodeName := "homelab-01"
 	inst := models.DataSourceInstance{
@@ -460,8 +473,32 @@ func TestUpdateSource_FileWatcherRequiresRedactSecrets(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var updated models.DataSourceInstance
+	require.NoError(t, db.First(&updated, "id = ?", "testid").Error)
+	var cfg map[string]any
+	require.NoError(t, json.Unmarshal([]byte(updated.Config), &cfg))
+	require.Equal(t, true, cfg["redact_secrets"])
+}
+
+func TestUpdateSource_FileWatcherRequiresBooleanRedactSecrets(t *testing.T) {
+	db := newSourcesTestDB(t)
+	nodeName := "homelab-01"
+	inst := models.DataSourceInstance{
+		ID: "testid", Type: "filewatcher", Scope: "agent", NodeID: &nodeName,
+		Name: "watcher", Config: `{"redact_secrets":true}`, Enabled: true,
+	}
+	require.NoError(t, db.Create(&inst).Error)
+
+	r := chi.NewRouter()
+	r.Put("/api/admin/sources/{id}", handlers.UpdateSource(db))
+	req := httptest.NewRequest(http.MethodPut, "/api/admin/sources/testid", bytes.NewReader([]byte(`{"config":{"redact_secrets":"false"}}`)))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
 	require.Equal(t, http.StatusBadRequest, w.Code)
-	require.Contains(t, w.Body.String(), "redact_secrets is required")
+	require.Contains(t, w.Body.String(), "redact_secrets must be a boolean")
 }
 
 func TestListSourceTypes(t *testing.T) {

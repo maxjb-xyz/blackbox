@@ -32,7 +32,7 @@ type DataSourceInstance struct {
 	NodeID    *string   `gorm:"index" json:"node_id,omitempty"` // Stores the node name for agent-scoped sources.
 	Name      string    `gorm:"not null" json:"name"`
 	Config    string    `gorm:"not null;default:'{}'" json:"config"` // JSON blob
-	Enabled   bool      `gorm:"not null;default:true" json:"enabled"`
+	Enabled   bool      `gorm:"not null" json:"enabled"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

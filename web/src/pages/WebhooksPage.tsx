@@ -55,9 +55,15 @@ export default function WebhooksPage() {
       <PageHeader title="WEBHOOKS / ENDPOINTS" />
       <div style={{ padding: '24px', maxWidth: 960, margin: '0 auto' }}>
         <p style={{ color: 'var(--muted)', fontSize: '12px', marginBottom: 16 }}>
-          Configure your webhook providers to POST to these endpoints. Set the{' '}
-          <code style={{ color: 'var(--accent)' }}>X-Webhook-Secret</code> header to the secret configured on the matching
-          source in <code style={{ color: 'var(--accent)' }}>Admin &gt; Data Sources</code>.
+          {isAdmin ? (
+            <>
+              Configure your webhook providers to POST to these endpoints. Set the{' '}
+              <code style={{ color: 'var(--accent)' }}>X-Webhook-Secret</code> header to the secret configured on the matching
+              source in <code style={{ color: 'var(--accent)' }}>Admin &gt; Data Sources</code>.
+            </>
+          ) : (
+            <>Configure your webhook providers to POST to these endpoints. Contact your administrator to get the webhook secret.</>
+          )}
         </p>
         <CopyRow label="UPTIME KUMA" path="/api/webhooks/uptime" />
         <CopyRow label="WATCHTOWER" path="/api/webhooks/watchtower" />

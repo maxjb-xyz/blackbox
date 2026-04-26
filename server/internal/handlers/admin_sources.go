@@ -217,7 +217,7 @@ func CreateSource(db *gorm.DB) http.HandlerFunc {
 			NodeID: req.NodeID, Name: req.Name, Config: cfg,
 			Enabled: enabled, CreatedAt: now, UpdatedAt: now,
 		}
-		if err := db.Create(&inst).Error; err != nil {
+		if err := db.Select("*").Create(&inst).Error; err != nil {
 			if isDuplicateKeyError(err) {
 				writeError(w, http.StatusConflict, "a source of this type already exists for this target")
 				return
@@ -228,7 +228,9 @@ func CreateSource(db *gorm.DB) http.HandlerFunc {
 		refreshWebhookSecretCacheIfNeeded(db, req.Type)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		if err := json.NewEncoder(w).Encode(inst); err != nil {
+		redacted := inst
+		redacted.Config = redactConfig(inst.Type, inst.Config)
+		if err := json.NewEncoder(w).Encode(redacted); err != nil {
 			log.Printf("CreateSource encode: %v", err)
 		}
 	}
@@ -274,10 +276,6 @@ func UpdateSource(db *gorm.DB) http.HandlerFunc {
 				writeError(w, http.StatusBadRequest, "config must be a JSON object")
 				return
 			}
-			if err := validateSourceConfig(inst.Type, incoming); err != nil {
-				writeError(w, http.StatusBadRequest, err.Error())
-				return
-			}
 			mergedConfig, err := mergeSourceConfig(inst.Type, inst.Config, req.Config)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
@@ -295,7 +293,9 @@ func UpdateSource(db *gorm.DB) http.HandlerFunc {
 		}
 		refreshWebhookSecretCacheIfNeeded(db, inst.Type)
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(inst); err != nil {
+		redacted := inst
+		redacted.Config = redactConfig(inst.Type, inst.Config)
+		if err := json.NewEncoder(w).Encode(redacted); err != nil {
 			log.Printf("UpdateSource encode: %v", err)
 		}
 	}
@@ -431,8 +431,12 @@ func mergeSourceConfig(sourceType, existingConfig string, incomingRaw json.RawMe
 
 func validateSourceConfig(sourceType string, config map[string]any) error {
 	if sourceType == "filewatcher" {
-		if _, ok := config["redact_secrets"]; !ok {
+		rawValue, ok := config["redact_secrets"]
+		if !ok {
 			return errors.New("redact_secrets is required")
+		}
+		if _, ok := rawValue.(bool); !ok {
+			return errors.New("redact_secrets must be a boolean")
 		}
 	}
 	return nil

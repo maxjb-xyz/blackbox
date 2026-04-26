@@ -80,3 +80,29 @@ func TestAgentConfig_ReadsFromDataSourceInstances(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(node.Capabilities), &caps))
 	require.ElementsMatch(t, []string{"docker", "systemd", "filewatcher"}, caps)
 }
+
+func TestAgentConfig_DegenerateCapabilitiesHeaderDoesNotOverwriteStoredCapabilities(t *testing.T) {
+	db := newAgentConfigTestDB(t)
+	nodeName := "homelab-01"
+	result := db.Create(&models.Node{ID: "n1", Name: nodeName, LastSeen: time.Now(), Capabilities: `["docker"]`})
+	require.NoError(t, result.Error)
+
+	agentToken := "test-secret-token"
+	authCfg, err := middleware.NewAgentAuthConfig(nodeName + "=" + agentToken)
+	require.NoError(t, err)
+	handler := middleware.AgentAuth(authCfg)(handlers.AgentConfig(db))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/agent/config", nil)
+	req.Header.Set("X-Blackbox-Node-Name", nodeName)
+	req.Header.Set("X-Blackbox-Agent-Key", agentToken)
+	req.Header.Set("X-Blackbox-Agent-Capabilities", " , , ")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var node models.Node
+	require.NoError(t, db.Where("name = ?", nodeName).First(&node).Error)
+	var caps []string
+	require.NoError(t, json.Unmarshal([]byte(node.Capabilities), &caps))
+	require.Equal(t, []string{"docker"}, caps)
+}

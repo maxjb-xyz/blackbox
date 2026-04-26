@@ -64,6 +64,8 @@ func MigrateDataSources(db *gorm.DB, envWebhookSecret string) error {
 		var fwSetting models.AppSetting
 		if err := tx.First(&fwSetting, "key = ?", fileWatcherRedactSecretsKey).Error; err == nil {
 			redact = !strings.EqualFold(fwSetting.Value, "false")
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("load file watcher setting: %w", err)
 		}
 		var nodes []models.Node
 		if err := tx.Find(&nodes).Error; err != nil {

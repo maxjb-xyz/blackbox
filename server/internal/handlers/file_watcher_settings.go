@@ -198,7 +198,9 @@ func AgentConfig(db *gorm.DB) http.HandlerFunc {
 					break
 				}
 			}
-			if capsJSON, err := json.Marshal(caps); err == nil {
+			if len(caps) == 0 {
+				log.Printf("AgentConfig: ignoring degenerate capabilities header for node %s", nodeName)
+			} else if capsJSON, err := json.Marshal(caps); err == nil {
 				newValue := string(capsJSON)
 				result := db.Model(&models.Node{}).
 					Where("name = ? AND (capabilities IS NULL OR capabilities != ?)", nodeName, newValue).
