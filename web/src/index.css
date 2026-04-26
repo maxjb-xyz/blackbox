@@ -997,7 +997,6 @@ body {
     background: transparent;
     color: var(--muted);
     padding: 13px 14px 13px 16px;
-    text-transform: uppercase;
   }
 
   .admin-tab-button:last-child {

@@ -37,9 +37,16 @@ import {
 } from '../api/client'
 import type { AISettingsInput, AdminUser, AuditLogPage, ExcludedTarget, MCPSettingsInput, Node, NotificationDest, NotificationDestInput, OIDCProviderConfig, WebhookDeliveryPage } from '../api/client'
 import { readErrorMessage } from '../api/errorUtils'
+import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useSession } from '../session'
 import PageHeader from '../components/PageHeader'
-import { ADMIN_GROUPS, ALL_ADMIN_GROUPS, getAdminTabNavigationKey, getWrappedAdminTabIndex } from './adminNavigation'
+import {
+  ADMIN_GROUPS,
+  ADMIN_SIDEBAR_BREAKPOINT_QUERY,
+  ALL_ADMIN_GROUPS,
+  getAdminTabNavigationKey,
+  getWrappedAdminTabIndex,
+} from './adminNavigation'
 import type { AdminGroup, Tab } from './adminNavigation'
 import { formatLocalDate, formatLocalTimestamp } from '../utils/time'
 
@@ -153,6 +160,7 @@ export default function AdminPage() {
   const isAdmin = user?.is_admin === true
   const [group, setGroup] = useState<AdminGroup>('access')
   const [tab, setTab] = useState<Tab>('users')
+  const isDesktopAdminSidebar = useMediaQuery(ADMIN_SIDEBAR_BREAKPOINT_QUERY)
   const [nodes, setNodes] = useState<Node[]>([])
   const [systemdSettings, setSystemdSettings] = useState<Record<string, string[]>>({})
   const [systemdInputs, setSystemdInputs] = useState<Record<string, string>>({})
@@ -328,7 +336,7 @@ export default function AdminPage() {
         titleActions={(
           <div className="admin-title-actions">
             <span className="admin-title-divider" aria-hidden="true" />
-            <div className="admin-group-list" aria-label="Admin groups">
+            <div className="admin-group-list" role="group" aria-label="Admin groups">
               {ALL_ADMIN_GROUPS.map((g, index) => (
                 <Fragment key={g}>
                   {index > 0 ? <span className="admin-tab-divider" aria-hidden="true">/</span> : null}
@@ -362,10 +370,7 @@ export default function AdminPage() {
                 tabIndex={tab === t ? 0 : -1}
                 onClick={() => setTab(t)}
                 onKeyDown={event => {
-                  const direction = getAdminTabNavigationKey(
-                    event.key,
-                    window.matchMedia('(min-width: 961px)').matches,
-                  )
+                  const direction = getAdminTabNavigationKey(event.key, isDesktopAdminSidebar)
                   if (direction === 'next') {
                     event.preventDefault()
                     selectAdminTabAt(index + 1)

@@ -20,11 +20,16 @@ export const ADMIN_GROUPS: Record<AdminGroup, { label: string; tabs: Tab[] }> = 
 }
 
 export const ALL_ADMIN_GROUPS: AdminGroup[] = ['access', 'integrations', 'system']
+export const ADMIN_SIDEBAR_BREAKPOINT = 961
+export const ADMIN_SIDEBAR_BREAKPOINT_QUERY = `(min-width: ${ADMIN_SIDEBAR_BREAKPOINT}px)`
 
 type AdminTabDirection = 'previous' | 'next'
 
 export function getWrappedAdminTabIndex(index: number, length: number): number {
-  return (index + length) % length
+  if (length <= 0) {
+    throw new RangeError('length must be greater than 0')
+  }
+  return ((index % length) + length) % length
 }
 
 export function getAdminTabNavigationKey(
