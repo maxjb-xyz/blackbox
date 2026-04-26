@@ -21,8 +21,15 @@ type Client struct {
 }
 
 type AgentConfig struct {
-	FileWatcherRedactSecrets bool     `json:"file_watcher_redact_secrets"`
-	SystemdUnits             []string `json:"systemd_units"`
+	FileWatcherRedactSecrets bool           `json:"file_watcher_redact_secrets"`
+	SystemdUnits             []string       `json:"systemd_units"`
+	Proxmox                  *ProxmoxConfig `json:"proxmox,omitempty"`
+}
+
+type ProxmoxConfig struct {
+	URL                string `json:"url"`
+	APIToken           string `json:"api_token"`
+	InsecureSkipVerify bool   `json:"insecure_skip_verify"`
 }
 
 // PermanentError signals that retrying the request will not help.

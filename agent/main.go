@@ -19,6 +19,7 @@ import (
 	"blackbox/agent/internal/client"
 	"blackbox/agent/internal/docker"
 	"blackbox/agent/internal/files"
+	"blackbox/agent/internal/proxmox"
 	"blackbox/agent/internal/queue"
 	"blackbox/agent/internal/sender"
 	"blackbox/agent/internal/systemd"
@@ -89,7 +90,8 @@ func main() {
 	go s.Start(ctx)
 	go docker.Watch(ctx, nodeName, out)
 
-	caps := buildCapabilities(watchPaths)
+	proxmoxCfg := resolveProxmoxConfig(ctx, c, baseCapabilities(watchPaths))
+	caps := buildCapabilities(watchPaths, proxmoxCfg != nil)
 
 	if len(watchPaths) > 0 {
 		fileWatcherSettings := files.NewSettings(loadFileWatcherRedactSecrets(ctx, c, caps))
@@ -118,6 +120,23 @@ func main() {
 		}
 	} else {
 		log.Println("systemd watcher: WATCH_SYSTEMD not set, systemd watching disabled")
+	}
+
+	if proxmoxCfg != nil {
+		pveClient, err := proxmox.New(proxmox.Config{
+			BaseURL:            proxmoxCfg.URL,
+			APIToken:           proxmoxCfg.APIToken,
+			InsecureSkipVerify: proxmoxCfg.InsecureSkipVerify,
+		})
+		if err != nil {
+			log.Printf("proxmox watcher: init failed: %v", err)
+		} else {
+			pveWatcher := proxmox.NewWatcher(pveClient, nodeName)
+			go pveWatcher.Run(ctx, out)
+			log.Printf("proxmox watcher: started, polling %s", proxmoxCfg.URL)
+		}
+	} else {
+		log.Println("proxmox watcher: no admin config or PROXMOX_URL env, Proxmox watching disabled")
 	}
 
 	out <- types.Entry{
@@ -171,7 +190,7 @@ func main() {
 	log.Println("shutdown complete")
 }
 
-func buildCapabilities(watchPaths []string) []string {
+func baseCapabilities(watchPaths []string) []string {
 	caps := []string{"docker"}
 	if len(watchPaths) > 0 {
 		caps = append(caps, "filewatcher")
@@ -180,6 +199,42 @@ func buildCapabilities(watchPaths []string) []string {
 		caps = append(caps, "systemd")
 	}
 	return caps
+}
+
+func buildCapabilities(watchPaths []string, includeProxmox bool) []string {
+	caps := baseCapabilities(watchPaths)
+	if includeProxmox {
+		caps = append(caps, "proxmox")
+	}
+	return caps
+}
+
+// resolveProxmoxConfig picks the Proxmox config the agent should use.
+// Server-side admin config (data_source_instances) wins; PROXMOX_URL +
+// PROXMOX_API_TOKEN env vars act as a bootstrap fallback so a node can
+// be brought up without first poking the admin UI. Returns nil when
+// neither source is configured, signalling that the watcher should not
+// start.
+func resolveProxmoxConfig(ctx context.Context, c *client.Client, probeCaps []string) *client.ProxmoxConfig {
+	configCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	if cfg, err := c.GetAgentConfig(configCtx, probeCaps); err == nil && cfg.Proxmox != nil {
+		return cfg.Proxmox
+	} else if err != nil {
+		log.Printf("proxmox watcher: probe for server config failed: %v", err)
+	}
+
+	url := strings.TrimSpace(os.Getenv("PROXMOX_URL"))
+	token := strings.TrimSpace(os.Getenv("PROXMOX_API_TOKEN"))
+	if url == "" || token == "" {
+		return nil
+	}
+	return &client.ProxmoxConfig{
+		URL:                url,
+		APIToken:           token,
+		InsecureSkipVerify: os.Getenv("PROXMOX_INSECURE_SKIP_VERIFY") == "true",
+	}
 }
 
 func loadFileWatcherRedactSecrets(ctx context.Context, c *client.Client, caps []string) bool {
