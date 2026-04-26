@@ -39,6 +39,8 @@ import type { AISettingsInput, AdminUser, AuditLogPage, ExcludedTarget, MCPSetti
 import { readErrorMessage } from '../api/errorUtils'
 import { useSession } from '../session'
 import PageHeader from '../components/PageHeader'
+import { ADMIN_GROUPS, ALL_ADMIN_GROUPS, getAdminTabNavigationKey, getWrappedAdminTabIndex } from './adminNavigation'
+import type { AdminGroup, Tab } from './adminNavigation'
 import { formatLocalDate, formatLocalTimestamp } from '../utils/time'
 
 interface InviteCode {
@@ -68,8 +70,6 @@ interface GitHubRelease {
   html_url: string
 }
 
-type AdminGroup = 'access' | 'integrations' | 'system'
-type Tab = 'invites' | 'users' | 'oidc' | 'audit' | 'notifications' | 'webhooks' | 'agents' | 'excludes' | 'github' | 'ai' | 'systemd' | 'filewatcher'
 type OIDCPolicy = 'open' | 'existing_only' | 'invite_required'
 
 const UNIT_SUFFIXES = ['.service','.socket','.device','.mount','.automount',
@@ -91,12 +91,6 @@ const NOTIFICATION_EVENT_OPTIONS = [
   { value: 'incident_ai_review_generated', label: 'AI REVIEW GENERATED' },
 ] as const
 const GITHUB_REPO_SLUG = 'maxjb-xyz/blackbox'
-const ADMIN_GROUPS: Record<AdminGroup, { label: string; tabs: Tab[] }> = {
-  access: { label: 'ACCESS', tabs: ['users', 'invites', 'oidc', 'audit'] },
-  integrations: { label: 'INTEGRATIONS', tabs: ['notifications', 'webhooks', 'agents', 'excludes'] },
-  system: { label: 'SYSTEM', tabs: ['ai', 'systemd', 'filewatcher', 'github'] },
-}
-const ALL_ADMIN_GROUPS: AdminGroup[] = ['access', 'integrations', 'system']
 
 function normalizeInvite(invite: Record<string, unknown>): InviteCode {
   return {
@@ -300,7 +294,7 @@ export default function AdminPage() {
 
   function selectAdminTabAt(index: number) {
     const tabs = ADMIN_GROUPS[group].tabs
-    const normalizedIndex = (index + tabs.length) % tabs.length
+    const normalizedIndex = getWrappedAdminTabIndex(index, tabs.length)
     setTab(tabs[normalizedIndex])
     adminTabRefs.current[normalizedIndex]?.focus()
   }
@@ -334,98 +328,76 @@ export default function AdminPage() {
         titleActions={(
           <div className="admin-title-actions">
             <span className="admin-title-divider" aria-hidden="true" />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <div role="tablist" style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
-                {ALL_ADMIN_GROUPS.map((g, index) => (
-                  <Fragment key={g}>
-                    {index > 0 ? <span className="admin-tab-divider" aria-hidden="true">/</span> : null}
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={group === g}
-                      onClick={() => selectGroup(g)}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        color: group === g ? 'var(--accent)' : '#F0F0F0',
-                        fontSize: '18px',
-                        fontWeight: 700,
-                        letterSpacing: '0.12em',
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                        lineHeight: 1,
-                        padding: 0,
-                      }}
-                    >
-                      {ADMIN_GROUPS[g].label}
-                    </button>
-                  </Fragment>
-                ))}
-              </div>
-              <div className="admin-tab-list" role="tablist" aria-label={`${ADMIN_GROUPS[group].label} sections`}>
-                {ADMIN_GROUPS[group].tabs.map((t, index) => (
-                  <Fragment key={t}>
-                    {index > 0 ? <span className="admin-tab-divider" aria-hidden="true">/</span> : null}
-                    <button
-                      ref={element => { adminTabRefs.current[index] = element }}
-                      className="admin-tab-button"
-                      id={`admin-tab-${t}`}
-                      role="tab"
-                      aria-selected={tab === t}
-                      aria-controls={`admin-panel-${t}`}
-                      tabIndex={tab === t ? 0 : -1}
-                      onClick={() => setTab(t)}
-                      onKeyDown={event => {
-                        if (event.key === 'ArrowRight') {
-                          event.preventDefault()
-                          selectAdminTabAt(index + 1)
-                          return
-                        }
-                        if (event.key === 'ArrowLeft') {
-                          event.preventDefault()
-                          selectAdminTabAt(index - 1)
-                          return
-                        }
-                        if (event.key === 'Home') {
-                          event.preventDefault()
-                          selectAdminTabAt(0)
-                          return
-                        }
-                        if (event.key === 'End') {
-                          event.preventDefault()
-                          selectAdminTabAt(ADMIN_GROUPS[group].tabs.length - 1)
-                        }
-                      }}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        color: tab === t ? 'var(--accent)' : 'var(--muted)',
-                        fontSize: '14px',
-                        fontWeight: tab === t ? 700 : 400,
-                        letterSpacing: '0.1em',
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                        lineHeight: 1,
-                        padding: 0,
-                      }}
-                    >
-                      {t.toUpperCase()}
-                    </button>
-                  </Fragment>
-                ))}
-              </div>
+            <div className="admin-group-list" aria-label="Admin groups">
+              {ALL_ADMIN_GROUPS.map((g, index) => (
+                <Fragment key={g}>
+                  {index > 0 ? <span className="admin-tab-divider" aria-hidden="true">/</span> : null}
+                  <button
+                    type="button"
+                    className={`admin-group-button${group === g ? ' active' : ''}`}
+                    aria-pressed={group === g}
+                    onClick={() => selectGroup(g)}
+                  >
+                    {ADMIN_GROUPS[g].label}
+                  </button>
+                </Fragment>
+              ))}
             </div>
           </div>
         )}
       />
 
-      <div
-        className="admin-page-body"
-        id={`admin-panel-${tab}`}
-        role="tabpanel"
-        aria-labelledby={`admin-tab-${tab}`}
-        style={{ padding: 24, maxWidth: 960, margin: '0 auto' }}
-      >
+      <div className="admin-page-body">
+        <div className="admin-shell">
+          <div className="admin-tab-list" role="tablist" aria-label={`${ADMIN_GROUPS[group].label} sections`}>
+            {ADMIN_GROUPS[group].tabs.map((t, index) => (
+              <button
+                key={t}
+                ref={element => { adminTabRefs.current[index] = element }}
+                className={`admin-tab-button${tab === t ? ' active' : ''}`}
+                id={`admin-tab-${t}`}
+                role="tab"
+                aria-selected={tab === t}
+                aria-controls="admin-panel-content"
+                tabIndex={tab === t ? 0 : -1}
+                onClick={() => setTab(t)}
+                onKeyDown={event => {
+                  const direction = getAdminTabNavigationKey(
+                    event.key,
+                    window.matchMedia('(min-width: 961px)').matches,
+                  )
+                  if (direction === 'next') {
+                    event.preventDefault()
+                    selectAdminTabAt(index + 1)
+                    return
+                  }
+                  if (direction === 'previous') {
+                    event.preventDefault()
+                    selectAdminTabAt(index - 1)
+                    return
+                  }
+                  if (event.key === 'Home') {
+                    event.preventDefault()
+                    selectAdminTabAt(0)
+                    return
+                  }
+                  if (event.key === 'End') {
+                    event.preventDefault()
+                    selectAdminTabAt(ADMIN_GROUPS[group].tabs.length - 1)
+                  }
+                }}
+              >
+                {t.toUpperCase()}
+              </button>
+            ))}
+          </div>
+
+          <div
+            className="admin-shell-content"
+            id="admin-panel-content"
+            role="tabpanel"
+            aria-labelledby={`admin-tab-${tab}`}
+          >
         {tab === 'invites' && <InvitesTab />}
         {tab === 'users' && <UsersTab currentUserId={user?.user_id ?? ''} />}
         {tab === 'oidc' && <OIDCTab />}
@@ -992,6 +964,8 @@ export default function AdminPage() {
           </div>
         )}
         {tab === 'github' && <GitHubTab />}
+          </div>
+        </div>
       </div>
     </div>
   )
