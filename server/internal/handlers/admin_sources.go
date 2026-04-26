@@ -28,6 +28,7 @@ var knownSourceTypes = []SourceTypeDef{
 	{Type: "docker", Scope: "agent", Singleton: true, Name: "Docker", Description: "Container lifecycle events from the local Docker socket", Mechanism: "agent · socket"},
 	{Type: "systemd", Scope: "agent", Singleton: true, Name: "Systemd", Description: "Service state changes for watched units via journald", Mechanism: "agent · journal"},
 	{Type: "filewatcher", Scope: "agent", Singleton: true, Name: "File Watcher", Description: "inotify events on watched config paths", Mechanism: "agent · inotify"},
+	{Type: "proxmox", Scope: "agent", Singleton: true, Name: "Proxmox VE", Description: "Cluster task events (VM lifecycle, backups, migrations) from the Proxmox API", Mechanism: "agent · poll"},
 	{Type: "webhook_uptime_kuma", Scope: "server", Singleton: true, Name: "Uptime Kuma", Description: "Inbound webhook for Uptime Kuma monitor events", Mechanism: "server · http"},
 	{Type: "webhook_watchtower", Scope: "server", Singleton: true, Name: "Watchtower", Description: "Inbound webhook for Watchtower container update events", Mechanism: "server · http"},
 }
@@ -320,6 +321,8 @@ func sensitiveKeysFor(sourceType string) []string {
 	switch {
 	case strings.HasPrefix(sourceType, "webhook_"):
 		return []string{"secret"}
+	case sourceType == "proxmox":
+		return []string{"api_token"}
 	default:
 		return nil
 	}
