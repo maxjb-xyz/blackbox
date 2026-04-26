@@ -101,6 +101,36 @@ func getFileWatcherRedactSecretsForNode(db *gorm.DB, nodeName string) (bool, err
 	return getFileWatcherRedactSecrets(db)
 }
 
+// ProxmoxConfig is the on-the-wire shape of a node's Proxmox source config.
+// Mirrors the JSON stored in data_source_instances.config for type=proxmox.
+type ProxmoxConfig struct {
+	URL                string `json:"url"`
+	APIToken           string `json:"api_token"`
+	InsecureSkipVerify bool   `json:"insecure_skip_verify"`
+}
+
+// getProxmoxConfigForNode reads from data_source_instances (type="proxmox",
+// enabled=true, node_id=nodeName). Returns nil when no enabled source exists,
+// so the agent falls back to env vars (PROXMOX_URL etc.) for bootstrap.
+func getProxmoxConfigForNode(db *gorm.DB, nodeName string) (*ProxmoxConfig, error) {
+	var inst models.DataSourceInstance
+	err := db.Where("type = ? AND enabled = ? AND node_id = ?", "proxmox", true, nodeName).First(&inst).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var cfg ProxmoxConfig
+	if jsonErr := json.Unmarshal([]byte(inst.Config), &cfg); jsonErr != nil {
+		return nil, nil
+	}
+	if strings.TrimSpace(cfg.URL) == "" || strings.TrimSpace(cfg.APIToken) == "" {
+		return nil, nil
+	}
+	return &cfg, nil
+}
+
 // getSystemdUnitsForNode reads from data_source_instances first (type="systemd",
 // enabled=true, node_id=nodeName). Disabled per-node sources are intentionally ignored, so callers
 // fall back to the legacy systemd_unit_configs table whenever the node-specific source is absent or disabled.
@@ -199,10 +229,21 @@ func AgentConfig(db *gorm.DB) http.HandlerFunc {
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		proxmoxCfg, err := getProxmoxConfigForNode(db, nodeName)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to load agent config")
+			return
+		}
+
+		payload := map[string]interface{}{
 			"file_watcher_redact_secrets": redactSecrets,
 			"systemd_units":               systemdUnits,
-		})
+		}
+		if proxmoxCfg != nil {
+			payload["proxmox"] = proxmoxCfg
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(payload)
 	}
 }
