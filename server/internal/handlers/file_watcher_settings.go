@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -143,18 +144,36 @@ func AgentConfig(db *gorm.DB) http.HandlerFunc {
 			}
 		}
 
-		// Store agent capabilities if provided
-		if capsHeader := r.Header.Get("X-Blackbox-Agent-Capabilities"); capsHeader != "" {
-			parts := strings.Split(capsHeader, ",")
-			caps := make([]string, 0, len(parts))
-			for _, p := range parts {
-				p = strings.TrimSpace(p)
-				if p != "" {
-					caps = append(caps, p)
+		// Store agent capabilities if provided — only on the authenticated path
+		if ok {
+			if capsHeader := r.Header.Get("X-Blackbox-Agent-Capabilities"); capsHeader != "" {
+				const maxCapsHeader = 4 * 1024 // 4 KiB
+				if len(capsHeader) > maxCapsHeader {
+					capsHeader = capsHeader[:maxCapsHeader]
 				}
-			}
-			if capsJSON, err := json.Marshal(caps); err == nil {
-				db.Model(&models.Node{}).Where("name = ?", nodeName).Update("capabilities", string(capsJSON))
+				parts := strings.Split(capsHeader, ",")
+				const maxCaps = 32
+				const maxCapLen = 64
+				caps := make([]string, 0, min(len(parts), maxCaps))
+				for _, c := range parts {
+					c = strings.TrimSpace(c)
+					if c == "" {
+						continue
+					}
+					if len(c) > maxCapLen {
+						c = c[:maxCapLen]
+					}
+					caps = append(caps, c)
+					if len(caps) >= maxCaps {
+						break
+					}
+				}
+				if capsJSON, err := json.Marshal(caps); err == nil {
+					result := db.Model(&models.Node{}).Where("name = ?", nodeName).Update("capabilities", string(capsJSON))
+					if result.Error != nil {
+						log.Printf("AgentConfig: failed to store capabilities for node %s: %v", nodeName, result.Error)
+					}
+				}
 			}
 		}
 

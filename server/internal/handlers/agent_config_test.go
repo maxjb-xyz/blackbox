@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"blackbox/server/internal/handlers"
+	"blackbox/server/internal/middleware"
 	"blackbox/server/internal/models"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
@@ -38,11 +39,19 @@ func TestAgentConfig_ReadsFromDataSourceInstances(t *testing.T) {
 	})
 	db.Create(&models.Node{ID: "n1", Name: nodeName, LastSeen: time.Now(), Capabilities: "[]"})
 
+	// Use the AgentAuth middleware so the node name is set in context (authenticated path),
+	// which is required for capabilities to be stored.
+	agentToken := "test-secret-token"
+	authCfg, err := middleware.NewAgentAuthConfig(nodeName + "=" + agentToken)
+	require.NoError(t, err)
+	handler := middleware.AgentAuth(authCfg)(handlers.AgentConfig(db))
+
 	req := httptest.NewRequest(http.MethodGet, "/api/agent/config", nil)
 	req.Header.Set("X-Blackbox-Node-Name", nodeName)
+	req.Header.Set("X-Blackbox-Agent-Key", agentToken)
 	req.Header.Set("X-Blackbox-Agent-Capabilities", "docker,systemd,filewatcher,proxmox")
 	w := httptest.NewRecorder()
-	handlers.AgentConfig(db)(w, req)
+	handler.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 
 	var resp map[string]any

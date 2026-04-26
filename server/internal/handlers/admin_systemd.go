@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -12,6 +13,8 @@ import (
 	"github.com/oklog/ulid/v2"
 	"gorm.io/gorm"
 )
+
+var validUnitName = regexp.MustCompile(`^[A-Za-z0-9:_.\-@\\]+\.(service|socket|target|timer|mount|automount|path|scope|slice|swap|device)$`)
 
 func GetSystemdSettings(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -78,32 +81,38 @@ func UpdateSystemdSettings(db *gorm.DB) http.HandlerFunc {
 			clean = append(clean, t)
 		}
 
+		for _, unit := range clean {
+			if !validUnitName.MatchString(unit) {
+				writeError(w, http.StatusBadRequest, "invalid unit name: "+unit)
+				return
+			}
+		}
+
 		cfgJSON, err := json.Marshal(map[string]any{"units": clean})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to serialize units")
 			return
 		}
 
-		var existing models.DataSourceInstance
-		err = db.Where("type = ? AND node_id = ?", "systemd", nodeName).First(&existing).Error
-		now := time.Now().UTC()
-		if err == nil {
-			existing.Config = string(cfgJSON)
-			existing.UpdatedAt = now
-			if err := db.Save(&existing).Error; err != nil {
-				writeError(w, http.StatusInternalServerError, "failed to save systemd settings")
-				return
+		err = db.Transaction(func(tx *gorm.DB) error {
+			var existing models.DataSourceInstance
+			findErr := tx.Where("type = ? AND node_id = ?", "systemd", nodeName).First(&existing).Error
+			now := time.Now().UTC()
+			if findErr == nil {
+				existing.Config = string(cfgJSON)
+				existing.UpdatedAt = now
+				return tx.Save(&existing).Error
 			}
-		} else {
 			inst := models.DataSourceInstance{
 				ID: ulid.Make().String(), Type: "systemd", Scope: "agent",
 				NodeID: &nodeName, Name: "Systemd", Config: string(cfgJSON),
 				Enabled: true, CreatedAt: now, UpdatedAt: now,
 			}
-			if err := db.Create(&inst).Error; err != nil {
-				writeError(w, http.StatusInternalServerError, "failed to save systemd settings")
-				return
-			}
+			return tx.Create(&inst).Error
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to save systemd settings")
+			return
 		}
 
 		w.WriteHeader(http.StatusNoContent)
