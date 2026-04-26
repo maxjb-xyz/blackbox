@@ -290,6 +290,35 @@ func TestWatch_AllowsSensitiveDiffValuesWhenRedactionDisabled(t *testing.T) {
 	}
 }
 
+func TestWatch_SuppressesEventsWhenDisabled(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "config.yml")
+	if err := os.WriteFile(target, []byte("key: old\n"), 0o644); err != nil {
+		t.Fatalf("write initial file: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	settings := NewSettings(true)
+	settings.SetEnabled(false)
+
+	out := make(chan types.Entry, 4)
+	if count := Watch(ctx, "node-1", []string{root}, nil, settings, out); count == 0 {
+		t.Fatal("expected watcher to register at least one directory")
+	}
+
+	if err := os.WriteFile(target, []byte("key: new\n"), 0o644); err != nil {
+		t.Fatalf("rewrite file: %v", err)
+	}
+
+	select {
+	case entry := <-out:
+		t.Fatalf("expected no file events while disabled, got %+v", entry)
+	case <-time.After(1200 * time.Millisecond):
+	}
+}
+
 func TestEventNameForOp_IncludesChmod(t *testing.T) {
 	tests := []struct {
 		name string

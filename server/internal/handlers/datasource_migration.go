@@ -40,20 +40,22 @@ func MigrateDataSources(db *gorm.DB, envWebhookSecret string) error {
 
 			var existing models.DataSourceInstance
 			err = tx.Where("type = ? AND node_id = ?", "systemd", nodeName).First(&existing).Error
-			if err == nil {
-				continue // already migrated
-			}
-			if !errors.Is(err, gorm.ErrRecordNotFound) {
+			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 				return fmt.Errorf("check systemd instance for %s: %w", nodeName, err)
 			}
-			inst := models.DataSourceInstance{
-				ID: ulid.Make().String(), Type: "systemd", Scope: "agent",
-				NodeID: &nodeName, Name: "Systemd",
-				Config: string(cfgJSON), Enabled: true,
-				CreatedAt: now, UpdatedAt: now,
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				inst := models.DataSourceInstance{
+					ID: ulid.Make().String(), Type: "systemd", Scope: "agent",
+					NodeID: &nodeName, Name: "Systemd",
+					Config: string(cfgJSON), Enabled: true,
+					CreatedAt: now, UpdatedAt: now,
+				}
+				if err := tx.Create(&inst).Error; err != nil {
+					return fmt.Errorf("insert systemd instance for %s: %w", nodeName, err)
+				}
 			}
-			if err := tx.Create(&inst).Error; err != nil {
-				return fmt.Errorf("insert systemd instance for %s: %w", nodeName, err)
+			if err := tx.Delete(&models.SystemdUnitConfig{}, "node_name = ?", nodeName).Error; err != nil {
+				return fmt.Errorf("delete legacy systemd config for %s: %w", nodeName, err)
 			}
 		}
 

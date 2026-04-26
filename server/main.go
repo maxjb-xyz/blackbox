@@ -81,7 +81,7 @@ func main() {
 
 	webhookSecret := os.Getenv("WEBHOOK_SECRET")
 	if webhookSecret == "" {
-		log.Fatal("WEBHOOK_SECRET environment variable is required")
+		log.Printf("WEBHOOK_SECRET not set; webhook sources must be configured in Admin > Data Sources before webhook auth will succeed")
 	}
 
 	dbPath := getEnv("DB_PATH", defaultDBPath)
@@ -93,8 +93,8 @@ func main() {
 	if err := handlers.MigrateDataSources(database, webhookSecret); err != nil {
 		log.Fatalf("data source migration failed: %v", err)
 	}
-	handlers.PrimeWebhookSecretCache(database, "webhook_uptime_kuma", webhookSecret)
-	handlers.PrimeWebhookSecretCache(database, "webhook_watchtower", webhookSecret)
+	handlers.PrimeWebhookSecretCache(database, "webhook_uptime_kuma", "")
+	handlers.PrimeWebhookSecretCache(database, "webhook_watchtower", "")
 	mcpMgr := bbmcp.NewMCPManager(database)
 	defer func() {
 		if err := mcpMgr.Shutdown(context.Background()); err != nil {
@@ -282,14 +282,14 @@ func main() {
 	r.With(
 		middleware.RateLimit(time.Minute, 60),
 		middleware.WebhookAuthFunc(func() string {
-			return handlers.GetCachedWebhookSecret(database, "webhook_uptime_kuma", webhookSecret)
+			return handlers.GetCachedWebhookSecret(database, "webhook_uptime_kuma", "")
 		}),
 	).Post("/api/webhooks/uptime", handlers.WebhookUptime(database, eventHub, incidentCh, managerCtx.Done()))
 
 	r.With(
 		middleware.RateLimit(time.Minute, 60),
 		middleware.WebhookAuthFunc(func() string {
-			return handlers.GetCachedWebhookSecret(database, "webhook_watchtower", webhookSecret)
+			return handlers.GetCachedWebhookSecret(database, "webhook_watchtower", "")
 		}),
 	).Post("/api/webhooks/watchtower", handlers.WebhookWatchtower(database, eventHub, incidentCh, managerCtx.Done()))
 

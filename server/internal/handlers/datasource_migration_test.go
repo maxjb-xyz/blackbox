@@ -48,6 +48,10 @@ func TestMigrateDataSources_SystemdRows(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal([]byte(instances[0].Config), &cfg))
 	require.Equal(t, []string{"nginx.service", "caddy.service"}, cfg.Units)
+
+	var legacyCount int64
+	require.NoError(t, db.Model(&models.SystemdUnitConfig{}).Where("node_name = ?", "homelab-01").Count(&legacyCount).Error)
+	require.Equal(t, int64(0), legacyCount)
 }
 
 func TestMigrateDataSources_FileWatcherPerNode(t *testing.T) {

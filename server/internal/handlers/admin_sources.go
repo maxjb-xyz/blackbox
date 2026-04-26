@@ -146,6 +146,10 @@ func CreateSource(db *gorm.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "unknown source type: "+req.Type)
 			return
 		}
+		if req.Type == "docker" {
+			writeError(w, http.StatusBadRequest, "docker is a virtual source and cannot be created")
+			return
+		}
 		if req.Name == "" {
 			writeError(w, http.StatusBadRequest, "name is required")
 			return
@@ -343,22 +347,23 @@ func redactConfig(sourceType, config string) string {
 	return string(out)
 }
 
-// GetWebhookSecret returns the secret for a webhook source type.
-// Falls back to envFallback if the DB instance has no secret set.
+// GetWebhookSecret returns the secret for an enabled webhook source type.
+// envFallback is retained for legacy call sites but runtime auth is DB-driven.
 func GetWebhookSecret(db *gorm.DB, sourceType, envFallback string) string {
+	_ = envFallback
 	var inst models.DataSourceInstance
 	if err := db.Where("type = ? AND enabled = ?", sourceType, true).Order("created_at ASC").First(&inst).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return envFallback
+			return ""
 		}
 		log.Printf("GetWebhookSecret: sourceType=%s lookup failed: %v", sourceType, err)
-		return envFallback
+		return ""
 	}
 	var cfg struct {
 		Secret string `json:"secret"`
 	}
 	if err := json.Unmarshal([]byte(inst.Config), &cfg); err != nil || cfg.Secret == "" {
-		return envFallback
+		return ""
 	}
 	return cfg.Secret
 }

@@ -64,6 +64,7 @@ func TestAgentConfig_ReadsFromDataSourceInstances(t *testing.T) {
 
 	var resp map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Equal(t, true, resp["file_watcher_enabled"])
 	require.Equal(t, false, resp["file_watcher_redact_secrets"])
 	v, ok := resp["systemd_units"]
 	require.True(t, ok)

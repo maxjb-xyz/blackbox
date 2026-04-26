@@ -21,6 +21,7 @@ type Client struct {
 }
 
 type AgentConfig struct {
+	FileWatcherEnabled       *bool    `json:"file_watcher_enabled"`
 	FileWatcherRedactSecrets bool     `json:"file_watcher_redact_secrets"`
 	SystemdUnits             []string `json:"systemd_units"`
 }

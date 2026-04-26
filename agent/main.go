@@ -92,7 +92,9 @@ func main() {
 	caps := buildCapabilities(watchPaths)
 
 	if len(watchPaths) > 0 {
-		fileWatcherSettings := files.NewSettings(loadFileWatcherRedactSecrets(ctx, c, caps))
+		fileWatcherEnabled, redactSecrets := loadFileWatcherConfig(ctx, c, caps)
+		fileWatcherSettings := files.NewSettings(redactSecrets)
+		fileWatcherSettings.SetEnabled(fileWatcherEnabled)
 		go refreshFileWatcherSettings(ctx, c, caps, fileWatcherSettings)
 		count := files.Watch(ctx, nodeName, watchPaths, watchIgnore, fileWatcherSettings, out)
 		log.Printf("file watcher: watching %d directories across %d root paths", count, len(watchPaths))
@@ -184,16 +186,20 @@ func isSystemdWatchEnabled() bool {
 	return os.Getenv("WATCH_SYSTEMD") == "true" && systemd.Supported()
 }
 
-func loadFileWatcherRedactSecrets(ctx context.Context, c *client.Client, caps []string) bool {
+func loadFileWatcherConfig(ctx context.Context, c *client.Client, caps []string) (bool, bool) {
 	configCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	config, err := c.GetAgentConfig(configCtx, caps)
 	if err != nil {
-		log.Printf("file watcher: failed to load server config, defaulting redact_secrets=true: %v", err)
-		return true
+		log.Printf("file watcher: failed to load server config, defaulting enabled=false redact_secrets=true: %v", err)
+		return false, true
 	}
-	return config.FileWatcherRedactSecrets
+	enabled := true
+	if config.FileWatcherEnabled != nil {
+		enabled = *config.FileWatcherEnabled
+	}
+	return enabled, config.FileWatcherRedactSecrets
 }
 
 func refreshFileWatcherSettings(ctx context.Context, c *client.Client, caps []string, settings *files.Settings) {
@@ -205,10 +211,14 @@ func refreshFileWatcherSettings(ctx context.Context, c *client.Client, caps []st
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			redactSecrets := loadFileWatcherRedactSecrets(ctx, c, caps)
+			enabled, redactSecrets := loadFileWatcherConfig(ctx, c, caps)
+			if settings.Enabled() != enabled {
+				log.Printf("file watcher: updated enabled=%t from server config", enabled)
+			}
 			if settings.RedactSecrets() != redactSecrets {
 				log.Printf("file watcher: updated redact_secrets=%t from server config", redactSecrets)
 			}
+			settings.SetEnabled(enabled)
 			settings.SetRedactSecrets(redactSecrets)
 		}
 	}

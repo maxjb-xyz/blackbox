@@ -48,6 +48,7 @@ type watchRoot struct {
 
 type Settings struct {
 	redactSecrets atomic.Bool
+	enabled       atomic.Bool
 }
 
 type snapshotStore struct {
@@ -69,8 +70,23 @@ type diffOp struct {
 
 func NewSettings(redactSecrets bool) *Settings {
 	s := &Settings{}
+	s.SetEnabled(true)
 	s.SetRedactSecrets(redactSecrets)
 	return s
+}
+
+func (s *Settings) Enabled() bool {
+	if s == nil {
+		return true
+	}
+	return s.enabled.Load()
+}
+
+func (s *Settings) SetEnabled(enabled bool) {
+	if s == nil {
+		return
+	}
+	s.enabled.Store(enabled)
 }
 
 func (s *Settings) RedactSecrets() bool {
@@ -700,6 +716,10 @@ func runWatcher(ctx context.Context, nodeName string, rootPaths []watchRoot, ign
 			mu.Lock()
 			delete(timers, eventPath)
 			mu.Unlock()
+
+			if !settings.Enabled() {
+				return
+			}
 
 			event := eventNameForOp(op)
 			if event == "" {

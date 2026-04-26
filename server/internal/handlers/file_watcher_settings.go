@@ -83,31 +83,44 @@ func UpdateFileWatcherSettings(db *gorm.DB) http.HandlerFunc {
 	}
 }
 
-// getFileWatcherRedactSecretsForNode reads from data_source_instances first (type="filewatcher",
-// enabled=true, node_id=nodeName). Disabled per-node sources are intentionally ignored, so callers
-// fall back to the global AppSetting whenever the node-specific source is absent or disabled.
-func getFileWatcherRedactSecretsForNode(db *gorm.DB, nodeName string) (bool, error) {
-	var inst models.DataSourceInstance
-	err := db.Where("type = ? AND enabled = ? AND node_id = ?", "filewatcher", true, nodeName).First(&inst).Error
-	if err == nil {
-		var cfg struct {
-			RedactSecrets *bool `json:"redact_secrets"`
-		}
-		if jsonErr := json.Unmarshal([]byte(inst.Config), &cfg); jsonErr == nil {
-			if cfg.RedactSecrets != nil {
-				return *cfg.RedactSecrets, nil
-			}
-		} else {
-			log.Printf("getFileWatcherRedactSecretsForNode: failed to parse config for source %s: %v", inst.ID, jsonErr)
-		}
+// getFileWatcherSettingsForNode reads from data_source_instances first (type="filewatcher",
+// node_id=nodeName). An enabled row turns collection on; a disabled row is authoritative and
+// suppresses file events even when WATCH_PATHS is configured locally.
+func getFileWatcherSettingsForNode(db *gorm.DB, nodeName string) (bool, bool, error) {
+	globalRedactSecrets, err := getFileWatcherRedactSecrets(db)
+	if err != nil {
+		return false, false, err
 	}
-	// Fall back to global setting
-	return getFileWatcherRedactSecrets(db)
+
+	var inst models.DataSourceInstance
+	err = db.Where("type = ? AND node_id = ?", "filewatcher", nodeName).Order("created_at ASC").First(&inst).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, globalRedactSecrets, nil
+		}
+		return false, false, err
+	}
+	if !inst.Enabled {
+		return false, globalRedactSecrets, nil
+	}
+
+	var cfg struct {
+		RedactSecrets *bool `json:"redact_secrets"`
+	}
+	if jsonErr := json.Unmarshal([]byte(inst.Config), &cfg); jsonErr == nil {
+		if cfg.RedactSecrets != nil {
+			return true, *cfg.RedactSecrets, nil
+		}
+	} else {
+		log.Printf("getFileWatcherSettingsForNode: failed to parse config for source %s: %v", inst.ID, jsonErr)
+	}
+
+	return true, globalRedactSecrets, nil
 }
 
 // getSystemdUnitsForNode reads from data_source_instances first (type="systemd",
-// enabled=true, node_id=nodeName). Disabled per-node sources are intentionally ignored, so callers
-// fall back to the legacy systemd_unit_configs table whenever the node-specific source is absent or disabled.
+// enabled=true, node_id=nodeName). If a disabled per-node source exists it is authoritative and
+// returns an empty unit list; legacy systemd_unit_configs are only consulted when no source row exists yet.
 func getSystemdUnitsForNode(db *gorm.DB, nodeName string) ([]string, error) {
 	var inst models.DataSourceInstance
 	err := db.Where("type = ? AND enabled = ? AND node_id = ?", "systemd", true, nodeName).First(&inst).Error
@@ -123,6 +136,16 @@ func getSystemdUnitsForNode(db *gorm.DB, nodeName string) ([]string, error) {
 		} else {
 			log.Printf("getSystemdUnitsForNode: failed to parse config for source %s: %v", inst.ID, jsonErr)
 		}
+	}
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+
+	var existingSource models.DataSourceInstance
+	if err := db.Where("type = ? AND node_id = ?", "systemd", nodeName).Order("created_at ASC").First(&existingSource).Error; err == nil {
+		return []string{}, nil
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
 	}
 	// Fall back to legacy table
 	var config models.SystemdUnitConfig
@@ -186,7 +209,7 @@ func AgentConfig(db *gorm.DB) http.HandlerFunc {
 			}
 		}
 
-		redactSecrets, err := getFileWatcherRedactSecretsForNode(db, nodeName)
+		fileWatcherEnabled, redactSecrets, err := getFileWatcherSettingsForNode(db, nodeName)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to load agent config")
 			return
@@ -200,6 +223,7 @@ func AgentConfig(db *gorm.DB) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"file_watcher_enabled":        fileWatcherEnabled,
 			"file_watcher_redact_secrets": redactSecrets,
 			"systemd_units":               systemdUnits,
 		})
