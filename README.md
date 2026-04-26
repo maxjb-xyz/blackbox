@@ -106,7 +106,7 @@ docker compose up -d
 
 **3. Open `http://your-server:8080` and complete the setup wizard.**
 
-**4. Optional: open Admin > System to configure file-diff redaction and Ollama-based incident analysis. Open Admin > System > Systemd to choose which units each node should watch when `WATCH_SYSTEMD=true` is enabled on that agent.**
+**4. Optional: open Admin > Data Sources to manage per-node and server-wide data sources, including capability-aware systemd, file watcher, and webhook setup. Open Admin > System to configure file-diff redaction and Ollama-based incident analysis.**
 
 ---
 
@@ -124,6 +124,9 @@ docker compose up -d
 - **Watchtower webhooks** — Ingest container image update events with version metadata and use them as incident evidence when a restart follows shortly after.
 - **Custom entries** — Post arbitrary events via the API.
 - **Container & stack exclusions** — Exclude specific Docker containers or Compose stacks from event ingestion entirely. Configured in Admin > Integrations > Excludes. Excluded events are silently dropped server-side — agents do not need reconfiguring.
+
+### Sources
+- **Source catalog** - Manage supported event sources from Admin > Data Sources. The catalog is capability-aware per node, supports both server-scoped and agent-scoped sources, and preserves stored secrets when you edit an existing source.
 
 ### Notifications
 - **Webhook notification support** — Send outbound notifications to Discord, Slack, ntfy, and other targets when Blackbox events occur. Configure destinations in Admin > Integrations > Notifications.
@@ -148,6 +151,7 @@ docker compose up -d
 ### Node Management
 - Nodes auto-register on first agent heartbeat
 - Per-node metadata: agent version, IP address, OS, last-seen timestamp
+- Agent capability reporting powers source setup defaults and node-specific source availability in the admin UI
 - Live node pulse indicator in the sidebar
 
 ### Authentication
@@ -579,7 +583,7 @@ Blackbox is split into two components designed to run across multiple nodes.
 | Component | Role |
 |-----------|------|
 | **Server** | Central brain. Hosts the UI, stores the database, receives events from agents, handles webhook ingestion, and runs the incident/correlation engine. |
-| **Agent** | Lightweight binary deployed on each node. Watches Docker, config files, and optional systemd journals, then pushes events to the server. |
+| **Agent** | Lightweight binary deployed on each node. Watches Docker, config files, and optional systemd journals, reports its capabilities to the server, and pushes events to the server. |
 
 ---
 
