@@ -37,7 +37,7 @@ func TestLoadSystemdUnits(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	units, err := loadSystemdUnits(ctx, c)
+	units, err := loadSystemdUnits(ctx, c, []string{})
 	if err != nil {
 		t.Fatalf("loadSystemdUnits() error = %v", err)
 	}
@@ -79,7 +79,7 @@ func TestRefreshSystemdSettingsKeepsExistingUnitsOnFetchFailure(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		refreshSystemdSettingsWithTicker(ctx, c, settings, ticks)
+		refreshSystemdSettingsWithTicker(ctx, c, []string{}, settings, ticks)
 	}()
 
 	ticks <- time.Now()
@@ -123,7 +123,7 @@ func TestRefreshSystemdSettingsUpdatesUnitsOnSuccess(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		refreshSystemdSettingsWithTicker(ctx, c, settings, ticks)
+		refreshSystemdSettingsWithTicker(ctx, c, []string{}, settings, ticks)
 	}()
 
 	ticks <- time.Now()

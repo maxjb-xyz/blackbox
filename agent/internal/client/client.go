@@ -155,13 +155,16 @@ func (c *Client) SendBatch(ctx context.Context, entries []types.Entry) (accepted
 	return result.Accepted, result.Failed, nil
 }
 
-func (c *Client) GetAgentConfig(ctx context.Context) (AgentConfig, error) {
+func (c *Client) GetAgentConfig(ctx context.Context, capabilities []string) (AgentConfig, error) {
 	req, err := http.NewRequest(http.MethodGet, c.serverURL+"/api/agent/config", nil)
 	if err != nil {
 		return AgentConfig{}, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("X-Blackbox-Agent-Key", c.token)
 	req.Header.Set("X-Blackbox-Node-Name", c.nodeName)
+	if len(capabilities) > 0 {
+		req.Header.Set("X-Blackbox-Agent-Capabilities", strings.Join(capabilities, ","))
+	}
 	req = req.WithContext(ctx)
 
 	resp, err := c.http.Do(req)

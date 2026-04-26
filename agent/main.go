@@ -89,9 +89,11 @@ func main() {
 	go s.Start(ctx)
 	go docker.Watch(ctx, nodeName, out)
 
+	caps := buildCapabilities(watchPaths)
+
 	if len(watchPaths) > 0 {
-		fileWatcherSettings := files.NewSettings(loadFileWatcherRedactSecrets(ctx, c))
-		go refreshFileWatcherSettings(ctx, c, fileWatcherSettings)
+		fileWatcherSettings := files.NewSettings(loadFileWatcherRedactSecrets(ctx, c, caps))
+		go refreshFileWatcherSettings(ctx, c, caps, fileWatcherSettings)
 		count := files.Watch(ctx, nodeName, watchPaths, watchIgnore, fileWatcherSettings, out)
 		log.Printf("file watcher: watching %d directories across %d root paths", count, len(watchPaths))
 		if count == 0 {
@@ -105,12 +107,12 @@ func main() {
 		if !systemd.Supported() {
 			log.Println("systemd watcher: disabled in this build; rebuild on Linux with cgo, libsystemd headers, and -tags systemd to enable")
 		} else {
-			initialUnits, err := loadSystemdUnits(ctx, c)
+			initialUnits, err := loadSystemdUnits(ctx, c, caps)
 			if err != nil {
 				log.Printf("systemd watcher: failed to load units from server, starting with empty list: %v", err)
 			}
 			systemdSettings := systemd.NewSettings(initialUnits)
-			go refreshSystemdSettings(ctx, c, systemdSettings)
+			go refreshSystemdSettings(ctx, c, caps, systemdSettings)
 			go systemd.Watch(ctx, nodeName, systemdSettings, out)
 			log.Printf("systemd watcher: started, watching %d units", len(initialUnits))
 		}
@@ -169,11 +171,22 @@ func main() {
 	log.Println("shutdown complete")
 }
 
-func loadFileWatcherRedactSecrets(ctx context.Context, c *client.Client) bool {
+func buildCapabilities(watchPaths []string) []string {
+	caps := []string{"docker"}
+	if len(watchPaths) > 0 {
+		caps = append(caps, "filewatcher")
+	}
+	if os.Getenv("WATCH_SYSTEMD") == "true" {
+		caps = append(caps, "systemd")
+	}
+	return caps
+}
+
+func loadFileWatcherRedactSecrets(ctx context.Context, c *client.Client, caps []string) bool {
 	configCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	config, err := c.GetAgentConfig(configCtx)
+	config, err := c.GetAgentConfig(configCtx, caps)
 	if err != nil {
 		log.Printf("file watcher: failed to load server config, defaulting redact_secrets=true: %v", err)
 		return true
@@ -181,7 +194,7 @@ func loadFileWatcherRedactSecrets(ctx context.Context, c *client.Client) bool {
 	return config.FileWatcherRedactSecrets
 }
 
-func refreshFileWatcherSettings(ctx context.Context, c *client.Client, settings *files.Settings) {
+func refreshFileWatcherSettings(ctx context.Context, c *client.Client, caps []string, settings *files.Settings) {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 
@@ -190,7 +203,7 @@ func refreshFileWatcherSettings(ctx context.Context, c *client.Client, settings 
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			redactSecrets := loadFileWatcherRedactSecrets(ctx, c)
+			redactSecrets := loadFileWatcherRedactSecrets(ctx, c, caps)
 			if settings.RedactSecrets() != redactSecrets {
 				log.Printf("file watcher: updated redact_secrets=%t from server config", redactSecrets)
 			}
@@ -199,24 +212,24 @@ func refreshFileWatcherSettings(ctx context.Context, c *client.Client, settings 
 	}
 }
 
-func loadSystemdUnits(ctx context.Context, c *client.Client) ([]string, error) {
+func loadSystemdUnits(ctx context.Context, c *client.Client, caps []string) ([]string, error) {
 	configCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	config, err := c.GetAgentConfig(configCtx)
+	config, err := c.GetAgentConfig(configCtx, caps)
 	if err != nil {
 		return nil, err
 	}
 	return config.SystemdUnits, nil
 }
 
-func refreshSystemdSettings(ctx context.Context, c *client.Client, settings *systemd.Settings) {
+func refreshSystemdSettings(ctx context.Context, c *client.Client, caps []string, settings *systemd.Settings) {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
-	refreshSystemdSettingsWithTicker(ctx, c, settings, ticker.C)
+	refreshSystemdSettingsWithTicker(ctx, c, caps, settings, ticker.C)
 }
 
-func refreshSystemdSettingsWithTicker(ctx context.Context, c *client.Client, settings *systemd.Settings, ticks <-chan time.Time) {
+func refreshSystemdSettingsWithTicker(ctx context.Context, c *client.Client, caps []string, settings *systemd.Settings, ticks <-chan time.Time) {
 	prevUnits := settings.Units()
 
 	for {
@@ -224,7 +237,7 @@ func refreshSystemdSettingsWithTicker(ctx context.Context, c *client.Client, set
 		case <-ctx.Done():
 			return
 		case <-ticks:
-			newUnits, err := loadSystemdUnits(ctx, c)
+			newUnits, err := loadSystemdUnits(ctx, c, caps)
 			if err != nil {
 				log.Printf("systemd watcher: failed to refresh units from server, keeping %d existing units: %v", len(prevUnits), err)
 				continue
