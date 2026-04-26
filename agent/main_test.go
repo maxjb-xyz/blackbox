@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"blackbox/agent/internal/client"
+	"blackbox/agent/internal/files"
 	"blackbox/agent/internal/systemd"
 )
 
@@ -143,6 +144,45 @@ func TestRefreshSystemdSettingsUpdatesUnitsOnSuccess(t *testing.T) {
 	want := []string{"redis.service"}
 	if got := settings.Units(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("settings.Units() = %v, want %v", got, want)
+	}
+}
+
+func TestRefreshFileWatcherSettingsKeepsExistingSettingsOnFetchFailure(t *testing.T) {
+	t.Parallel()
+
+	c := client.NewWithHTTPClient("http://blackbox.test", "token", "node-1", &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if r.Method != http.MethodGet {
+				t.Errorf("method = %q, want GET", r.Method)
+			}
+			if r.URL.Path != "/api/agent/config" {
+				t.Errorf("path = %q, want /api/agent/config", r.URL.Path)
+			}
+			return jsonResponse(http.StatusBadGateway, `boom`), nil
+		}),
+	})
+	settings := files.NewSettings(false)
+	settings.SetEnabled(true)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ticks := make(chan time.Time)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		refreshFileWatcherSettingsWithTicker(ctx, c, []string{"docker", "filewatcher"}, settings, ticks)
+	}()
+
+	ticks <- time.Now()
+	cancel()
+	<-done
+
+	if !settings.Enabled() {
+		t.Fatalf("settings.Enabled() = false, want true")
+	}
+	if settings.RedactSecrets() {
+		t.Fatalf("settings.RedactSecrets() = true, want false")
 	}
 }
 

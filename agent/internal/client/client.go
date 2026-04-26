@@ -143,7 +143,9 @@ func (c *Client) SendBatch(ctx context.Context, entries []types.Entry) (accepted
 		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
 		msg := strings.TrimSpace(string(bodyBytes))
 		// 4xx responses are permanent — retrying will not help.
-		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+		if resp.StatusCode >= 400 && resp.StatusCode < 500 &&
+			resp.StatusCode != http.StatusRequestTimeout &&
+			resp.StatusCode != http.StatusTooManyRequests {
 			return nil, nil, &PermanentError{StatusCode: resp.StatusCode, Message: msg}
 		}
 		return nil, nil, fmt.Errorf("server returned %d: %s", resp.StatusCode, msg)

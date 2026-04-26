@@ -109,7 +109,11 @@ func MigrateDataSources(db *gorm.DB, envWebhookSecret string) error {
 			if !errors.Is(err, gorm.ErrRecordNotFound) {
 				return fmt.Errorf("check %s instance: %w", wType, err)
 			}
-			wCfg, _ := json.Marshal(map[string]any{"secret": envWebhookSecret})
+			wCfg, err := json.Marshal(map[string]any{"secret": envWebhookSecret})
+			if err != nil {
+				log.Printf("MigrateDataSources: failed to marshal webhook config for %s: %v", wType, err)
+				return fmt.Errorf("marshal webhook config for %s: %w", wType, err)
+			}
 			name := "Uptime Kuma"
 			if wType == "webhook_watchtower" {
 				name = "Watchtower"

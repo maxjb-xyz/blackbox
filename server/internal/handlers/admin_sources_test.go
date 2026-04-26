@@ -263,13 +263,13 @@ func TestGetWebhookSecret_DBHit(t *testing.T) {
 		ID: "wh1", Type: "webhook_uptime_kuma", Scope: "server",
 		Name: "UK", Config: `{"secret":"db-secret"}`, Enabled: true,
 	}).Error)
-	result := handlers.GetWebhookSecret(db, "webhook_uptime_kuma", "env-secret")
+	result := handlers.GetWebhookSecret(db, "webhook_uptime_kuma")
 	require.Equal(t, "db-secret", result)
 }
 
 func TestGetWebhookSecret_MissingSourceDisablesWebhook(t *testing.T) {
 	db := newSourcesTestDB(t)
-	result := handlers.GetWebhookSecret(db, "webhook_uptime_kuma", "env-secret")
+	result := handlers.GetWebhookSecret(db, "webhook_uptime_kuma")
 	require.Equal(t, "", result)
 }
 
@@ -279,7 +279,7 @@ func TestGetWebhookSecret_EmptyDBSecretDisablesWebhook(t *testing.T) {
 		ID: "wh2", Type: "webhook_uptime_kuma", Scope: "server",
 		Name: "UK", Config: `{"secret":""}`, Enabled: true,
 	}).Error)
-	result := handlers.GetWebhookSecret(db, "webhook_uptime_kuma", "env-secret")
+	result := handlers.GetWebhookSecret(db, "webhook_uptime_kuma")
 	require.Equal(t, "", result)
 }
 
@@ -289,10 +289,10 @@ func TestGetWebhookSecret_DisabledOrMissingSourceDisablesWebhook(t *testing.T) {
 		ID: "wh1", Type: "webhook_uptime_kuma", Scope: "server",
 		Name: "UK", Config: `{"secret":"db-secret"}`, Enabled: false,
 	}).Error)
-	require.Equal(t, "", handlers.GetWebhookSecret(db, "webhook_uptime_kuma", "env-secret"))
+	require.Equal(t, "", handlers.GetWebhookSecret(db, "webhook_uptime_kuma"))
 
 	require.NoError(t, db.Delete(&models.DataSourceInstance{}, "id = ?", "wh1").Error)
-	require.Equal(t, "", handlers.GetWebhookSecret(db, "webhook_uptime_kuma", "env-secret"))
+	require.Equal(t, "", handlers.GetWebhookSecret(db, "webhook_uptime_kuma"))
 }
 
 // This intentionally bypasses dbpkg.Init and newSourcesTestDB because the production
@@ -314,7 +314,7 @@ func TestGetWebhookSecret_PrefersOldestEnabledInstance(t *testing.T) {
 		CreatedAt: now.Add(-time.Hour), UpdatedAt: now.Add(-time.Hour),
 	}).Error)
 
-	result := handlers.GetWebhookSecret(db, "webhook_uptime_kuma", "env-secret")
+	result := handlers.GetWebhookSecret(db, "webhook_uptime_kuma")
 	require.Equal(t, "older-secret", result)
 }
 

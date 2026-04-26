@@ -10,6 +10,10 @@ function CopyRow({ label, path }: { label: string; path: string }) {
 
   function handleCopy() {
     setCopyError(null)
+    if (!navigator?.clipboard) {
+      setCopyError('clipboard unavailable')
+      return
+    }
     navigator.clipboard.writeText(url)
       .then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) })
       .catch(err => { console.error('copy webhook url:', err); setCopyError('copy failed') })

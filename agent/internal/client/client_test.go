@@ -103,6 +103,30 @@ func TestSendBatch_FourXXReturnsPermanentError(t *testing.T) {
 	}
 }
 
+func TestSendBatch_TimeoutAndRateLimitRemainRetryable(t *testing.T) {
+	for _, status := range []int{http.StatusRequestTimeout, http.StatusTooManyRequests} {
+		status := status
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				http.Error(w, "retry later", status)
+			}))
+			defer srv.Close()
+
+			c := client.New(srv.URL, "test-token", "node-1")
+			_, _, err := c.SendBatch(context.Background(), []types.Entry{
+				{ID: ulid.Make().String(), Source: "docker", Event: "start"},
+			})
+			if err == nil {
+				t.Fatalf("expected error for %d, got nil", status)
+			}
+			var permErr *client.PermanentError
+			if errors.As(err, &permErr) {
+				t.Fatalf("expected retryable error for %d, got permanent error: %v", status, err)
+			}
+		})
+	}
+}
+
 func TestSendBatch_PartialFailure(t *testing.T) {
 	goodID := ulid.Make().String()
 	badID := ulid.Make().String()

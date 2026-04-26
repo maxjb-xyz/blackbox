@@ -31,7 +31,7 @@ func GetCachedWebhookSecret(db *gorm.DB, sourceType, envFallback string) string 
 
 func RefreshWebhookSecretCache(db *gorm.DB, sourceType string) string {
 	resolved, _, _ := webhookSecretRefreshes.Do(sourceType, func() (interface{}, error) {
-		secret := GetWebhookSecret(db, sourceType, loadWebhookSecretFallback(sourceType))
+		secret := GetWebhookSecret(db, sourceType)
 		webhookSecretCache.Store(sourceType, secret)
 		return secret, nil
 	})

@@ -170,6 +170,28 @@ func TestAgentConfig_ReturnsFileWatcherEnabledFlag(t *testing.T) {
 	require.Equal(t, false, resp["file_watcher_enabled"])
 }
 
+func TestAgentConfig_ReturnsFileWatcherEnabledTrueWhenEnabled(t *testing.T) {
+	database := newTestDB(t)
+	nodeName := "node-1"
+	require.NoError(t, database.Select("*").Create(&models.DataSourceInstance{
+		ID: "fw1", Type: "filewatcher", Scope: "agent", NodeID: &nodeName,
+		Name: "File Watcher", Config: `{"redact_secrets":true}`, Enabled: true,
+	}).Error)
+
+	config, err := middleware.NewAgentAuthConfig(nodeName + "=secret")
+	require.NoError(t, err)
+	req := httptest.NewRequest(http.MethodGet, "/api/agent/config", nil)
+	req.Header.Set("X-Blackbox-Agent-Key", "secret")
+	req.Header.Set("X-Blackbox-Node-Name", nodeName)
+	w := httptest.NewRecorder()
+	middleware.AgentAuth(config)(handlers.AgentConfig(database)).ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp map[string]any
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	require.Equal(t, true, resp["file_watcher_enabled"])
+}
+
 func TestAgentConfig_ReturnsEmptySystemdUnitsWhenNoneConfigured(t *testing.T) {
 	database := newTestDB(t)
 	config, err := middleware.NewAgentAuthConfig("node-1=secret")

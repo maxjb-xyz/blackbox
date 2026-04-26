@@ -186,13 +186,9 @@ func CreateSource(db *gorm.DB) http.HandlerFunc {
 		}
 
 		cfg := "{}"
-		if req.Type == "filewatcher" && len(req.Config) == 0 {
-			writeError(w, http.StatusBadRequest, "redact_secrets is required")
-			return
-		}
+		obj := map[string]any{}
 		if len(req.Config) > 0 {
 			// Validate it's a JSON object
-			var obj map[string]any
 			if err := json.Unmarshal(req.Config, &obj); err != nil {
 				writeError(w, http.StatusBadRequest, "config must be a JSON object")
 				return
@@ -201,11 +197,11 @@ func CreateSource(db *gorm.DB) http.HandlerFunc {
 				writeError(w, http.StatusBadRequest, "config must be a JSON object")
 				return
 			}
-			if err := validateSourceConfig(req.Type, obj); err != nil {
-				writeError(w, http.StatusBadRequest, err.Error())
-				return
-			}
 			cfg = string(req.Config)
+		}
+		if err := validateSourceConfig(req.Type, obj); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
 		}
 		enabled := true
 		if req.Enabled != nil {
@@ -276,7 +272,7 @@ func UpdateSource(db *gorm.DB) http.HandlerFunc {
 				writeError(w, http.StatusBadRequest, "config must be a JSON object")
 				return
 			}
-			mergedConfig, err := mergeSourceConfig(inst.Type, inst.Config, req.Config)
+			mergedConfig, err := mergeSourceConfig(inst.Type, inst.Config, incoming)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
@@ -348,9 +344,7 @@ func redactConfig(sourceType, config string) string {
 }
 
 // GetWebhookSecret returns the secret for an enabled webhook source type.
-// envFallback is retained for legacy call sites but runtime auth is DB-driven.
-func GetWebhookSecret(db *gorm.DB, sourceType, envFallback string) string {
-	_ = envFallback
+func GetWebhookSecret(db *gorm.DB, sourceType string) string {
 	var inst models.DataSourceInstance
 	if err := db.Where("type = ? AND enabled = ?", sourceType, true).Order("created_at ASC").First(&inst).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -377,11 +371,7 @@ func sensitiveKeysFor(sourceType string) []string {
 	}
 }
 
-func mergeSourceConfig(sourceType, existingConfig string, incomingRaw json.RawMessage) (string, error) {
-	var incoming map[string]any
-	if err := json.Unmarshal(incomingRaw, &incoming); err != nil {
-		return "", err
-	}
+func mergeSourceConfig(sourceType, existingConfig string, incoming map[string]any) (string, error) {
 	if incoming == nil {
 		return "", errors.New("config must be a JSON object")
 	}
