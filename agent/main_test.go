@@ -30,6 +30,9 @@ func TestLoadSystemdUnits(t *testing.T) {
 			if got := r.Header.Get("X-Blackbox-Node-Name"); got != "node-1" {
 				t.Fatalf("X-Blackbox-Node-Name = %q, want %q", got, "node-1")
 			}
+			if got := r.Header.Get("X-Blackbox-Agent-Capabilities"); got != "docker,systemd" {
+				t.Fatalf("X-Blackbox-Agent-Capabilities = %q, want %q", got, "docker,systemd")
+			}
 			return jsonResponse(http.StatusOK, `{"systemd_units":["nginx.service","postgres.service"]}`), nil
 		}),
 	})
@@ -37,7 +40,7 @@ func TestLoadSystemdUnits(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	units, err := loadSystemdUnits(ctx, c, []string{})
+	units, err := loadSystemdUnits(ctx, c, []string{"docker", "systemd"})
 	if err != nil {
 		t.Fatalf("loadSystemdUnits() error = %v", err)
 	}
@@ -64,6 +67,9 @@ func TestRefreshSystemdSettingsKeepsExistingUnitsOnFetchFailure(t *testing.T) {
 			}
 			if got := r.Header.Get("X-Blackbox-Node-Name"); got != "node-1" {
 				t.Errorf("X-Blackbox-Node-Name = %q, want %q", got, "node-1")
+			}
+			if got := r.Header.Get("X-Blackbox-Agent-Capabilities"); got != "" {
+				t.Errorf("X-Blackbox-Agent-Capabilities = %q, want empty", got)
 			}
 			return jsonResponse(http.StatusBadGateway, `boom`), nil
 		}),
@@ -109,6 +115,9 @@ func TestRefreshSystemdSettingsUpdatesUnitsOnSuccess(t *testing.T) {
 			if got := r.Header.Get("X-Blackbox-Node-Name"); got != "node-1" {
 				t.Errorf("X-Blackbox-Node-Name = %q, want %q", got, "node-1")
 			}
+			if got := r.Header.Get("X-Blackbox-Agent-Capabilities"); got != "docker,systemd" {
+				t.Errorf("X-Blackbox-Agent-Capabilities = %q, want %q", got, "docker,systemd")
+			}
 			return jsonResponse(http.StatusOK, `{"systemd_units":["redis.service"]}`), nil
 		}),
 	})
@@ -123,7 +132,7 @@ func TestRefreshSystemdSettingsUpdatesUnitsOnSuccess(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		refreshSystemdSettingsWithTicker(ctx, c, []string{}, settings, ticks)
+		refreshSystemdSettingsWithTicker(ctx, c, []string{"docker", "systemd"}, settings, ticks)
 	}()
 
 	ticks <- time.Now()

@@ -34,6 +34,9 @@ func Init(path string) (*gorm.DB, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := database.Exec("PRAGMA foreign_keys=ON").Error; err != nil {
+		return nil, fmt.Errorf("enable foreign keys: %w", err)
+	}
 	sqlDB, err := database.DB()
 	if err != nil {
 		return nil, err
@@ -75,6 +78,12 @@ func Init(path string) (*gorm.DB, error) {
 	if err := ensureExcludedTargetIndexes(database); err != nil {
 		return nil, err
 	}
+	if err := ensureDataSourceConstraints(database); err != nil {
+		return nil, err
+	}
+	if err := ensureDataSourceCleanupTriggers(database); err != nil {
+		return nil, err
+	}
 	if err := EnsureEntriesFTS(database); err != nil {
 		return nil, err
 	}
@@ -99,6 +108,33 @@ func ensureExcludedTargetIndexes(database *gorm.DB) error {
 	return database.Exec(`
 CREATE UNIQUE INDEX IF NOT EXISTS idx_excluded_targets_type_lower_name
 ON excluded_targets(type, lower(name));
+`).Error
+}
+
+func ensureDataSourceConstraints(database *gorm.DB) error {
+	if err := database.Exec(`
+CREATE UNIQUE INDEX IF NOT EXISTS idx_data_source_singleton_agent
+ON data_source_instances(type, node_id)
+WHERE scope = 'agent' AND type IN ('docker', 'systemd', 'filewatcher')
+`).Error; err != nil {
+		return err
+	}
+	return database.Exec(`
+CREATE UNIQUE INDEX IF NOT EXISTS idx_data_source_singleton_server
+ON data_source_instances(type)
+WHERE scope = 'server' AND type IN ('webhook_uptime_kuma', 'webhook_watchtower')
+`).Error
+}
+
+func ensureDataSourceCleanupTriggers(database *gorm.DB) error {
+	return database.Exec(`
+CREATE TRIGGER IF NOT EXISTS trg_data_source_instances_delete_node
+AFTER DELETE ON nodes
+FOR EACH ROW
+BEGIN
+  DELETE FROM data_source_instances
+  WHERE scope = 'agent' AND node_id = OLD.name;
+END
 `).Error
 }
 

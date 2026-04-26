@@ -84,7 +84,8 @@ func UpdateFileWatcherSettings(db *gorm.DB) http.HandlerFunc {
 }
 
 // getFileWatcherRedactSecretsForNode reads from data_source_instances first (type="filewatcher",
-// enabled=true, node_id=nodeName). Falls back to the global AppSetting if not found.
+// enabled=true, node_id=nodeName). Disabled per-node sources are intentionally ignored, so callers
+// fall back to the global AppSetting whenever the node-specific source is absent or disabled.
 func getFileWatcherRedactSecretsForNode(db *gorm.DB, nodeName string) (bool, error) {
 	var inst models.DataSourceInstance
 	err := db.Where("type = ? AND enabled = ? AND node_id = ?", "filewatcher", true, nodeName).First(&inst).Error
@@ -101,7 +102,8 @@ func getFileWatcherRedactSecretsForNode(db *gorm.DB, nodeName string) (bool, err
 }
 
 // getSystemdUnitsForNode reads from data_source_instances first (type="systemd",
-// enabled=true, node_id=nodeName). Falls back to the legacy systemd_unit_configs table.
+// enabled=true, node_id=nodeName). Disabled per-node sources are intentionally ignored, so callers
+// fall back to the legacy systemd_unit_configs table whenever the node-specific source is absent or disabled.
 func getSystemdUnitsForNode(db *gorm.DB, nodeName string) ([]string, error) {
 	var inst models.DataSourceInstance
 	err := db.Where("type = ? AND enabled = ? AND node_id = ?", "systemd", true, nodeName).First(&inst).Error
@@ -133,45 +135,53 @@ func getSystemdUnitsForNode(db *gorm.DB, nodeName string) ([]string, error) {
 
 func AgentConfig(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Primary path: node name set by AgentAuth middleware
+		// AgentAuth must set the node name in context; unauthenticated requests are rejected.
 		nodeName, ok := middleware.AgentNodeFromContext(r.Context())
 		if !ok {
-			// Fallback for tests/direct calls: read from header
-			nodeName = strings.TrimSpace(r.Header.Get("X-Blackbox-Node-Name"))
-			if nodeName == "" {
-				writeError(w, http.StatusUnauthorized, "unauthorized")
-				return
-			}
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
 		}
 
-		// Store agent capabilities if provided — only on the authenticated path
-		if ok {
-			if capsHeader := r.Header.Get("X-Blackbox-Agent-Capabilities"); capsHeader != "" {
-				const maxCapsHeader = 4 * 1024 // 4 KiB
-				if len(capsHeader) > maxCapsHeader {
-					capsHeader = capsHeader[:maxCapsHeader]
+		if capsHeader := r.Header.Get("X-Blackbox-Agent-Capabilities"); capsHeader != "" {
+			const maxCapsHeader = 4 * 1024 // 4 KiB
+			if len(capsHeader) > maxCapsHeader {
+				capsHeader = capsHeader[:maxCapsHeader]
+			}
+			parts := strings.Split(capsHeader, ",")
+			const maxCaps = 32
+			const maxCapLen = 64
+			caps := make([]string, 0, min(len(parts), maxCaps))
+			for _, c := range parts {
+				c = strings.TrimSpace(c)
+				if c == "" {
+					continue
 				}
-				parts := strings.Split(capsHeader, ",")
-				const maxCaps = 32
-				const maxCapLen = 64
-				caps := make([]string, 0, min(len(parts), maxCaps))
-				for _, c := range parts {
-					c = strings.TrimSpace(c)
-					if c == "" {
-						continue
-					}
-					if len(c) > maxCapLen {
-						c = c[:maxCapLen]
-					}
-					caps = append(caps, c)
-					if len(caps) >= maxCaps {
-						break
-					}
+				if len(c) > maxCapLen {
+					c = c[:maxCapLen]
 				}
-				if capsJSON, err := json.Marshal(caps); err == nil {
-					result := db.Model(&models.Node{}).Where("name = ?", nodeName).Update("capabilities", string(capsJSON))
-					if result.Error != nil {
-						log.Printf("AgentConfig: failed to store capabilities for node %s: %v", nodeName, result.Error)
+				caps = append(caps, c)
+				if len(caps) >= maxCaps {
+					break
+				}
+			}
+			if capsJSON, err := json.Marshal(caps); err == nil {
+				newValue := string(capsJSON)
+				var existing struct {
+					Capabilities *string
+				}
+				err = db.Model(&models.Node{}).Select("capabilities").Where("name = ?", nodeName).Take(&existing).Error
+				if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+					log.Printf("AgentConfig: failed to read capabilities for node %s: %v", nodeName, err)
+				} else {
+					current := ""
+					if existing.Capabilities != nil {
+						current = *existing.Capabilities
+					}
+					if current != newValue {
+						result := db.Model(&models.Node{}).Where("name = ?", nodeName).Update("capabilities", newValue)
+						if result.Error != nil {
+							log.Printf("AgentConfig: failed to store capabilities for node %s: %v", nodeName, result.Error)
+						}
 					}
 				}
 			}

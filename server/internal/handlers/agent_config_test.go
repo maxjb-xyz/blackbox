@@ -27,17 +27,22 @@ func TestAgentConfig_ReadsFromDataSourceInstances(t *testing.T) {
 	db := newAgentConfigTestDB(t)
 
 	nodeName := "homelab-01"
-	cfgJSON, _ := json.Marshal(map[string]any{"redact_secrets": false})
-	db.Create(&models.DataSourceInstance{
+	cfgJSON, err := json.Marshal(map[string]any{"redact_secrets": false})
+	require.NoError(t, err)
+	result := db.Create(&models.DataSourceInstance{
 		ID: "fw1", Type: "filewatcher", Scope: "agent", NodeID: &nodeName,
 		Name: "File Watcher", Config: string(cfgJSON), Enabled: true,
 	})
-	unitsCfg, _ := json.Marshal(map[string]any{"units": []string{"nginx.service"}})
-	db.Create(&models.DataSourceInstance{
+	require.NoError(t, result.Error)
+	unitsCfg, err := json.Marshal(map[string]any{"units": []string{"nginx.service"}})
+	require.NoError(t, err)
+	result = db.Create(&models.DataSourceInstance{
 		ID: "sys1", Type: "systemd", Scope: "agent", NodeID: &nodeName,
 		Name: "Systemd", Config: string(unitsCfg), Enabled: true,
 	})
-	db.Create(&models.Node{ID: "n1", Name: nodeName, LastSeen: time.Now(), Capabilities: "[]"})
+	require.NoError(t, result.Error)
+	result = db.Create(&models.Node{ID: "n1", Name: nodeName, LastSeen: time.Now(), Capabilities: "[]"})
+	require.NoError(t, result.Error)
 
 	// Use the AgentAuth middleware so the node name is set in context (authenticated path),
 	// which is required for capabilities to be stored.
@@ -57,7 +62,11 @@ func TestAgentConfig_ReadsFromDataSourceInstances(t *testing.T) {
 	var resp map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	require.Equal(t, false, resp["file_watcher_redact_secrets"])
-	units := resp["systemd_units"].([]any)
+	v, ok := resp["systemd_units"]
+	require.True(t, ok)
+	units, ok := v.([]any)
+	require.True(t, ok)
+	require.NotEmpty(t, units)
 	require.Equal(t, "nginx.service", units[0])
 
 	// Capabilities stored on node

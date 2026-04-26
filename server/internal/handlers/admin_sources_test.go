@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	dbpkg "blackbox/server/internal/db"
 	"blackbox/server/internal/handlers"
 	"blackbox/server/internal/models"
 	"github.com/glebarez/sqlite"
@@ -17,9 +19,8 @@ import (
 
 func newSourcesTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := dbpkg.Init(":memory:")
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.DataSourceInstance{}, &models.Node{}))
 	return db
 }
 
@@ -85,6 +86,38 @@ func TestUpdateSource(t *testing.T) {
 	require.NoError(t, db.First(&updated, "id = ?", "testid").Error)
 	require.Equal(t, "pve01-updated", updated.Name)
 	require.False(t, updated.Enabled)
+}
+
+func TestUpdateSource_PreservesSensitiveConfigWhenOmitted(t *testing.T) {
+	db := newSourcesTestDB(t)
+	nodeName := "homelab-01"
+	inst := models.DataSourceInstance{
+		ID: "testid", Type: "proxmox", Scope: "agent", NodeID: &nodeName,
+		Name: "pve01", Config: `{"url":"https://old:8006","api_token":"keep-me","insecure_skip_verify":false}`,
+		Enabled: true,
+	}
+	require.NoError(t, db.Create(&inst).Error)
+
+	body, err := json.Marshal(map[string]any{
+		"config": map[string]any{"url": "https://new:8006"},
+	})
+	require.NoError(t, err)
+
+	r := chi.NewRouter()
+	r.Put("/api/admin/sources/{id}", handlers.UpdateSource(db))
+	req := httptest.NewRequest(http.MethodPut, "/api/admin/sources/testid", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var updated models.DataSourceInstance
+	require.NoError(t, db.First(&updated, "id = ?", "testid").Error)
+	var cfg map[string]any
+	require.NoError(t, json.Unmarshal([]byte(updated.Config), &cfg))
+	require.Equal(t, "https://new:8006", cfg["url"])
+	require.Equal(t, "keep-me", cfg["api_token"])
+	require.Equal(t, false, cfg["insecure_skip_verify"])
 }
 
 func TestDeleteSource(t *testing.T) {
@@ -174,6 +207,26 @@ func TestGetWebhookSecret_EmptyDBSecretFallsBackToEnv(t *testing.T) {
 	require.Equal(t, "env-secret", result)
 }
 
+func TestGetWebhookSecret_PrefersOldestEnabledInstance(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&models.DataSourceInstance{}))
+	now := time.Now().UTC()
+	require.NoError(t, db.Create(&models.DataSourceInstance{
+		ID: "wh-new", Type: "webhook_uptime_kuma", Scope: "server",
+		Name: "UK new", Config: `{"secret":"newer-secret"}`, Enabled: true,
+		CreatedAt: now, UpdatedAt: now,
+	}).Error)
+	require.NoError(t, db.Create(&models.DataSourceInstance{
+		ID: "wh-old", Type: "webhook_uptime_kuma", Scope: "server",
+		Name: "UK old", Config: `{"secret":"older-secret"}`, Enabled: true,
+		CreatedAt: now.Add(-time.Hour), UpdatedAt: now.Add(-time.Hour),
+	}).Error)
+
+	result := handlers.GetWebhookSecret(db, "webhook_uptime_kuma", "env-secret")
+	require.Equal(t, "older-secret", result)
+}
+
 func TestListSources_WebhookSecretRedacted(t *testing.T) {
 	db := newSourcesTestDB(t)
 	require.NoError(t, db.Create(&models.DataSourceInstance{
@@ -187,6 +240,44 @@ func TestListSources_WebhookSecretRedacted(t *testing.T) {
 
 	body := w.Body.String()
 	require.NotContains(t, body, "supersecret")
+}
+
+func TestListSources_ProxmoxApiTokenRedactedAndOrphansIncluded(t *testing.T) {
+	db := newSourcesTestDB(t)
+	nodeName := "homelab-01"
+	require.NoError(t, db.Create(&models.Node{
+		ID: "n1", Name: nodeName, Capabilities: "[]",
+	}).Error)
+	require.NoError(t, db.Create(&models.DataSourceInstance{
+		ID: "pve1", Type: "proxmox", Scope: "agent", NodeID: &nodeName,
+		Name: "PVE", Config: `{"url":"https://pve01:8006","api_token":"supersecret"}`, Enabled: true,
+	}).Error)
+	require.NoError(t, db.Create(&models.DataSourceInstance{
+		ID: "orphan1", Type: "filewatcher", Scope: "agent",
+		Name: "Orphan", Config: `{"redact_secrets":true}`, Enabled: true,
+	}).Error)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/sources", nil)
+	w := httptest.NewRecorder()
+	handlers.ListSources(db)(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var resp struct {
+		Nodes map[string]struct {
+			Capabilities []string                    `json:"capabilities"`
+			Sources      []models.DataSourceInstance `json:"sources"`
+		} `json:"nodes"`
+		Orphans []models.DataSourceInstance `json:"orphans"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Equal(t, []string{"docker", "systemd", "filewatcher"}, resp.Nodes[nodeName].Capabilities)
+	require.Len(t, resp.Nodes[nodeName].Sources, 1)
+	require.Len(t, resp.Orphans, 1)
+	require.Equal(t, "orphan1", resp.Orphans[0].ID)
+
+	var cfg map[string]any
+	require.NoError(t, json.Unmarshal([]byte(resp.Nodes[nodeName].Sources[0].Config), &cfg))
+	require.Equal(t, "", cfg["api_token"])
 }
 
 func TestCreateSource_InvalidConfigRejected(t *testing.T) {
@@ -209,8 +300,8 @@ func TestListSourceTypes(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &types))
 	require.NotEmpty(t, types)
 	found := map[string]bool{}
-	for _, t := range types {
-		found[t["type"].(string)] = true
+	for _, typ := range types {
+		found[typ["type"].(string)] = true
 	}
 	for _, expected := range []string{"systemd", "filewatcher", "proxmox", "webhook_uptime_kuma", "webhook_watchtower"} {
 		require.True(t, found[expected], "missing type: "+expected)

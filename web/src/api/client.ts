@@ -586,6 +586,15 @@ export function normalizeIncident(value: unknown): Incident {
   }
 }
 
+export function parseSourceConfig<T>(inst: Pick<DataSourceInstance, 'id' | 'type' | 'config'>): T | null {
+  try {
+    return JSON.parse(inst.config) as T
+  } catch (error) {
+    console.warn(`parseSourceConfig: failed to parse ${inst.type} config for source ${inst.id}`, error)
+    return null
+  }
+}
+
 function normalizeIncidentEntryLink(value: unknown): IncidentEntryLink | null {
   if (!value || typeof value !== 'object') return null
   const data = value as Record<string, unknown>
@@ -905,6 +914,10 @@ export interface SourcesResponse {
   nodes: Record<string, NodeSources>
 }
 
+export interface SourcesResponse {
+  orphans: DataSourceInstance[]
+}
+
 export interface CreateSourceInput {
   type: string
   scope: 'server' | 'agent'
@@ -921,21 +934,20 @@ export interface UpdateSourceInput {
 }
 
 export async function fetchSources(): Promise<SourcesResponse> {
-  const res = await fetch('/api/admin/sources', { credentials: 'include' })
+  const res = await apiFetch('/api/admin/sources')
   if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to fetch sources'))
   return res.json()
 }
 
 export async function fetchSourceTypes(): Promise<SourceTypeDef[]> {
-  const res = await fetch('/api/admin/sources/types', { credentials: 'include' })
+  const res = await apiFetch('/api/admin/sources/types')
   if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to fetch source types'))
   return res.json()
 }
 
 export async function createSource(input: CreateSourceInput): Promise<DataSourceInstance> {
-  const res = await fetch('/api/admin/sources', {
+  const res = await apiFetch('/api/admin/sources', {
     method: 'POST',
-    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   })
@@ -944,9 +956,8 @@ export async function createSource(input: CreateSourceInput): Promise<DataSource
 }
 
 export async function updateSource(id: string, input: UpdateSourceInput): Promise<DataSourceInstance> {
-  const res = await fetch(`/api/admin/sources/${encodeURIComponent(id)}`, {
+  const res = await apiFetch(`/api/admin/sources/${encodeURIComponent(id)}`, {
     method: 'PUT',
-    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   })
@@ -955,9 +966,8 @@ export async function updateSource(id: string, input: UpdateSourceInput): Promis
 }
 
 export async function deleteSource(id: string): Promise<void> {
-  const res = await fetch(`/api/admin/sources/${encodeURIComponent(id)}`, {
+  const res = await apiFetch(`/api/admin/sources/${encodeURIComponent(id)}`, {
     method: 'DELETE',
-    credentials: 'include',
   })
   if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to delete source'))
 }

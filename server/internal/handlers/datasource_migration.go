@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -33,6 +34,9 @@ func MigrateDataSources(db *gorm.DB, envWebhookSecret string) error {
 		if err == nil {
 			continue // already migrated
 		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("check systemd instance for %s: %w", nodeName, err)
+		}
 		inst := models.DataSourceInstance{
 			ID: ulid.Make().String(), Type: "systemd", Scope: "agent",
 			NodeID: &nodeName, Name: "Systemd",
@@ -58,8 +62,12 @@ func MigrateDataSources(db *gorm.DB, envWebhookSecret string) error {
 	for _, node := range nodes {
 		nodeName := node.Name
 		var existing models.DataSourceInstance
-		if db.Where("type = ? AND node_id = ?", "filewatcher", nodeName).First(&existing).Error == nil {
+		err := db.Where("type = ? AND node_id = ?", "filewatcher", nodeName).First(&existing).Error
+		if err == nil {
 			continue
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("check filewatcher instance for %s: %w", nodeName, err)
 		}
 		inst := models.DataSourceInstance{
 			ID: ulid.Make().String(), Type: "filewatcher", Scope: "agent",
@@ -75,8 +83,12 @@ func MigrateDataSources(db *gorm.DB, envWebhookSecret string) error {
 	// 3. Webhook instances
 	for _, wType := range []string{"webhook_uptime_kuma", "webhook_watchtower"} {
 		var existing models.DataSourceInstance
-		if db.Where("type = ?", wType).First(&existing).Error == nil {
+		err := db.Where("type = ?", wType).First(&existing).Error
+		if err == nil {
 			continue
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("check %s instance: %w", wType, err)
 		}
 		wCfg, _ := json.Marshal(map[string]any{"secret": envWebhookSecret})
 		name := "Uptime Kuma"

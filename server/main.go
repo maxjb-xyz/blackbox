@@ -93,6 +93,8 @@ func main() {
 	if err := handlers.MigrateDataSources(database, webhookSecret); err != nil {
 		log.Fatalf("data source migration failed: %v", err)
 	}
+	handlers.PrimeWebhookSecretCache(database, "webhook_uptime_kuma", webhookSecret)
+	handlers.PrimeWebhookSecretCache(database, "webhook_watchtower", webhookSecret)
 	mcpMgr := bbmcp.NewMCPManager(database)
 	defer func() {
 		if err := mcpMgr.Shutdown(context.Background()); err != nil {
@@ -278,11 +280,11 @@ func main() {
 	})
 
 	r.With(middleware.WebhookAuthFunc(func() string {
-		return handlers.GetWebhookSecret(database, "webhook_uptime_kuma", webhookSecret)
+		return handlers.GetCachedWebhookSecret(database, "webhook_uptime_kuma", webhookSecret)
 	})).Post("/api/webhooks/uptime", handlers.WebhookUptime(database, eventHub, incidentCh, managerCtx.Done()))
 
 	r.With(middleware.WebhookAuthFunc(func() string {
-		return handlers.GetWebhookSecret(database, "webhook_watchtower", webhookSecret)
+		return handlers.GetCachedWebhookSecret(database, "webhook_watchtower", webhookSecret)
 	})).Post("/api/webhooks/watchtower", handlers.WebhookWatchtower(database, eventHub, incidentCh, managerCtx.Done()))
 
 	spaHandler := static.Handler(staticFiles)

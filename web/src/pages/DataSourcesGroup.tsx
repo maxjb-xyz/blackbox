@@ -2,10 +2,10 @@ import { useCallback, useEffect, useState } from 'react'
 import { Circle } from 'lucide-react'
 import type {
   DataSourceInstance,
-  NodeSources,
   SourceTypeDef,
   CreateSourceInput,
   UpdateSourceInput,
+  SourcesResponse,
 } from '../api/client'
 import {
   fetchSources,
@@ -16,6 +16,7 @@ import {
   createExcludedTarget,
   deleteExcludedTarget,
   listExcludedTargets,
+  parseSourceConfig,
 } from '../api/client'
 import type { ExcludedTarget } from '../api/client'
 import SourceCatalog from './SourceCatalog'
@@ -23,15 +24,12 @@ import SourceCatalog from './SourceCatalog'
 type Selection =
   | { kind: 'server'; id: string }
   | { kind: 'node'; nodeName: string; id: string }
+  | { kind: 'orphan'; id: string }
   | { kind: 'docker'; nodeName: string }
   | null
 
-function parseConfig(config: string): Record<string, unknown> {
-  try { return JSON.parse(config) } catch { return {} }
-}
-
 export default function DataSourcesGroup() {
-  const [sources, setSources] = useState<{ server: DataSourceInstance[]; nodes: Record<string, NodeSources> } | null>(null)
+  const [sources, setSources] = useState<SourcesResponse | null>(null)
   const [sourceTypes, setSourceTypes] = useState<SourceTypeDef[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -62,7 +60,13 @@ export default function DataSourcesGroup() {
   useEffect(() => { void load() }, [load])
 
   const loadExcludes = useCallback(async () => {
-    try { setExcludes(await listExcludedTargets()) } catch {}
+    setExcludeError(null)
+    try {
+      setExcludes(await listExcludedTargets())
+    } catch (error) {
+      console.error('Failed to load excluded targets', error)
+      setExcludeError(error instanceof Error ? error.message : 'Failed to load excluded targets')
+    }
   }, [])
 
   useEffect(() => {
@@ -76,6 +80,7 @@ export default function DataSourcesGroup() {
       const ns = sources.nodes[selection.nodeName]
       return ns?.sources.find(s => s.id === selection.id) ?? null
     }
+    if (selection?.kind === 'orphan') return sources.orphans.find(s => s.id === selection.id) ?? null
     return null
   })()
 
@@ -144,6 +149,24 @@ export default function DataSourcesGroup() {
           ))}
           <AddSourceButton onClick={() => setCatalogNode('__server__')} />
         </div>
+
+        {sources.orphans.length > 0 && (
+          <div style={{ marginTop: 8 }}>
+            <div style={{ fontSize: 9, letterSpacing: '0.14em', color: 'var(--muted)', padding: '10px 12px 4px', textTransform: 'uppercase' }}>
+              Orphans
+            </div>
+            {sources.orphans.map(inst => (
+              <SidebarTab
+                key={inst.id}
+                label={inst.name}
+                type={inst.type}
+                active={selection?.kind === 'orphan' && selection.id === inst.id}
+                enabled={inst.enabled}
+                onClick={() => setSelection({ kind: 'orphan', id: inst.id })}
+              />
+            ))}
+          </div>
+        )}
 
         {nodeNames.map(nodeName => {
           const ns = sources.nodes[nodeName]
@@ -222,7 +245,14 @@ export default function DataSourcesGroup() {
               }
             }}
             onRemoveExclude={async (id) => {
-              try { await deleteExcludedTarget(id); await loadExcludes() } catch {}
+              setExcludeError(null)
+              try {
+                await deleteExcludedTarget(id)
+                await loadExcludes()
+              } catch (error) {
+                console.error('Failed to delete excluded target', error)
+                setExcludeError(error instanceof Error ? error.message : 'Failed to delete')
+              }
             }}
           />
         )}
@@ -293,16 +323,16 @@ function SourceConfigPanel({ instance, saving, saveError, onSave, onDelete }: {
   onSave: (input: UpdateSourceInput) => void
   onDelete: () => void
 }) {
-  const cfg = parseConfig(instance.config)
+  const initialConfig = (): Record<string, unknown> => parseSourceConfig<Record<string, unknown>>(instance) ?? {}
   const [enabled, setEnabled] = useState(instance.enabled)
   const [name, setName] = useState(instance.name)
-  const [localCfg, setLocalCfg] = useState<Record<string, unknown>>(cfg)
+  const [localCfg, setLocalCfg] = useState<Record<string, unknown>>(initialConfig)
   const [editedFields, setEditedFields] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     setEnabled(instance.enabled)
     setName(instance.name)
-    setLocalCfg(parseConfig(instance.config))
+    setLocalCfg(parseSourceConfig<Record<string, unknown>>(instance) ?? {})
     setEditedFields(new Set())
   }, [instance.id, instance.enabled, instance.name, instance.config])
 
@@ -447,15 +477,8 @@ function SourceConfigPanel({ instance, saving, saveError, onSave, onDelete }: {
             type="button"
             disabled={saving}
             onClick={() => {
-              const cfg = { ...localCfg }
-              // Don't send password fields that weren't explicitly edited
-              if (!editedFields.has('secret') && 'secret' in cfg) {
-                delete cfg['secret']
-              }
-              if (!editedFields.has('api_token') && 'api_token' in cfg) {
-                delete cfg['api_token']
-              }
-              onSave({ name, enabled, config: cfg })
+              const configPayload = { ...localCfg }
+              onSave({ name, enabled, config: configPayload })
             }}
             style={{ fontSize: 10, border: '1px solid var(--border)', padding: '4px 12px', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontFamily: 'inherit' }}
           >

@@ -1,3 +1,4 @@
+import { useEffect, useId, useRef, type KeyboardEvent } from 'react'
 import type { NodeSources, SourceTypeDef, DataSourceInstance, CreateSourceInput } from '../api/client'
 
 interface Props {
@@ -10,6 +11,8 @@ interface Props {
 }
 
 export default function SourceCatalog({ nodeName, nodeInfo, sourceTypes, existingSources, onSelect, onClose }: Props) {
+  const dialogRef = useRef<HTMLDivElement | null>(null)
+  const titleId = useId()
   const scope = nodeName === null ? 'server' : 'agent'
   const caps = nodeInfo?.capabilities ?? []
 
@@ -42,14 +45,65 @@ export default function SourceCatalog({ nodeName, nodeInfo, sourceTypes, existin
     })
   }
 
+  useEffect(() => {
+    const dialog = dialogRef.current
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    if (!dialog) return undefined
+
+    const focusables = getFocusableElements(dialog)
+    ;(focusables[0] ?? dialog).focus()
+
+    return () => {
+      previousFocus?.focus()
+    }
+  }, [])
+
+  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      onClose()
+      return
+    }
+    if (event.key !== 'Tab' || !dialogRef.current) return
+
+    const focusables = getFocusableElements(dialogRef.current)
+    if (focusables.length === 0) {
+      event.preventDefault()
+      dialogRef.current.focus()
+      return
+    }
+
+    const first = focusables[0]
+    const last = focusables[focusables.length - 1]
+    const active = document.activeElement
+
+    if (event.shiftKey && active === first) {
+      event.preventDefault()
+      last.focus()
+      return
+    }
+    if (!event.shiftKey && active === last) {
+      event.preventDefault()
+      first.focus()
+    }
+  }
+
   return (
-    <div style={{
-      position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-      background: 'var(--bg)', border: '1px solid var(--border)',
-      zIndex: 10, display: 'flex', flexDirection: 'column',
-    }}>
+    <div
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      tabIndex={-1}
+      onKeyDown={handleKeyDown}
+      style={{
+        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+        background: 'var(--bg)', border: '1px solid var(--border)',
+        zIndex: 10, display: 'flex', flexDirection: 'column',
+      }}
+    >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', borderBottom: '1px solid var(--border)' }}>
-        <div style={{ fontSize: 11, letterSpacing: '0.14em', color: 'var(--muted)', textTransform: 'uppercase' }}>Add Source</div>
+        <div id={titleId} style={{ fontSize: 11, letterSpacing: '0.14em', color: 'var(--muted)', textTransform: 'uppercase' }}>Add Source</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
           {nodeName && nodeInfo && (
             <div style={{ fontSize: 10, color: 'var(--muted)', letterSpacing: '0.06em' }}>
@@ -59,7 +113,7 @@ export default function SourceCatalog({ nodeName, nodeInfo, sourceTypes, existin
           {nodeName === null && (
             <div style={{ fontSize: 10, color: 'var(--muted)', letterSpacing: '0.06em' }}>Server</div>
           )}
-          <button type="button" onClick={onClose} style={{ fontSize: 14, color: 'var(--muted)', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', lineHeight: 1 }}>
+          <button type="button" aria-label="Close dialog" onClick={onClose} style={{ fontSize: 14, color: 'var(--muted)', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', lineHeight: 1 }}>
             ✕
           </button>
         </div>
@@ -107,12 +161,12 @@ const TYPE_COLORS: Record<string, { border: string; bg: string; text: string; to
   filewatcher:         { border: '#5a3a1a', bg: '#281a0d', text: '#bd7a3a', topBar: 'linear-gradient(90deg,#7a4a1a,transparent 60%)' },
   proxmox:             { border: '#5a2018', bg: '#28100d', text: '#bd4a3a', topBar: 'linear-gradient(90deg,#7a2a1a,transparent 60%)' },
   webhook_uptime_kuma: { border: '#1a5a3a', bg: '#0d2818', text: '#3abd7a', topBar: 'linear-gradient(90deg,#1a7a4a,transparent 60%)' },
-  webhook_watchtower:  { border: '#1a5a3a', bg: '#0d2818', text: '#3abd7a', topBar: 'linear-gradient(90deg,#1a7a4a,transparent 60%)' },
+  webhook_watchtower:  { border: '#24516a', bg: '#0d1f2b', text: '#57b8d9', topBar: 'linear-gradient(90deg,#2f7398,transparent 60%)' },
 }
 
 const TYPE_SHORT: Record<string, string> = {
   docker: 'DCK', systemd: 'SYS', filewatcher: 'FILE',
-  proxmox: 'PVE', webhook_uptime_kuma: 'WHK', webhook_watchtower: 'WHK',
+  proxmox: 'PVE', webhook_uptime_kuma: 'KUMA', webhook_watchtower: 'WTCH',
 }
 
 function SourceCard({ typeDef, added, virtual, onClick }: {
@@ -175,4 +229,16 @@ function buildDefaultConfig(type: string): Record<string, unknown> {
     case 'webhook_watchtower': return { secret: '' }
     default: return {}
   }
+}
+
+function getFocusableElements(container: HTMLElement): HTMLElement[] {
+  const selector = [
+    'button:not([disabled])',
+    '[href]',
+    'input:not([disabled])',
+    'select:not([disabled])',
+    'textarea:not([disabled])',
+    '[tabindex]:not([tabindex="-1"])',
+  ].join(',')
+  return Array.from(container.querySelectorAll<HTMLElement>(selector))
 }

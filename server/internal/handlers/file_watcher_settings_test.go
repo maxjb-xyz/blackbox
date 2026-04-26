@@ -108,3 +108,14 @@ func TestAgentConfig_ReturnsEmptySystemdUnitsWhenNoneConfigured(t *testing.T) {
 	require.True(t, ok)
 	require.Empty(t, units)
 }
+
+func TestAgentConfig_RejectsUnauthenticatedRequestsEvenWithNodeHeader(t *testing.T) {
+	database := newTestDB(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/agent/config", nil)
+	req.Header.Set("X-Blackbox-Node-Name", "node-1")
+	w := httptest.NewRecorder()
+
+	handlers.AgentConfig(database)(w, req)
+
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+}

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"regexp"
@@ -29,7 +30,9 @@ func GetSystemdSettings(db *gorm.DB) http.HandlerFunc {
 			if inst.NodeID == nil {
 				continue
 			}
-			var cfg struct{ Units []string `json:"units"` }
+			var cfg struct {
+				Units []string `json:"units"`
+			}
 			if err := json.Unmarshal([]byte(inst.Config), &cfg); err != nil {
 				cfg.Units = []string{}
 			}
@@ -102,6 +105,9 @@ func UpdateSystemdSettings(db *gorm.DB) http.HandlerFunc {
 				existing.Config = string(cfgJSON)
 				existing.UpdatedAt = now
 				return tx.Save(&existing).Error
+			}
+			if !errors.Is(findErr, gorm.ErrRecordNotFound) {
+				return findErr
 			}
 			inst := models.DataSourceInstance{
 				ID: ulid.Make().String(), Type: "systemd", Scope: "agent",

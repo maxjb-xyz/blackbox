@@ -88,6 +88,48 @@ func TestInit_CreatesCompositeEntryCursorIndex(t *testing.T) {
 	assert.Equal(t, "id", columns[1].Name)
 }
 
+func TestInit_EnforcesSingletonDataSourceUniqueness(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+	closeDBOnCleanup(t, database)
+
+	nodeName := "node-1"
+	require.NoError(t, database.Create(&models.Node{ID: "n1", Name: nodeName, Capabilities: "[]"}).Error)
+	require.NoError(t, database.Create(&models.DataSourceInstance{
+		ID: "sys-1", Type: "systemd", Scope: "agent", NodeID: &nodeName, Name: "Systemd", Config: "{}",
+	}).Error)
+	err = database.Create(&models.DataSourceInstance{
+		ID: "sys-2", Type: "systemd", Scope: "agent", NodeID: &nodeName, Name: "Systemd 2", Config: "{}",
+	}).Error
+	require.Error(t, err)
+
+	require.NoError(t, database.Create(&models.DataSourceInstance{
+		ID: "wh-1", Type: "webhook_uptime_kuma", Scope: "server", Name: "UK", Config: "{}",
+	}).Error)
+	err = database.Create(&models.DataSourceInstance{
+		ID: "wh-2", Type: "webhook_uptime_kuma", Scope: "server", Name: "UK 2", Config: "{}",
+	}).Error
+	require.Error(t, err)
+}
+
+func TestInit_CascadesAgentScopedDataSourcesWhenNodeDeleted(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+	closeDBOnCleanup(t, database)
+
+	nodeName := "node-1"
+	require.NoError(t, database.Create(&models.Node{ID: "n1", Name: nodeName, Capabilities: "[]"}).Error)
+	require.NoError(t, database.Create(&models.DataSourceInstance{
+		ID: "sys-1", Type: "systemd", Scope: "agent", NodeID: &nodeName, Name: "Systemd", Config: "{}",
+	}).Error)
+
+	require.NoError(t, database.Delete(&models.Node{}, "name = ?", nodeName).Error)
+
+	var count int64
+	require.NoError(t, database.Model(&models.DataSourceInstance{}).Where("id = ?", "sys-1").Count(&count).Error)
+	require.Equal(t, int64(0), count)
+}
+
 func TestInit_DropsLegacyTimestampOnlyEntryIndex(t *testing.T) {
 	tmp, err := os.CreateTemp("", "blackbox-test-*.db")
 	require.NoError(t, err)

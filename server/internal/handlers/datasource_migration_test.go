@@ -6,8 +6,8 @@ import (
 
 	"blackbox/server/internal/handlers"
 	"blackbox/server/internal/models"
-	"github.com/stretchr/testify/require"
 	"github.com/glebarez/sqlite"
+	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
 
@@ -41,7 +41,9 @@ func TestMigrateDataSources_SystemdRows(t *testing.T) {
 	require.Equal(t, "homelab-01", *instances[0].NodeID)
 	require.Equal(t, "agent", instances[0].Scope)
 
-	var cfg struct{ Units []string `json:"units"` }
+	var cfg struct {
+		Units []string `json:"units"`
+	}
 	require.NoError(t, json.Unmarshal([]byte(instances[0].Config), &cfg))
 	require.Equal(t, []string{"nginx.service", "caddy.service"}, cfg.Units)
 }
@@ -59,7 +61,9 @@ func TestMigrateDataSources_FileWatcherPerNode(t *testing.T) {
 	require.Len(t, instances, 1)
 	require.Equal(t, "homelab-01", *instances[0].NodeID)
 
-	var cfg struct{ RedactSecrets bool `json:"redact_secrets"` }
+	var cfg struct {
+		RedactSecrets bool `json:"redact_secrets"`
+	}
 	require.NoError(t, json.Unmarshal([]byte(instances[0].Config), &cfg))
 	require.True(t, cfg.RedactSecrets)
 }
@@ -73,17 +77,28 @@ func TestMigrateDataSources_WebhookInstances(t *testing.T) {
 	require.NoError(t, db.Where("type = ?", "webhook_uptime_kuma").First(&uptime).Error)
 	require.NoError(t, db.Where("type = ?", "webhook_watchtower").First(&watchtower).Error)
 
-	var cfg struct{ Secret string `json:"secret"` }
+	var cfg struct {
+		Secret string `json:"secret"`
+	}
 	require.NoError(t, json.Unmarshal([]byte(uptime.Config), &cfg))
+	require.Equal(t, "mysecret", cfg.Secret)
+	require.NoError(t, json.Unmarshal([]byte(watchtower.Config), &cfg))
 	require.Equal(t, "mysecret", cfg.Secret)
 }
 
 func TestMigrateDataSources_Idempotent(t *testing.T) {
 	db := newMigrationTestDB(t)
+	require.NoError(t, db.Create(&models.Node{ID: "n1", Name: "homelab-01", Capabilities: "[]"}).Error)
+	require.NoError(t, db.Create(&models.SystemdUnitConfig{
+		NodeName: "homelab-01",
+		Units:    `["nginx.service"]`,
+	}).Error)
 	require.NoError(t, handlers.MigrateDataSources(db, "s"))
 	require.NoError(t, handlers.MigrateDataSources(db, "s"))
 
-	var count int64
-	db.Model(&models.DataSourceInstance{}).Where("type = ?", "webhook_uptime_kuma").Count(&count)
-	require.Equal(t, int64(1), count)
+	for _, sourceType := range []string{"webhook_uptime_kuma", "webhook_watchtower", "systemd", "filewatcher"} {
+		var count int64
+		require.NoError(t, db.Model(&models.DataSourceInstance{}).Where("type = ?", sourceType).Count(&count).Error)
+		require.Equal(t, int64(1), count, "unexpected count for %s", sourceType)
+	}
 }
