@@ -182,6 +182,10 @@ func CreateSource(db *gorm.DB) http.HandlerFunc {
 		}
 
 		cfg := "{}"
+		if req.Type == "filewatcher" && len(req.Config) == 0 {
+			writeError(w, http.StatusBadRequest, "redact_secrets is required")
+			return
+		}
 		if len(req.Config) > 0 {
 			// Validate it's a JSON object
 			var obj map[string]any
@@ -191,6 +195,10 @@ func CreateSource(db *gorm.DB) http.HandlerFunc {
 			}
 			if obj == nil {
 				writeError(w, http.StatusBadRequest, "config must be a JSON object")
+				return
+			}
+			if err := validateSourceConfig(req.Type, obj); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
 				return
 			}
 			cfg = string(req.Config)
@@ -246,12 +254,29 @@ func UpdateSource(db *gorm.DB) http.HandlerFunc {
 			return
 		}
 		if req.Name != nil {
+			if *req.Name == "" {
+				writeError(w, http.StatusBadRequest, "name is required")
+				return
+			}
 			inst.Name = *req.Name
 		}
 		if len(req.Config) > 0 {
+			var incoming map[string]any
+			if err := json.Unmarshal(req.Config, &incoming); err != nil {
+				writeError(w, http.StatusBadRequest, "config must be a JSON object")
+				return
+			}
+			if incoming == nil {
+				writeError(w, http.StatusBadRequest, "config must be a JSON object")
+				return
+			}
+			if err := validateSourceConfig(inst.Type, incoming); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
 			mergedConfig, err := mergeSourceConfig(inst.Type, inst.Config, req.Config)
 			if err != nil {
-				writeError(w, http.StatusBadRequest, "config must be a JSON object")
+				writeError(w, http.StatusBadRequest, err.Error())
 				return
 			}
 			inst.Config = mergedConfig
@@ -369,6 +394,10 @@ func mergeSourceConfig(sourceType, existingConfig string, incomingRaw json.RawMe
 		}
 	}
 
+	if err := validateSourceConfig(sourceType, incoming); err != nil {
+		return "", err
+	}
+
 	for _, key := range sensitiveKeysFor(sourceType) {
 		incomingValue, ok := incoming[key]
 		if !ok {
@@ -378,9 +407,12 @@ func mergeSourceConfig(sourceType, existingConfig string, incomingRaw json.RawMe
 		if !existingOK {
 			continue
 		}
-		incomingString, incomingIsString := incomingValue.(string)
 		existingString, existingIsString := existingValue.(string)
-		if incomingIsString && existingIsString && incomingString == "" && existingString != "" {
+		if !existingIsString || existingString == "" {
+			continue
+		}
+		incomingString, incomingIsString := incomingValue.(string)
+		if incomingValue == nil || !incomingIsString || incomingString == "" {
 			incoming[key] = existingString
 		}
 	}
@@ -390,6 +422,15 @@ func mergeSourceConfig(sourceType, existingConfig string, incomingRaw json.RawMe
 		return "", err
 	}
 	return string(merged), nil
+}
+
+func validateSourceConfig(sourceType string, config map[string]any) error {
+	if sourceType == "filewatcher" {
+		if _, ok := config["redact_secrets"]; !ok {
+			return errors.New("redact_secrets is required")
+		}
+	}
+	return nil
 }
 
 func isDuplicateKeyError(err error) bool {

@@ -155,6 +155,10 @@ func quoteSQLStrings(values []string) []string {
 }
 
 func ensureDataSourceCleanupTriggers(database *gorm.DB) error {
+	// TODO: This raw SQLite trigger must be translated explicitly when porting DB init to
+	// Postgres/MySQL. Coverage lives in TestInit_EnforcesSingletonDataSourceUniqueness and
+	// TestInit_CascadesAgentScopedDataSourcesWhenNodeDeleted, which expect agent-scoped rows
+	// to be removed on node delete while server-scoped rows are retained.
 	return database.Exec(`
 CREATE TRIGGER IF NOT EXISTS trg_data_source_instances_delete_node
 AFTER DELETE ON nodes

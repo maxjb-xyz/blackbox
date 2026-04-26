@@ -17,118 +17,111 @@ import (
 // MigrateDataSources seeds data_source_instances from legacy tables.
 // Safe to call on every startup — skips rows that already exist.
 func MigrateDataSources(db *gorm.DB, envWebhookSecret string) error {
-	now := time.Now().UTC()
+	return db.Transaction(func(tx *gorm.DB) error {
+		now := time.Now().UTC()
 
-	// 1. Systemd: one instance per node in systemd_unit_configs
-	var systemdConfigs []models.SystemdUnitConfig
-	if err := db.Find(&systemdConfigs).Error; err != nil {
-		return fmt.Errorf("load systemd configs: %w", err)
-	}
-	for _, cfg := range systemdConfigs {
-		nodeName := cfg.NodeName
-		var units []string
-		if err := json.Unmarshal([]byte(cfg.Units), &units); err != nil {
-			log.Printf("MigrateDataSources: invalid systemd units for node %s: %v (raw=%q)", nodeName, err, cfg.Units)
-			units = []string{}
+		// 1. Systemd: one instance per node in systemd_unit_configs
+		var systemdConfigs []models.SystemdUnitConfig
+		if err := tx.Find(&systemdConfigs).Error; err != nil {
+			return fmt.Errorf("load systemd configs: %w", err)
 		}
-		cfgJSON, err := json.Marshal(map[string]any{"units": units})
+		for _, cfg := range systemdConfigs {
+			nodeName := cfg.NodeName
+			var units []string
+			if err := json.Unmarshal([]byte(cfg.Units), &units); err != nil {
+				log.Printf("MigrateDataSources: invalid systemd units for node %s: %v (raw=%q)", nodeName, err, cfg.Units)
+				units = []string{}
+			}
+			cfgJSON, err := json.Marshal(map[string]any{"units": units})
+			if err != nil {
+				log.Printf("MigrateDataSources: failed to marshal systemd config for node %s: %v", nodeName, err)
+				return fmt.Errorf("marshal systemd config for %s: %w", nodeName, err)
+			}
+
+			var existing models.DataSourceInstance
+			err = tx.Where("type = ? AND node_id = ?", "systemd", nodeName).First(&existing).Error
+			if err == nil {
+				continue // already migrated
+			}
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("check systemd instance for %s: %w", nodeName, err)
+			}
+			inst := models.DataSourceInstance{
+				ID: ulid.Make().String(), Type: "systemd", Scope: "agent",
+				NodeID: &nodeName, Name: "Systemd",
+				Config: string(cfgJSON), Enabled: true,
+				CreatedAt: now, UpdatedAt: now,
+			}
+			if err := tx.Create(&inst).Error; err != nil {
+				return fmt.Errorf("insert systemd instance for %s: %w", nodeName, err)
+			}
+		}
+
+		// 2. File watcher: one instance per capable node
+		redact := true
+		var fwSetting models.AppSetting
+		if err := tx.First(&fwSetting, "key = ?", fileWatcherRedactSecretsKey).Error; err == nil {
+			redact = !strings.EqualFold(fwSetting.Value, "false")
+		}
+		var nodes []models.Node
+		if err := tx.Find(&nodes).Error; err != nil {
+			return fmt.Errorf("load nodes: %w", err)
+		}
+		fwCfg, err := json.Marshal(map[string]any{"redact_secrets": redact})
 		if err != nil {
-			log.Printf("MigrateDataSources: failed to marshal systemd config for node %s: %v", nodeName, err)
-			return fmt.Errorf("marshal systemd config for %s: %w", nodeName, err)
+			return fmt.Errorf("marshal filewatcher config: %w", err)
+		}
+		for _, node := range nodes {
+			nodeName := node.Name
+			if !nodeHasCapability(node.Capabilities, "filewatcher") {
+				continue
+			}
+			var existing models.DataSourceInstance
+			err := tx.Where("type = ? AND node_id = ?", "filewatcher", nodeName).First(&existing).Error
+			if err == nil {
+				continue
+			}
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("check filewatcher instance for %s: %w", nodeName, err)
+			}
+			inst := models.DataSourceInstance{
+				ID: ulid.Make().String(), Type: "filewatcher", Scope: "agent",
+				NodeID: &nodeName, Name: "File Watcher",
+				Config: string(fwCfg), Enabled: true,
+				CreatedAt: now, UpdatedAt: now,
+			}
+			if err := tx.Create(&inst).Error; err != nil {
+				return fmt.Errorf("insert filewatcher instance for %s: %w", nodeName, err)
+			}
 		}
 
-		var existing models.DataSourceInstance
-		err = db.Where("type = ? AND node_id = ?", "systemd", nodeName).First(&existing).Error
-		if err == nil {
-			continue // already migrated
+		// 3. Webhook instances
+		for _, wType := range []string{"webhook_uptime_kuma", "webhook_watchtower"} {
+			var existing models.DataSourceInstance
+			err := tx.Where("type = ?", wType).First(&existing).Error
+			if err == nil {
+				continue
+			}
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("check %s instance: %w", wType, err)
+			}
+			wCfg, _ := json.Marshal(map[string]any{"secret": envWebhookSecret})
+			name := "Uptime Kuma"
+			if wType == "webhook_watchtower" {
+				name = "Watchtower"
+			}
+			inst := models.DataSourceInstance{
+				ID: ulid.Make().String(), Type: wType, Scope: "server",
+				Name: name, Config: string(wCfg), Enabled: true,
+				CreatedAt: now, UpdatedAt: now,
+			}
+			if err := tx.Create(&inst).Error; err != nil {
+				return fmt.Errorf("insert %s instance: %w", wType, err)
+			}
 		}
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return fmt.Errorf("check systemd instance for %s: %w", nodeName, err)
-		}
-		inst := models.DataSourceInstance{
-			ID: ulid.Make().String(), Type: "systemd", Scope: "agent",
-			NodeID: &nodeName, Name: "Systemd",
-			Config: string(cfgJSON), Enabled: true,
-			CreatedAt: now, UpdatedAt: now,
-		}
-		if err := db.Create(&inst).Error; err != nil {
-			return fmt.Errorf("insert systemd instance for %s: %w", nodeName, err)
-		}
-	}
 
-	// 2. File watcher: one instance per existing node
-	redact := true
-	var fwSetting models.AppSetting
-	if err := db.First(&fwSetting, "key = ?", fileWatcherRedactSecretsKey).Error; err == nil {
-		redact = !strings.EqualFold(fwSetting.Value, "false")
-	}
-	var nodes []models.Node
-	if err := db.Find(&nodes).Error; err != nil {
-		return fmt.Errorf("load nodes: %w", err)
-	}
-	fwCfg, err := json.Marshal(map[string]any{"redact_secrets": redact})
-	if err != nil {
-		return fmt.Errorf("marshal filewatcher config: %w", err)
-	}
-	for _, node := range nodes {
-		nodeName := node.Name
-		enabled := nodeHasCapability(node.Capabilities, "filewatcher")
-		var existing models.DataSourceInstance
-		err := db.Where("type = ? AND node_id = ?", "filewatcher", nodeName).First(&existing).Error
-		if err == nil {
-			continue
-		}
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return fmt.Errorf("check filewatcher instance for %s: %w", nodeName, err)
-		}
-		inst := models.DataSourceInstance{
-			ID: ulid.Make().String(), Type: "filewatcher", Scope: "agent",
-			NodeID: &nodeName, Name: "File Watcher",
-			Config: string(fwCfg), Enabled: enabled,
-			CreatedAt: now, UpdatedAt: now,
-		}
-		// Use a field map here so SQLite/GORM persists Enabled=false instead of reapplying the default:true tag.
-		if err := db.Model(&models.DataSourceInstance{}).Create(map[string]any{
-			"id":         inst.ID,
-			"type":       inst.Type,
-			"scope":      inst.Scope,
-			"node_id":    inst.NodeID,
-			"name":       inst.Name,
-			"config":     inst.Config,
-			"enabled":    inst.Enabled,
-			"created_at": inst.CreatedAt,
-			"updated_at": inst.UpdatedAt,
-		}).Error; err != nil {
-			return fmt.Errorf("insert filewatcher instance for %s: %w", nodeName, err)
-		}
-	}
-
-	// 3. Webhook instances
-	for _, wType := range []string{"webhook_uptime_kuma", "webhook_watchtower"} {
-		var existing models.DataSourceInstance
-		err := db.Where("type = ?", wType).First(&existing).Error
-		if err == nil {
-			continue
-		}
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return fmt.Errorf("check %s instance: %w", wType, err)
-		}
-		wCfg, _ := json.Marshal(map[string]any{"secret": envWebhookSecret})
-		name := "Uptime Kuma"
-		if wType == "webhook_watchtower" {
-			name = "Watchtower"
-		}
-		inst := models.DataSourceInstance{
-			ID: ulid.Make().String(), Type: wType, Scope: "server",
-			Name: name, Config: string(wCfg), Enabled: true,
-			CreatedAt: now, UpdatedAt: now,
-		}
-		if err := db.Create(&inst).Error; err != nil {
-			return fmt.Errorf("insert %s instance: %w", wType, err)
-		}
-	}
-
-	return nil
+		return nil
+	})
 }
 
 func nodeHasCapability(rawCapabilities, capability string) bool {

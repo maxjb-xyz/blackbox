@@ -25,9 +25,7 @@ func GetCachedWebhookSecret(db *gorm.DB, sourceType, envFallback string) string 
 		}
 		webhookSecretCache.Delete(sourceType)
 	}
-	if _, ok := webhookSecretFallbacks.Load(sourceType); !ok {
-		webhookSecretFallbacks.Store(sourceType, envFallback)
-	}
+	webhookSecretFallbacks.LoadOrStore(sourceType, envFallback)
 	return RefreshWebhookSecretCache(db, sourceType)
 }
 

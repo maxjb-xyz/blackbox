@@ -185,3 +185,25 @@ func TestGetAgentConfig_FourXXReturnsPermanentError(t *testing.T) {
 		})
 	}
 }
+
+func TestGetAgentConfig_TimeoutAndRateLimitRemainRetryable(t *testing.T) {
+	for _, status := range []int{http.StatusRequestTimeout, http.StatusTooManyRequests} {
+		status := status
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				http.Error(w, "retry later", status)
+			}))
+			defer srv.Close()
+
+			c := client.New(srv.URL, "test-token", "node-1")
+			_, err := c.GetAgentConfig(context.Background(), []string{"docker"})
+			if err == nil {
+				t.Fatalf("expected error for %d, got nil", status)
+			}
+			var permErr *client.PermanentError
+			if errors.As(err, &permErr) {
+				t.Fatalf("expected retryable error for %d, got permanent error: %v", status, err)
+			}
+		})
+	}
+}

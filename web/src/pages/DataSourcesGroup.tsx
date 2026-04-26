@@ -30,6 +30,11 @@ type Selection =
   | { kind: 'docker'; nodeName: string }
   | null
 
+const WEBHOOK_ENDPOINTS: Record<string, string> = {
+  webhook_uptime_kuma: '/api/webhooks/uptime',
+  webhook_watchtower: '/api/webhooks/watchtower',
+}
+
 export default function DataSourcesGroup() {
   const [sources, setSources] = useState<SourcesResponse | null>(null)
   const [sourceTypes, setSourceTypes] = useState<SourceTypeDef[]>([])
@@ -347,7 +352,7 @@ function SourceConfigPanel({ instance, saving, saveError, onSave, onDelete }: {
 
   const typeLabel = instance.type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
   const isWebhook = instance.type.startsWith('webhook_')
-  const endpointPath = instance.type === 'webhook_uptime_kuma' ? '/api/webhooks/uptime' : '/api/webhooks/watchtower'
+  const endpointPath = WEBHOOK_ENDPOINTS[instance.type]
   const typeColor = getSourceCardColors(instance.type).text
   const unitsArray = Array.isArray(localCfg.units) ? localCfg.units.map(String) : []
 
@@ -389,8 +394,10 @@ function SourceConfigPanel({ instance, saving, saveError, onSave, onDelete }: {
         {isWebhook && (
           <>
             <ConfigRow label="Endpoint">
-              <div style={{ color: 'var(--muted)', fontSize: 11 }}>{endpointPath}</div>
-              <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 3 }}>Set this URL in your monitoring tool</div>
+              <div style={{ color: 'var(--muted)', fontSize: 11 }}>{endpointPath ?? 'No webhook endpoint registered for this source type'}</div>
+              <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 3 }}>
+                {endpointPath ? 'Set this URL in your monitoring tool' : 'This webhook type needs a registered endpoint before it can be configured.'}
+              </div>
             </ConfigRow>
             <ConfigRow label="Secret Token">
               <input

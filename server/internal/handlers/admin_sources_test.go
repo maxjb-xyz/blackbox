@@ -122,6 +122,40 @@ func TestUpdateSource_PreservesSensitiveConfigWhenOmitted(t *testing.T) {
 	require.Equal(t, "keep-me", cfg["secret"])
 }
 
+func TestUpdateSource_PreservesSensitiveConfigWhenNullOrNonString(t *testing.T) {
+	db := newSourcesTestDB(t)
+	inst := models.DataSourceInstance{
+		ID: "testid", Type: "webhook_uptime_kuma", Scope: "server",
+		Name: "UK", Config: `{"secret":"keep-me","note":"existing"}`,
+		Enabled: true,
+	}
+	require.NoError(t, db.Create(&inst).Error)
+
+	for name, body := range map[string]string{
+		"null":       `{"config":{"secret":null,"note":"updated"}}`,
+		"non-string": `{"config":{"secret":123,"note":"updated"}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			require.NoError(t, db.Model(&models.DataSourceInstance{}).Where("id = ?", "testid").Update("config", `{"secret":"keep-me","note":"existing"}`).Error)
+
+			r := chi.NewRouter()
+			r.Put("/api/admin/sources/{id}", handlers.UpdateSource(db))
+			req := httptest.NewRequest(http.MethodPut, "/api/admin/sources/testid", bytes.NewReader([]byte(body)))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+			require.Equal(t, http.StatusOK, w.Code)
+
+			var updated models.DataSourceInstance
+			require.NoError(t, db.First(&updated, "id = ?", "testid").Error)
+			var cfg map[string]any
+			require.NoError(t, json.Unmarshal([]byte(updated.Config), &cfg))
+			require.Equal(t, "updated", cfg["note"])
+			require.Equal(t, "keep-me", cfg["secret"])
+		})
+	}
+}
+
 func TestDeleteSource(t *testing.T) {
 	db := newSourcesTestDB(t)
 	require.NoError(t, db.Create(&models.DataSourceInstance{ID: "del1", Type: "filewatcher", Scope: "agent", Name: "x", Config: "{}"}).Error)
@@ -293,6 +327,17 @@ func TestCreateSource_InvalidConfigRejected(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, w.Code)
 }
 
+func TestCreateSource_FileWatcherRequiresRedactSecrets(t *testing.T) {
+	db := newSourcesTestDB(t)
+	raw := []byte(`{"type":"filewatcher","scope":"agent","node_id":"homelab-01","name":"watcher","config":{},"enabled":true}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/sources", bytes.NewReader(raw))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	handlers.CreateSource(db)(w, req)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Contains(t, w.Body.String(), "redact_secrets is required")
+}
+
 func TestCreateSource_NullConfigRejected(t *testing.T) {
 	db := newSourcesTestDB(t)
 	raw := []byte(`{"type":"filewatcher","scope":"agent","node_id":"homelab-01","name":"watcher","config":null,"enabled":true}`)
@@ -319,6 +364,43 @@ func TestUpdateSource_NullConfigRejected(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	require.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestUpdateSource_EmptyNameRejected(t *testing.T) {
+	db := newSourcesTestDB(t)
+	nodeName := "homelab-01"
+	inst := models.DataSourceInstance{
+		ID: "testid", Type: "filewatcher", Scope: "agent", NodeID: &nodeName,
+		Name: "watcher", Config: `{"redact_secrets":true}`, Enabled: true,
+	}
+	require.NoError(t, db.Create(&inst).Error)
+
+	r := chi.NewRouter()
+	r.Put("/api/admin/sources/{id}", handlers.UpdateSource(db))
+	req := httptest.NewRequest(http.MethodPut, "/api/admin/sources/testid", bytes.NewReader([]byte(`{"name":""}`)))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestUpdateSource_FileWatcherRequiresRedactSecrets(t *testing.T) {
+	db := newSourcesTestDB(t)
+	nodeName := "homelab-01"
+	inst := models.DataSourceInstance{
+		ID: "testid", Type: "filewatcher", Scope: "agent", NodeID: &nodeName,
+		Name: "watcher", Config: `{"redact_secrets":true}`, Enabled: true,
+	}
+	require.NoError(t, db.Create(&inst).Error)
+
+	r := chi.NewRouter()
+	r.Put("/api/admin/sources/{id}", handlers.UpdateSource(db))
+	req := httptest.NewRequest(http.MethodPut, "/api/admin/sources/testid", bytes.NewReader([]byte(`{"config":{}}`)))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Contains(t, w.Body.String(), "redact_secrets is required")
 }
 
 func TestListSourceTypes(t *testing.T) {

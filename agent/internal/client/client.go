@@ -156,6 +156,7 @@ func (c *Client) SendBatch(ctx context.Context, entries []types.Entry) (accepted
 }
 
 func (c *Client) GetAgentConfig(ctx context.Context, capabilities []string) (AgentConfig, error) {
+	// Validate and normalize capability tokens before dispatch so callers can rely on pre-request rejection.
 	cleanCapabilities, err := sanitizeCapabilities(capabilities)
 	if err != nil {
 		return AgentConfig{}, err
@@ -186,7 +187,9 @@ func (c *Client) GetAgentConfig(ctx context.Context, capabilities []string) (Age
 		if readErr != nil {
 			msg = fmt.Sprintf("(could not read body: %v)", readErr)
 		}
-		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+		if resp.StatusCode >= 400 && resp.StatusCode < 500 &&
+			resp.StatusCode != http.StatusRequestTimeout &&
+			resp.StatusCode != http.StatusTooManyRequests {
 			return AgentConfig{}, &PermanentError{StatusCode: resp.StatusCode, Message: msg}
 		}
 		return AgentConfig{}, fmt.Errorf("server returned %d: %s", resp.StatusCode, msg)

@@ -91,10 +91,12 @@ func getFileWatcherRedactSecretsForNode(db *gorm.DB, nodeName string) (bool, err
 	err := db.Where("type = ? AND enabled = ? AND node_id = ?", "filewatcher", true, nodeName).First(&inst).Error
 	if err == nil {
 		var cfg struct {
-			RedactSecrets bool `json:"redact_secrets"`
+			RedactSecrets *bool `json:"redact_secrets"`
 		}
 		if jsonErr := json.Unmarshal([]byte(inst.Config), &cfg); jsonErr == nil {
-			return cfg.RedactSecrets, nil
+			if cfg.RedactSecrets != nil {
+				return *cfg.RedactSecrets, nil
+			}
 		} else {
 			log.Printf("getFileWatcherRedactSecretsForNode: failed to parse config for source %s: %v", inst.ID, jsonErr)
 		}

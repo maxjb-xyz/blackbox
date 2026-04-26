@@ -86,7 +86,7 @@ const SOURCE_ICON_SPECS: Record<SourceVisualType, SourceIconSpec> = {
 
 function asSourceVisualType(type: string | null | undefined): SourceVisualType {
   if (typeof type !== 'string') return 'fallback'
-  if (type in SOURCE_CARD_COLORS) return type as SourceVisualType
+  if (Object.prototype.hasOwnProperty.call(SOURCE_CARD_COLORS, type)) return type as SourceVisualType
   return 'fallback'
 }
 

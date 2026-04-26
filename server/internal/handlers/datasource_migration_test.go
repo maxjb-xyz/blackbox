@@ -78,11 +78,9 @@ func TestMigrateDataSources_FileWatcherDisabledWithoutCapability(t *testing.T) {
 	require.NoError(t, db.Create(&models.Node{ID: "n1", Name: "homelab-01", Capabilities: "[]"}).Error)
 	require.NoError(t, handlers.MigrateDataSources(db, ""))
 
-	var inst models.DataSourceInstance
-	require.NoError(t, db.Where("type = ?", "filewatcher").First(&inst).Error)
-	require.NotNil(t, inst.NodeID)
-	require.Equal(t, "homelab-01", *inst.NodeID)
-	require.False(t, inst.Enabled)
+	var count int64
+	require.NoError(t, db.Model(&models.DataSourceInstance{}).Where("type = ?", "filewatcher").Count(&count).Error)
+	require.Equal(t, int64(0), count)
 }
 
 func TestMigrateDataSources_WebhookInstances(t *testing.T) {
@@ -94,18 +92,21 @@ func TestMigrateDataSources_WebhookInstances(t *testing.T) {
 	require.NoError(t, db.Where("type = ?", "webhook_uptime_kuma").First(&uptime).Error)
 	require.NoError(t, db.Where("type = ?", "webhook_watchtower").First(&watchtower).Error)
 
-	var cfg struct {
+	var cfgUptime struct {
 		Secret string `json:"secret"`
 	}
-	require.NoError(t, json.Unmarshal([]byte(uptime.Config), &cfg))
-	require.Equal(t, "mysecret", cfg.Secret)
-	require.NoError(t, json.Unmarshal([]byte(watchtower.Config), &cfg))
-	require.Equal(t, "mysecret", cfg.Secret)
+	var cfgWatchtower struct {
+		Secret string `json:"secret"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(uptime.Config), &cfgUptime))
+	require.Equal(t, "mysecret", cfgUptime.Secret)
+	require.NoError(t, json.Unmarshal([]byte(watchtower.Config), &cfgWatchtower))
+	require.Equal(t, "mysecret", cfgWatchtower.Secret)
 }
 
 func TestMigrateDataSources_Idempotent(t *testing.T) {
 	db := newMigrationTestDB(t)
-	require.NoError(t, db.Create(&models.Node{ID: "n1", Name: "homelab-01", Capabilities: "[]"}).Error)
+	require.NoError(t, db.Create(&models.Node{ID: "n1", Name: "homelab-01", Capabilities: `["filewatcher"]`}).Error)
 	units, err := json.Marshal([]string{"nginx.service"})
 	require.NoError(t, err)
 	require.NoError(t, db.Create(&models.SystemdUnitConfig{
