@@ -297,9 +297,9 @@ func TestListSourceTypes(t *testing.T) {
 	for _, typ := range types {
 		found[typ["type"].(string)] = true
 	}
-	for _, expected := range []string{"systemd", "filewatcher", "webhook_uptime_kuma", "webhook_watchtower"} {
+	for _, expected := range []string{"systemd", "filewatcher", "proxmox", "webhook_uptime_kuma", "webhook_watchtower"} {
 		require.True(t, found[expected], "missing type: "+expected)
 	}
 	require.True(t, found["docker"], "missing type: docker")
-	require.Len(t, found, 5)
+	require.Len(t, found, 6)
 }
