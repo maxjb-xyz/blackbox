@@ -5,28 +5,35 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"blackbox/server/internal/models"
 	"github.com/go-chi/chi/v5"
+	"github.com/oklog/ulid/v2"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 func GetSystemdSettings(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var configs []models.SystemdUnitConfig
-		if err := db.Find(&configs).Error; err != nil {
+		var instances []models.DataSourceInstance
+		if err := db.Where("type = ?", "systemd").Find(&instances).Error; err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to load systemd settings")
 			return
 		}
 
-		result := make(map[string][]string, len(configs))
-		for _, c := range configs {
-			var units []string
-			if err := json.Unmarshal([]byte(c.Units), &units); err != nil {
-				units = []string{}
+		result := make(map[string][]string)
+		for _, inst := range instances {
+			if inst.NodeID == nil {
+				continue
 			}
-			result[c.NodeName] = units
+			var cfg struct{ Units []string `json:"units"` }
+			if err := json.Unmarshal([]byte(inst.Config), &cfg); err != nil {
+				cfg.Units = []string{}
+			}
+			if cfg.Units == nil {
+				cfg.Units = []string{}
+			}
+			result[*inst.NodeID] = cfg.Units
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -71,22 +78,32 @@ func UpdateSystemdSettings(db *gorm.DB) http.HandlerFunc {
 			clean = append(clean, t)
 		}
 
-		unitsJSON, err := json.Marshal(clean)
+		cfgJSON, err := json.Marshal(map[string]any{"units": clean})
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to encode units")
+			writeError(w, http.StatusInternalServerError, "failed to serialize units")
 			return
 		}
 
-		config := models.SystemdUnitConfig{
-			NodeName: nodeName,
-			Units:    string(unitsJSON),
-		}
-		if err := db.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "node_name"}},
-			DoUpdates: clause.AssignmentColumns([]string{"units"}),
-		}).Create(&config).Error; err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to save systemd settings")
-			return
+		var existing models.DataSourceInstance
+		err = db.Where("type = ? AND node_id = ?", "systemd", nodeName).First(&existing).Error
+		now := time.Now().UTC()
+		if err == nil {
+			existing.Config = string(cfgJSON)
+			existing.UpdatedAt = now
+			if err := db.Save(&existing).Error; err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to save systemd settings")
+				return
+			}
+		} else {
+			inst := models.DataSourceInstance{
+				ID: ulid.Make().String(), Type: "systemd", Scope: "agent",
+				NodeID: &nodeName, Name: "Systemd", Config: string(cfgJSON),
+				Enabled: true, CreatedAt: now, UpdatedAt: now,
+			}
+			if err := db.Create(&inst).Error; err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to save systemd settings")
+				return
+			}
 		}
 
 		w.WriteHeader(http.StatusNoContent)
