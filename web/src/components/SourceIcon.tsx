@@ -10,13 +10,14 @@ interface Props {
   style?: CSSProperties
 }
 
-export default function SourceIcon({ type, size = 18, strokeWidth = 1.8, style }: Props) {
+export default function SourceIcon({ type, size = 16, strokeWidth = 1.8, style }: Props) {
   const spec = getSourceIconSpec(type)
 
   if (spec.kind === 'brand') {
     if (spec.name === 'docker') return <DockerMark size={size} style={style} />
     if (spec.name === 'uptime-kuma') return <UptimeKumaMark size={size} style={style} />
-    return <WatchtowerMark size={size} style={style} />
+    if (spec.name === 'watchtower') return <WatchtowerMark size={size} style={style} />
+    return <CircleHelp size={size} strokeWidth={strokeWidth} style={style} />
   }
 
   if (spec.name === 'systemd') return <Cog size={size} strokeWidth={strokeWidth} style={style} />

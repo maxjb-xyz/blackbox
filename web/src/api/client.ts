@@ -912,9 +912,6 @@ export interface NodeSources {
 export interface SourcesResponse {
   server: DataSourceInstance[]
   nodes: Record<string, NodeSources>
-}
-
-export interface SourcesResponse {
   orphans: DataSourceInstance[]
 }
 

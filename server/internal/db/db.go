@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -27,6 +28,7 @@ func Init(path string) (*gorm.DB, error) {
 	} else if err := ensureWritablePath(path); err != nil {
 		return nil, err
 	}
+	dsn = appendSQLitePragma(dsn, "_pragma=foreign_keys(1)")
 	database, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
 		Logger:         logger.Default.LogMode(logger.Silent),
 		TranslateError: true,
@@ -111,6 +113,8 @@ ON excluded_targets(type, lower(name));
 `).Error
 }
 
+// Keep these singleton allowlists in sync with handlers.knownSourceTypes and
+// the singleton enforcement in handlers.CreateSource.
 func ensureDataSourceConstraints(database *gorm.DB) error {
 	if err := database.Exec(`
 CREATE UNIQUE INDEX IF NOT EXISTS idx_data_source_singleton_agent
@@ -124,6 +128,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_data_source_singleton_server
 ON data_source_instances(type)
 WHERE scope = 'server' AND type IN ('webhook_uptime_kuma', 'webhook_watchtower')
 `).Error
+}
+
+func appendSQLitePragma(dsn, pragma string) string {
+	separator := "?"
+	if strings.Contains(dsn, "?") {
+		separator = "&"
+	}
+	return dsn + separator + pragma
 }
 
 func ensureDataSourceCleanupTriggers(database *gorm.DB) error {

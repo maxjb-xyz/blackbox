@@ -75,7 +75,11 @@ func ListSources(db *gorm.DB) http.HandlerFunc {
 
 		for _, n := range nodes {
 			var caps []string
-			if err := json.Unmarshal([]byte(n.Capabilities), &caps); err != nil || len(caps) == 0 {
+			if err := json.Unmarshal([]byte(n.Capabilities), &caps); err != nil {
+				log.Printf("ListSources: node %s has invalid capabilities JSON: %v", n.Name, err)
+				caps = []string{"docker", "systemd", "filewatcher"}
+			} else if n.Capabilities == "" || len(caps) == 0 {
+				log.Printf("ListSources: node %s has no stored capabilities yet; using legacy fallback", n.Name)
 				caps = []string{"docker", "systemd", "filewatcher"}
 			}
 			resp.Nodes[n.Name] = nodeSourcesResponse{
@@ -179,13 +183,17 @@ func CreateSource(db *gorm.DB) http.HandlerFunc {
 
 		cfg := "{}"
 		if len(req.Config) > 0 {
-			cfg = string(req.Config)
 			// Validate it's a JSON object
 			var obj map[string]any
 			if err := json.Unmarshal(req.Config, &obj); err != nil {
 				writeError(w, http.StatusBadRequest, "config must be a JSON object")
 				return
 			}
+			if obj == nil {
+				writeError(w, http.StatusBadRequest, "config must be a JSON object")
+				return
+			}
+			cfg = string(req.Config)
 		}
 		enabled := true
 		if req.Enabled != nil {
@@ -330,6 +338,9 @@ func mergeSourceConfig(sourceType, existingConfig string, incomingRaw json.RawMe
 	if err := json.Unmarshal(incomingRaw, &incoming); err != nil {
 		return "", err
 	}
+	if incoming == nil {
+		return "", errors.New("config must be a JSON object")
+	}
 
 	existing := map[string]any{}
 	if existingConfig != "" {
@@ -375,5 +386,6 @@ func isDuplicateKeyError(err error) bool {
 		return true
 	}
 	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "unique constraint") || strings.Contains(msg, "duplicate key")
+	return strings.Contains(msg, "unique constraint failed") ||
+		strings.Contains(msg, "duplicate key value violates unique constraint")
 }

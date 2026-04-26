@@ -117,8 +117,11 @@ export default function DataSourcesGroup() {
       const inst = await createSource(input)
       await load()
       setCatalogNode(null)
-      if (input.scope === 'server') setSelection({ kind: 'server', id: inst.id })
-      else setSelection({ kind: 'node', nodeName: input.node_id!, id: inst.id })
+      if (input.scope === 'server') {
+        setSelection({ kind: 'server', id: inst.id })
+      } else if (input.node_id) {
+        setSelection({ kind: 'node', nodeName: input.node_id, id: inst.id })
+      }
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : 'Create failed')
     } finally {
@@ -336,6 +339,7 @@ function SourceConfigPanel({ instance, saving, saveError, onSave, onDelete }: {
   const isWebhook = instance.type.startsWith('webhook_')
   const endpointPath = instance.type === 'webhook_uptime_kuma' ? '/api/webhooks/uptime' : '/api/webhooks/watchtower'
   const typeColor = getSourceCardColors(instance.type).text
+  const unitsArray = Array.isArray(localCfg.units) ? localCfg.units.map(String) : []
 
   return (
     <div>
@@ -402,8 +406,11 @@ function SourceConfigPanel({ instance, saving, saveError, onSave, onDelete }: {
           <ConfigRow label="Watched Units">
             <textarea
               rows={4}
-              value={((localCfg.units as string[]) ?? []).join('\n')}
-              onChange={e => setLocalCfg(c => ({ ...c, units: e.target.value.split('\n').map(s => s.trim()).filter(Boolean) }))}
+              value={unitsArray.join('\n')}
+              onChange={e => {
+                const parsedLines = e.target.value.split('\n').map(s => s.trim()).filter(Boolean)
+                setLocalCfg(c => ({ ...c, units: parsedLines }))
+              }}
               placeholder="nginx.service&#10;caddy.service"
               style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'inherit', fontSize: 11, padding: '4px 8px', width: '100%', resize: 'vertical' }}
             />

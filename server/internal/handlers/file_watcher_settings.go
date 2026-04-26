@@ -146,6 +146,11 @@ func AgentConfig(db *gorm.DB) http.HandlerFunc {
 			const maxCapsHeader = 4 * 1024 // 4 KiB
 			if len(capsHeader) > maxCapsHeader {
 				capsHeader = capsHeader[:maxCapsHeader]
+				if idx := strings.LastIndex(capsHeader, ","); idx >= 0 {
+					capsHeader = capsHeader[:idx]
+				} else {
+					capsHeader = ""
+				}
 			}
 			parts := strings.Split(capsHeader, ",")
 			const maxCaps = 32

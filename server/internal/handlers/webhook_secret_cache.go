@@ -17,7 +17,6 @@ func PrimeWebhookSecretCache(db *gorm.DB, sourceType, envFallback string) string
 }
 
 func GetCachedWebhookSecret(db *gorm.DB, sourceType, envFallback string) string {
-	webhookSecretFallbacks.Store(sourceType, envFallback)
 	if cached, ok := webhookSecretCache.Load(sourceType); ok {
 		return cached.(string)
 	}

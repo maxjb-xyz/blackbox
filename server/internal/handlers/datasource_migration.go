@@ -61,6 +61,7 @@ func MigrateDataSources(db *gorm.DB, envWebhookSecret string) error {
 	fwCfg, _ := json.Marshal(map[string]any{"redact_secrets": redact})
 	for _, node := range nodes {
 		nodeName := node.Name
+		enabled := nodeHasCapability(node.Capabilities, "filewatcher")
 		var existing models.DataSourceInstance
 		err := db.Where("type = ? AND node_id = ?", "filewatcher", nodeName).First(&existing).Error
 		if err == nil {
@@ -72,10 +73,20 @@ func MigrateDataSources(db *gorm.DB, envWebhookSecret string) error {
 		inst := models.DataSourceInstance{
 			ID: ulid.Make().String(), Type: "filewatcher", Scope: "agent",
 			NodeID: &nodeName, Name: "File Watcher",
-			Config: string(fwCfg), Enabled: true,
+			Config: string(fwCfg), Enabled: enabled,
 			CreatedAt: now, UpdatedAt: now,
 		}
-		if err := db.Create(&inst).Error; err != nil {
+		if err := db.Model(&models.DataSourceInstance{}).Create(map[string]any{
+			"id":         inst.ID,
+			"type":       inst.Type,
+			"scope":      inst.Scope,
+			"node_id":    inst.NodeID,
+			"name":       inst.Name,
+			"config":     inst.Config,
+			"enabled":    inst.Enabled,
+			"created_at": inst.CreatedAt,
+			"updated_at": inst.UpdatedAt,
+		}).Error; err != nil {
 			return fmt.Errorf("insert filewatcher instance for %s: %w", nodeName, err)
 		}
 	}
@@ -106,4 +117,17 @@ func MigrateDataSources(db *gorm.DB, envWebhookSecret string) error {
 	}
 
 	return nil
+}
+
+func nodeHasCapability(rawCapabilities, capability string) bool {
+	var capabilities []string
+	if err := json.Unmarshal([]byte(rawCapabilities), &capabilities); err != nil {
+		return false
+	}
+	for _, candidate := range capabilities {
+		if candidate == capability {
+			return true
+		}
+	}
+	return false
 }

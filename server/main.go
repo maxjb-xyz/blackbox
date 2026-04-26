@@ -279,13 +279,19 @@ func main() {
 		r.Post("/api/agent/push/batch", handlers.AgentPushBatch(database, eventHub, incidentCh, managerCtx.Done()))
 	})
 
-	r.With(middleware.WebhookAuthFunc(func() string {
-		return handlers.GetCachedWebhookSecret(database, "webhook_uptime_kuma", webhookSecret)
-	})).Post("/api/webhooks/uptime", handlers.WebhookUptime(database, eventHub, incidentCh, managerCtx.Done()))
+	r.With(
+		middleware.RateLimit(time.Minute, 60),
+		middleware.WebhookAuthFunc(func() string {
+			return handlers.GetCachedWebhookSecret(database, "webhook_uptime_kuma", webhookSecret)
+		}),
+	).Post("/api/webhooks/uptime", handlers.WebhookUptime(database, eventHub, incidentCh, managerCtx.Done()))
 
-	r.With(middleware.WebhookAuthFunc(func() string {
-		return handlers.GetCachedWebhookSecret(database, "webhook_watchtower", webhookSecret)
-	})).Post("/api/webhooks/watchtower", handlers.WebhookWatchtower(database, eventHub, incidentCh, managerCtx.Done()))
+	r.With(
+		middleware.RateLimit(time.Minute, 60),
+		middleware.WebhookAuthFunc(func() string {
+			return handlers.GetCachedWebhookSecret(database, "webhook_watchtower", webhookSecret)
+		}),
+	).Post("/api/webhooks/watchtower", handlers.WebhookWatchtower(database, eventHub, incidentCh, managerCtx.Done()))
 
 	spaHandler := static.Handler(staticFiles)
 	r.NotFound(func(w http.ResponseWriter, req *http.Request) {

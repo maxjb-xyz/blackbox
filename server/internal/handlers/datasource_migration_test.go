@@ -38,6 +38,7 @@ func TestMigrateDataSources_SystemdRows(t *testing.T) {
 	var instances []models.DataSourceInstance
 	require.NoError(t, db.Where("type = ?", "systemd").Find(&instances).Error)
 	require.Len(t, instances, 1)
+	require.NotNil(t, instances[0].NodeID)
 	require.Equal(t, "homelab-01", *instances[0].NodeID)
 	require.Equal(t, "agent", instances[0].Scope)
 
@@ -51,7 +52,7 @@ func TestMigrateDataSources_SystemdRows(t *testing.T) {
 func TestMigrateDataSources_FileWatcherPerNode(t *testing.T) {
 	db := newMigrationTestDB(t)
 
-	require.NoError(t, db.Create(&models.Node{ID: "n1", Name: "homelab-01", Capabilities: "[]"}).Error)
+	require.NoError(t, db.Create(&models.Node{ID: "n1", Name: "homelab-01", Capabilities: `["filewatcher"]`}).Error)
 	require.NoError(t, db.Create(&models.AppSetting{Key: "file_watcher_redact_secrets", Value: "true"}).Error)
 
 	require.NoError(t, handlers.MigrateDataSources(db, ""))
@@ -59,13 +60,28 @@ func TestMigrateDataSources_FileWatcherPerNode(t *testing.T) {
 	var instances []models.DataSourceInstance
 	require.NoError(t, db.Where("type = ?", "filewatcher").Find(&instances).Error)
 	require.Len(t, instances, 1)
+	require.NotNil(t, instances[0].NodeID)
 	require.Equal(t, "homelab-01", *instances[0].NodeID)
+	require.True(t, instances[0].Enabled)
 
 	var cfg struct {
 		RedactSecrets bool `json:"redact_secrets"`
 	}
 	require.NoError(t, json.Unmarshal([]byte(instances[0].Config), &cfg))
 	require.True(t, cfg.RedactSecrets)
+}
+
+func TestMigrateDataSources_FileWatcherDisabledWithoutCapability(t *testing.T) {
+	db := newMigrationTestDB(t)
+
+	require.NoError(t, db.Create(&models.Node{ID: "n1", Name: "homelab-01", Capabilities: "[]"}).Error)
+	require.NoError(t, handlers.MigrateDataSources(db, ""))
+
+	var inst models.DataSourceInstance
+	require.NoError(t, db.Where("type = ?", "filewatcher").First(&inst).Error)
+	require.NotNil(t, inst.NodeID)
+	require.Equal(t, "homelab-01", *inst.NodeID)
+	require.False(t, inst.Enabled)
 }
 
 func TestMigrateDataSources_WebhookInstances(t *testing.T) {

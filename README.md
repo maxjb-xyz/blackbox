@@ -106,7 +106,7 @@ docker compose up -d
 
 **3. Open `http://your-server:8080` and complete the setup wizard.**
 
-**4. Optional: open Admin > Data Sources to manage per-node and server-wide data sources, including capability-aware systemd, file watcher, and webhook setup. Open Admin > System to configure file-diff redaction and Ollama-based incident analysis.**
+**4. Optional: open Admin > Data Sources to manage per-node and server-wide data sources, including capability-aware systemd, file watcher, webhook, and Docker exclusion setup. Open Admin > System to configure file-diff redaction and Ollama-based incident analysis.**
 
 ---
 
@@ -123,9 +123,10 @@ docker compose up -d
 - **Uptime Kuma webhooks** — Ingest Down/Up state changes. Down events open confirmed incidents and score likely causes from recent Docker, file, and webhook activity.
 - **Watchtower webhooks** — Ingest container image update events with version metadata and use them as incident evidence when a restart follows shortly after.
 - **Custom entries** — Post arbitrary events via the API.
-- **Container & stack exclusions** — Exclude specific Docker containers or Compose stacks from event ingestion entirely. Configured in Admin > Integrations > Excludes. Excluded events are silently dropped server-side — agents do not need reconfiguring.
+- **Container & stack exclusions** — Exclude specific Docker containers or Compose stacks from event ingestion entirely. Configured in Admin > Data Sources. Excluded events are silently dropped server-side — agents do not need reconfiguring.
 
 ### Sources
+
 - **Source catalog** - Manage supported event sources from Admin > Data Sources. The catalog is capability-aware per node, supports both server-scoped and agent-scoped sources, and preserves stored secrets when you edit an existing source.
 
 ### Notifications
@@ -270,7 +271,7 @@ Notes:
 
 - Systemd monitoring is Linux-only. On non-Linux hosts the watcher is a no-op.
 - Set `WATCH_SYSTEMD=true` on the agent to enable journal monitoring.
-- Configure the watched units from **Admin > System > Systemd**. Settings are stored per node and the agent refreshes them from the server every minute.
+- Configure watched systemd sources from **Admin > Data Sources**. Per-node systemd units are stored with each node's source config and the agent refreshes them from the server every minute.
 - The watcher emits `started`, `stopped`, `restart`, and `failed` events for configured units, plus `oom_kill` events from the kernel journal.
 - Failed unit entries include a recent journal snippet in entry metadata, which Blackbox also uses as a correlation scoring bonus.
 - A watched unit `failed` or `oom_kill` opens a suspected incident immediately. Repeated watched `restart`/`failed` events within 5 minutes also open a suspected incident, while a lone `restart` does not.
@@ -631,7 +632,7 @@ TZ=America/New_York JWT_SECRET=dev AGENT_TOKENS="local=devtoken" WEBHOOK_SECRET=
 TZ=America/New_York SERVER_URL=http://localhost:8080 AGENT_TOKEN=devtoken NODE_NAME=local ./agent/blackbox-agent
 ```
 
-To test systemd monitoring locally on Linux, add `WATCH_SYSTEMD=true` and make sure the agent can read the host journal. Then configure units from **Admin > System > Systemd** after the node registers.
+To test systemd monitoring locally on Linux, add `WATCH_SYSTEMD=true` and make sure the agent can read the host journal. Then configure the node's systemd source from **Admin > Data Sources** after the node registers.
 
 **Build Docker images:**
 

@@ -205,6 +205,9 @@ func TestGetWebhookSecret_EmptyDBSecretFallsBackToEnv(t *testing.T) {
 	require.Equal(t, "env-secret", result)
 }
 
+// This intentionally bypasses dbpkg.Init and newSourcesTestDB because the production
+// uniqueness constraint would prevent creating two server-scoped webhook rows, which
+// would make handlers.GetWebhookSecret impossible to verify for oldest-row preference.
 func TestGetWebhookSecret_PrefersOldestEnabledInstance(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
@@ -282,6 +285,34 @@ func TestCreateSource_InvalidConfigRejected(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	handlers.CreateSource(db)(w, req)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestCreateSource_NullConfigRejected(t *testing.T) {
+	db := newSourcesTestDB(t)
+	raw := []byte(`{"type":"filewatcher","scope":"agent","node_id":"homelab-01","name":"watcher","config":null,"enabled":true}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/sources", bytes.NewReader(raw))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	handlers.CreateSource(db)(w, req)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestUpdateSource_NullConfigRejected(t *testing.T) {
+	db := newSourcesTestDB(t)
+	nodeName := "homelab-01"
+	inst := models.DataSourceInstance{
+		ID: "testid", Type: "filewatcher", Scope: "agent", NodeID: &nodeName,
+		Name: "watcher", Config: `{"redact_secrets":true}`, Enabled: true,
+	}
+	require.NoError(t, db.Create(&inst).Error)
+
+	r := chi.NewRouter()
+	r.Put("/api/admin/sources/{id}", handlers.UpdateSource(db))
+	req := httptest.NewRequest(http.MethodPut, "/api/admin/sources/testid", bytes.NewReader([]byte(`{"config":null}`)))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
 	require.Equal(t, http.StatusBadRequest, w.Code)
 }
 

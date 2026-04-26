@@ -56,7 +56,9 @@ export default function SourceCatalog({ nodeName, nodeInfo, sourceTypes, existin
     ;(focusables[0] ?? dialog).focus()
 
     return () => {
-      previousFocus?.focus()
+      if (previousFocus && document.contains(previousFocus)) {
+        previousFocus.focus()
+      }
     }
   }, [])
 
@@ -147,7 +149,7 @@ export default function SourceCatalog({ nodeName, nodeInfo, sourceTypes, existin
             <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 14 }}>Update the agent to unlock these sources</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, opacity: 0.25, pointerEvents: 'none' }}>
               {unavailable.map(typeDef => (
-                <SourceCard key={typeDef.type} typeDef={typeDef} added={false} virtual={false} onClick={() => {}} />
+                <SourceCard key={typeDef.type} typeDef={typeDef} added={false} virtual={false} unavailable={true} onClick={() => {}} />
               ))}
             </div>
           </>
@@ -157,17 +159,18 @@ export default function SourceCatalog({ nodeName, nodeInfo, sourceTypes, existin
   )
 }
 
-function SourceCard({ typeDef, added, virtual, onClick }: {
-  typeDef: SourceTypeDef; added: boolean; virtual: boolean; onClick: () => void
+function SourceCard({ typeDef, added, virtual, unavailable = false, onClick }: {
+  typeDef: SourceTypeDef; added: boolean; virtual: boolean; unavailable?: boolean; onClick: () => void
 }) {
   const colors = getSourceCardColors(typeDef.type)
-  const disabled = added || virtual
+  const disabled = added || virtual || unavailable
 
   return (
     <button
       type="button"
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
+      aria-disabled={disabled}
       style={{
         border: `1px solid ${colors.border}`,
         background: colors.bg,
@@ -198,7 +201,7 @@ function SourceCard({ typeDef, added, virtual, onClick }: {
               color: colors.text,
             }}
           >
-            <SourceIcon type={typeDef.type} size={18} />
+            <SourceIcon type={typeDef.type} size={16} />
           </div>
           {(added || virtual) && (
             <div style={{ fontSize: 9, padding: '2px 6px', letterSpacing: '0.08em', border: `1px solid ${colors.border}`, color: colors.text }}>
