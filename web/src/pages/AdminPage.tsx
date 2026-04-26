@@ -28,8 +28,9 @@ import {
   updateAdminUser,
   updateMCPSettings,
   updateNotificationDest,
+  fetchNodes,
 } from '../api/client'
-import type { AISettingsInput, AdminUser, AuditLogPage, MCPSettingsInput, NotificationDest, NotificationDestInput, OIDCProviderConfig, WebhookDeliveryPage } from '../api/client'
+import type { AISettingsInput, AdminUser, AuditLogPage, MCPSettingsInput, Node, NotificationDest, NotificationDestInput, OIDCProviderConfig, WebhookDeliveryPage } from '../api/client'
 import { readErrorMessage } from '../api/errorUtils'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useSession } from '../session'
@@ -74,10 +75,6 @@ interface GitHubRelease {
 
 type OIDCPolicy = 'open' | 'existing_only' | 'invite_required'
 
-const UNIT_SUFFIXES = ['.service','.socket','.device','.mount','.automount',
-  '.swap','.target','.path','.timer','.slice','.scope']
-const normalizeUnit = (name: string) =>
-  UNIT_SUFFIXES.some(s => name.endsWith(s)) ? name : name + '.service'
 
 const OIDC_POLICY_OPTIONS: Array<{ value: OIDCPolicy; description: string }> = [
   { value: 'open', description: 'Any OIDC user can sign in (new accounts created automatically)' },
