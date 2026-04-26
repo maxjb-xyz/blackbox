@@ -103,6 +103,103 @@ func TestDeleteSource(t *testing.T) {
 	require.Equal(t, int64(0), count)
 }
 
+func TestCreateSource_SingletonEnforced(t *testing.T) {
+	db := newSourcesTestDB(t)
+	// Create first systemd instance
+	nodeName := "homelab-01"
+	require.NoError(t, db.Create(&models.DataSourceInstance{
+		ID: "sys1", Type: "systemd", Scope: "agent", NodeID: &nodeName, Name: "Systemd", Config: "{}",
+	}).Error)
+
+	// Attempt to create second systemd instance for same node — must fail 409
+	body, _ := json.Marshal(map[string]any{
+		"type": "systemd", "scope": "agent", "node_id": "homelab-01", "name": "Systemd2", "config": map[string]any{"units": []string{}},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/sources", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	handlers.CreateSource(db)(w, req)
+	require.Equal(t, http.StatusConflict, w.Code)
+}
+
+func TestCreateSource_ServerScopedRejectsNodeID(t *testing.T) {
+	db := newSourcesTestDB(t)
+	body, _ := json.Marshal(map[string]any{
+		"type": "webhook_uptime_kuma", "scope": "server", "node_id": "homelab-01",
+		"name": "UK", "config": map[string]any{"secret": "x"},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/sources", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	handlers.CreateSource(db)(w, req)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestCreateSource_AgentScopedRequiresNodeID(t *testing.T) {
+	db := newSourcesTestDB(t)
+	body, _ := json.Marshal(map[string]any{
+		"type": "systemd", "scope": "agent", "name": "Sys", "config": map[string]any{"units": []string{}},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/sources", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	handlers.CreateSource(db)(w, req)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestGetWebhookSecret_DBHit(t *testing.T) {
+	db := newSourcesTestDB(t)
+	require.NoError(t, db.Create(&models.DataSourceInstance{
+		ID: "wh1", Type: "webhook_uptime_kuma", Scope: "server",
+		Name: "UK", Config: `{"secret":"db-secret"}`, Enabled: true,
+	}).Error)
+	result := handlers.GetWebhookSecret(db, "webhook_uptime_kuma", "env-secret")
+	require.Equal(t, "db-secret", result)
+}
+
+func TestGetWebhookSecret_FallsBackToEnv(t *testing.T) {
+	db := newSourcesTestDB(t)
+	// No row in DB
+	result := handlers.GetWebhookSecret(db, "webhook_uptime_kuma", "env-secret")
+	require.Equal(t, "env-secret", result)
+}
+
+func TestGetWebhookSecret_EmptyDBSecretFallsBackToEnv(t *testing.T) {
+	db := newSourcesTestDB(t)
+	require.NoError(t, db.Create(&models.DataSourceInstance{
+		ID: "wh2", Type: "webhook_uptime_kuma", Scope: "server",
+		Name: "UK", Config: `{"secret":""}`, Enabled: true,
+	}).Error)
+	result := handlers.GetWebhookSecret(db, "webhook_uptime_kuma", "env-secret")
+	require.Equal(t, "env-secret", result)
+}
+
+func TestListSources_WebhookSecretRedacted(t *testing.T) {
+	db := newSourcesTestDB(t)
+	require.NoError(t, db.Create(&models.DataSourceInstance{
+		ID: "wh1", Type: "webhook_uptime_kuma", Scope: "server",
+		Name: "UK", Config: `{"secret":"supersecret"}`, Enabled: true,
+	}).Error)
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/sources", nil)
+	w := httptest.NewRecorder()
+	handlers.ListSources(db)(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	body := w.Body.String()
+	require.NotContains(t, body, "supersecret")
+}
+
+func TestCreateSource_InvalidConfigRejected(t *testing.T) {
+	db := newSourcesTestDB(t)
+	// Send a non-object JSON value as config
+	raw := []byte(`{"type":"proxmox","scope":"agent","node_id":"homelab-01","name":"pve01","config":42,"enabled":true}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/sources", bytes.NewReader(raw))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	handlers.CreateSource(db)(w, req)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+}
+
 func TestListSourceTypes(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/admin/sources/types", nil)
 	w := httptest.NewRecorder()

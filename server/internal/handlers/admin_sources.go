@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"blackbox/server/internal/models"
@@ -85,10 +86,14 @@ func ListSources(db *gorm.DB) http.HandlerFunc {
 
 		for _, inst := range instances {
 			if inst.Scope == "server" {
-				resp.Server = append(resp.Server, inst)
+				redacted := inst
+				redacted.Config = redactConfig(inst.Type, inst.Config)
+				resp.Server = append(resp.Server, redacted)
 			} else if inst.NodeID != nil {
 				if nr, ok := resp.Nodes[*inst.NodeID]; ok {
-					nr.Sources = append(nr.Sources, inst)
+					redacted := inst
+					redacted.Config = redactConfig(inst.Type, inst.Config)
+					nr.Sources = append(nr.Sources, redacted)
 					resp.Nodes[*inst.NodeID] = nr
 				}
 			}
@@ -125,7 +130,8 @@ func CreateSource(db *gorm.DB) http.HandlerFunc {
 		if !decodeJSONBody(w, r, 64<<10, &req) {
 			return
 		}
-		if _, ok := knownTypes[req.Type]; !ok {
+		typeDef, ok := knownTypes[req.Type]
+		if !ok {
 			writeError(w, http.StatusBadRequest, "unknown source type: "+req.Type)
 			return
 		}
@@ -133,9 +139,43 @@ func CreateSource(db *gorm.DB) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "name is required")
 			return
 		}
+
+		// Enforce scope from type definition (not caller-supplied)
+		scope := typeDef.Scope
+
+		// Enforce node_id: agent-scoped sources require it; server-scoped sources must not have it
+		if scope == "agent" && (req.NodeID == nil || *req.NodeID == "") {
+			writeError(w, http.StatusBadRequest, "node_id is required for agent-scoped sources")
+			return
+		}
+		if scope == "server" && req.NodeID != nil && *req.NodeID != "" {
+			writeError(w, http.StatusBadRequest, "node_id must not be set for server-scoped sources")
+			return
+		}
+
+		// Enforce singleton: only one instance per type per node (or per server)
+		if typeDef.Singleton {
+			var count int64
+			q := db.Model(&models.DataSourceInstance{}).Where("type = ?", req.Type)
+			if scope == "agent" {
+				q = q.Where("node_id = ?", *req.NodeID)
+			}
+			q.Count(&count)
+			if count > 0 {
+				writeError(w, http.StatusConflict, "a source of this type already exists for this target")
+				return
+			}
+		}
+
 		cfg := "{}"
 		if len(req.Config) > 0 {
 			cfg = string(req.Config)
+			// Validate it's a JSON object
+			var obj map[string]any
+			if err := json.Unmarshal(req.Config, &obj); err != nil {
+				writeError(w, http.StatusBadRequest, "config must be a JSON object")
+				return
+			}
 		}
 		enabled := true
 		if req.Enabled != nil {
@@ -143,7 +183,7 @@ func CreateSource(db *gorm.DB) http.HandlerFunc {
 		}
 		now := time.Now().UTC()
 		inst := models.DataSourceInstance{
-			ID: ulid.Make().String(), Type: req.Type, Scope: req.Scope,
+			ID: ulid.Make().String(), Type: req.Type, Scope: scope,
 			NodeID: req.NodeID, Name: req.Name, Config: cfg,
 			Enabled: enabled, CreatedAt: now, UpdatedAt: now,
 		}
@@ -181,6 +221,11 @@ func UpdateSource(db *gorm.DB) http.HandlerFunc {
 			inst.Name = *req.Name
 		}
 		if len(req.Config) > 0 {
+			var obj map[string]any
+			if err := json.Unmarshal(req.Config, &obj); err != nil {
+				writeError(w, http.StatusBadRequest, "config must be a JSON object")
+				return
+			}
 			inst.Config = string(req.Config)
 		}
 		if req.Enabled != nil {
@@ -212,6 +257,23 @@ func DeleteSource(db *gorm.DB) http.HandlerFunc {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}
+}
+
+// redactConfig removes sensitive fields from source config before sending to clients.
+// Currently redacts "secret" from webhook source configs.
+func redactConfig(sourceType, config string) string {
+	if !strings.HasPrefix(sourceType, "webhook_") {
+		return config
+	}
+	var m map[string]any
+	if err := json.Unmarshal([]byte(config), &m); err != nil {
+		return "{}"
+	}
+	if _, hasSecret := m["secret"]; hasSecret {
+		m["secret"] = ""
+	}
+	out, _ := json.Marshal(m)
+	return string(out)
 }
 
 // GetWebhookSecret returns the secret for a webhook source type.
