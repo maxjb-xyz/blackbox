@@ -172,9 +172,9 @@ export function createDemoData(nowMs = Date.now()): DemoData {
 
   const users: AdminUser[] = [
     { id: 'user-admin', username: 'operator', is_admin: true, token_version: 8, created_at: iso(nowMs, 140 * DAY), email: 'operator@blackboxd.dev' },
-    { id: 'user-emma', username: 'emma', is_admin: false, token_version: 3, created_at: iso(nowMs, 120 * DAY), email: 'emma@blackboxd.dev' },
-    { id: 'user-jules', username: 'jules', is_admin: false, token_version: 2, created_at: iso(nowMs, 90 * DAY), email: 'jules@blackboxd.dev' },
-    { id: 'user-nia', username: 'nia', is_admin: false, token_version: 1, created_at: iso(nowMs, 45 * DAY), email: 'nia@blackboxd.dev' },
+    { id: 'user-jinx', username: 'jinx', is_admin: false, token_version: 3, created_at: iso(nowMs, 120 * DAY), email: 'jinx@blackboxd.dev' },
+    { id: 'user-ekko', username: 'ekko', is_admin: false, token_version: 2, created_at: iso(nowMs, 90 * DAY), email: 'ekko@blackboxd.dev' },
+    { id: 'user-jayce', username: 'jayce', is_admin: false, token_version: 1, created_at: iso(nowMs, 45 * DAY), email: 'jayce@blackboxd.dev' },
   ]
 
   const sourceTypes: SourceTypeDef[] = [
