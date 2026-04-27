@@ -28,6 +28,8 @@ Blackbox is a lightweight, self-hosted event correlation platform built for home
 
 When your homelab breaks, Blackbox tells you what happened. You don't need to lift a finger.
 
+Full documentation: [docs.blackboxd.dev](https://docs.blackboxd.dev)
+
 ---
 
 > [!CAUTION]
@@ -37,8 +39,8 @@ When your homelab breaks, Blackbox tells you what happened. You don't need to li
 
 ## Quick Start
 
-> This gets a single-node setup running in minutes. For multi-node, see [Multi-Node Deployment](#multi-node-deployment).
-> Both images run as non-root. The server uses UID 65532 (fixed). The agent defaults to UID/GID 65532 but can be overridden with `PUID`/`PGID` to match the owner of your watched host paths. The agent entrypoint auto-detects the GIDs of any mounted resources (Docker socket, systemd journal) at startup — no manual group configuration needed.
+> This gets a single-node setup running in minutes. For multi-node, see the [deployment docs](https://docs.blackboxd.dev/docs/deployment/multi-node).
+> Both images run as non-root. The server uses UID 65532 (fixed). The agent defaults to UID/GID 65532 but can be overridden with `PUID`/`PGID` to match the owner of your watched host paths. The agent entrypoint auto-detects the GIDs of any mounted resources (Docker socket, systemd journal) at startup - no manual group configuration needed.
 
 **1. Create a `docker-compose.yml`:**
 
@@ -54,7 +56,7 @@ services:
       - blackbox-data:/data
     environment:
       JWT_SECRET: "change-me-to-a-long-random-string"
-      AGENT_TOKENS: "my-homelab=change-me-to-a-secret-agent-token"
+      AGENT_TOKENS: "homelab=change-me-to-a-secret-agent-token"
       WEBHOOK_SECRET: "change-me-to-a-webhook-secret"
       TZ: "America/New_York" # optional: set to your local timezone so container logs match your clock
     networks:
@@ -82,7 +84,7 @@ services:
     environment:
       SERVER_URL: "http://blackbox-server:8080"
       AGENT_TOKEN: "change-me-to-a-secret-agent-token"
-      NODE_NAME: "my-homelab"
+      NODE_NAME: "homelab"
       WATCH_PATHS: "/watch/etc"
       WATCH_SYSTEMD: "true"
       TZ: "America/New_York" # optional: set to your local timezone so container logs match your clock
@@ -116,41 +118,40 @@ docker compose up -d
 ## Features
 
 ### Event Ingestion
-- **Docker events** — Automatic detection of container start, stop, die, create, pull, and delete events. Per-node, with logic for collapsing events like restarts.
-- **Smarter service inference** — Docker and file events resolve service names from Compose labels, Swarm metadata, image/container lookups, and common homelab path layouts so correlation works with cleaner service names.
-- **Crash log capture** — Collapsed Docker stop/restart events include a best-effort tail of recent container logs, which Blackbox can surface directly inside incidents.
-- **Config file watching** — inotify-based watching of `.yaml`, `.yml`, `.conf`, `.env`, `.json`, and `.ini` files via configurable `WATCH_PATHS`.
-- **Config diffs** — File change events include a bounded text diff in metadata for deeper timeline analysis, with optional secret redaction controlled from the Admin settings page.
-- **Systemd unit watching** — Linux agents can watch selected systemd units from the journal and emit `started`, `stopped`, `restart`, and `failed` lifecycle entries.
-- **OOM kill detection** — Kernel OOM events are ingested as `systemd` entries, and failed units include a recent journal log snippet for faster triage.
-- **Uptime Kuma webhooks** — Ingest Down/Up state changes. Down events open confirmed incidents and score likely causes from recent Docker, file, and webhook activity.
-- **Watchtower webhooks** — Ingest container image update events with version metadata and use them as incident evidence when a restart follows shortly after.
-- **Custom entries** — Post arbitrary events via the API.
-- **Container & stack exclusions** — Exclude specific Docker containers or Compose stacks from event ingestion entirely. Configured in Admin > Data Sources. Excluded events are silently dropped server-side — agents do not need reconfiguring.
+- **Docker events** - Automatic detection of container start, stop, die, create, pull, and delete events. Per-node, with logic for collapsing events like restarts.
+- **Smarter service inference** - Docker and file events resolve service names from Compose labels, Swarm metadata, image/container lookups, and common homelab path layouts so correlation works with cleaner service names.
+- **Crash log capture** - Collapsed Docker stop/restart events include a best-effort tail of recent container logs, which Blackbox can surface directly inside incidents.
+- **Config file watching** - inotify-based watching of `.yaml`, `.yml`, `.conf`, `.env`, `.json`, and `.ini` files via configurable `WATCH_PATHS`.
+- **Config diffs** - File change events include a bounded text diff in metadata for deeper timeline analysis, with optional secret redaction controlled from the Admin settings page.
+- **Systemd unit watching** - Linux agents can watch selected systemd units from the journal and emit `started`, `stopped`, `restart`, and `failed` lifecycle entries.
+- **OOM kill detection** - Kernel OOM events are ingested as `systemd` entries, and failed units include a recent journal log snippet for faster triage.
+- **Uptime Kuma webhooks** - Ingest Down/Up state changes. Down events open confirmed incidents and score likely causes from recent Docker, file, and webhook activity.
+- **Watchtower webhooks** - Ingest container image update events with version metadata and use them as incident evidence when a restart follows shortly after.
+- **Custom entries** - Post arbitrary events via the API.
+- **Container & stack exclusions** - Exclude specific Docker containers or Compose stacks from event ingestion entirely. Configured in Admin > Data Sources. Excluded events are silently dropped server-side - agents do not need reconfiguring.
 
 ### Sources
-
 - **Source catalog** - Manage supported event sources from Admin > Data Sources. The catalog is capability-aware per node, supports both server-scoped and agent-scoped sources, and preserves stored secrets when you edit an existing source.
 
 ### Notifications
-- **Webhook notification support** — Send outbound notifications to Discord, Slack, ntfy, and other targets when Blackbox events occur. Configure destinations in Admin > Integrations > Notifications.
-  - **AI review notifications** — When Ollama completes an incident analysis, all subscribed notification destinations receive the event with the AI summary embedded in the payload.
-  - **Incident deep-links** — Configure a **Base URL** in Admin > Integrations > Notifications so notification payloads include a direct link to the incident in Blackbox.
+- **Webhook notification support** - Send outbound notifications to Discord, Slack, ntfy, and other targets when Blackbox events occur. Configure destinations in Admin > Integrations > Notifications.
+- **AI review notifications** - When Ollama completes an incident analysis, all subscribed notification destinations receive the event with the AI summary embedded in the payload.
+- **Incident deep-links** - Configure a **Base URL** in Admin > Integrations > Notifications so notification payloads include a direct link to the incident in Blackbox.
 
 ### Incidents & Correlation
-- **Incident lifecycle** — Blackbox opens confirmed incidents from monitor-down events and suspected incidents from crash loops, unexpected container exits, watched systemd failures/OOM kills/restart loops, and update-triggered restarts.
-- **Weighted cause scoring** — Likely causes are ranked from recent Docker, file, systemd, and update entries using event-specific lookback windows, same-node bonuses, and log-snippet bonuses.
-- **Event chain view** — The Incidents page shows open and resolved incidents, duration, linked trigger/cause/evidence/recovery events, AI-derived causes when enabled, and the chosen root-cause entry.
-- **Optional AI modes** — If Ollama or other AI provider is configured, Blackbox can run either plain AI analysis or an AI-enhanced correlation mode from the same Admin settings page.
-- **AI across suspected incidents too** — Suspected incidents get the same log-backed AI treatment as confirmed incidents, including crash-log context and the selected AI mode.
-- **Postmortem PDF reports** — Download a structured PDF report from any resolved incident. The report includes the incident timeline, root cause, AI summary (if available), and a chronological event chain. Accessible via the Download Report button on resolved incident cards.
+- **Incident lifecycle** - Blackbox opens confirmed incidents from monitor-down events and suspected incidents from crash loops, unexpected container exits, watched systemd failures/OOM kills/restart loops, and update-triggered restarts.
+- **Weighted cause scoring** - Likely causes are ranked from recent Docker, file, systemd, and update entries using event-specific lookback windows, same-node bonuses, and log-snippet bonuses.
+- **Event chain view** - The Incidents page shows open and resolved incidents, duration, linked trigger/cause/evidence/recovery events, AI-derived causes when enabled, and the chosen root-cause entry.
+- **Optional AI modes** - If Ollama or other AI provider is configured, Blackbox can run either plain AI analysis or an AI-enhanced correlation mode from the same Admin settings page.
+- **AI across suspected incidents too** - Suspected incidents get the same log-backed AI treatment as confirmed incidents, including crash-log context and the selected AI mode.
+- **Postmortem PDF reports** - Download a structured PDF report from any resolved incident. The report includes the incident timeline, root cause, AI summary (if available), and a chronological event chain. Accessible via the Download Report button on resolved incident cards.
 
 ### Timeline
 - Chronological, paginated event feed across all nodes
 - Filter by node, event source, or full-text search
-- **Full-text search** — SQLite FTS5 powered search across all entry content and service names with term highlighting
+- **Full-text search** - SQLite FTS5 powered search across all entry content and service names with term highlighting
 - ULID-based IDs for guaranteed sort-order correctness
-- Annotate any event with notes — with user attribution
+- Annotate any event with notes - with user attribution
 
 ### Node Management
 - Nodes auto-register on first agent heartbeat
@@ -166,539 +167,43 @@ docker compose up -d
 - Invite-code-based user registration
 
 ### MCP Server (optional)
-- **Model Context Protocol server** — Expose your Blackbox data to AI assistants (Claude Desktop, claude.ai, and any MCP-compatible client). Toggle on/off from Admin > System > MCP Server. When enabled, serves an HTTP/SSE MCP endpoint with five tools: `list_incidents`, `get_incident`, `list_entries`, `search_entries`, and `list_nodes`.
+- **Model Context Protocol server** - Expose your Blackbox data to AI assistants (Claude Desktop, claude.ai, and any MCP-compatible client). Toggle on/off from Admin > System > MCP Server. When enabled, serves an HTTP/SSE MCP endpoint with five tools: `list_incidents`, `get_incident`, `list_entries`, `search_entries`, and `list_nodes`.
+
 ### Admin & Observability
-- **Audit log** — Every admin action (user management, invite creation, OIDC provider changes, notification destination changes) is recorded with actor identity, IP address, and timestamp. Viewable in Admin > Access > Audit Log. Last 10,000 entries retained.
-- **Webhook delivery log** — Every inbound Uptime Kuma and Watchtower webhook is recorded with source, status (processed / ignored / error), payload snippet, and the correlated entry ID when applicable. Viewable in Admin > Integrations > Webhook Log. Last 1,000 entries retained.
+- **Audit log** - Every admin action (user management, invite creation, OIDC provider changes, notification destination changes) is recorded with actor identity, IP address, and timestamp. Viewable in Admin > Access > Audit Log. Last 10,000 entries retained.
+- **Webhook delivery log** - Every inbound Uptime Kuma and Watchtower webhook is recorded with source, status (processed / ignored / error), payload snippet, and the correlated entry ID when applicable. Viewable in Admin > Integrations > Webhook Log. Last 1,000 entries retained.
 
 ### Security
-- Non-root container images — server runs distroless (no shell, UID 65532), agent runs as configurable `PUID`/`PGID` (default 65532), drops all capabilities then adds only `SETUID`/`SETGID` for identity switching, with a read-only filesystem
+- Non-root container images - server runs distroless (no shell, UID 65532), agent runs as configurable `PUID`/`PGID` (default 65532), drops all capabilities then adds only `SETUID`/`SETGID` for identity switching, with a read-only filesystem
 - Constant-time token comparison for all shared secrets
 - Rate limiting on auth endpoints
 - Security headers middleware
 
 ---
 
-## Configuration Reference
-
-### Server Environment Variables
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `JWT_SECRET` | Yes | — | Secret key for signing JWT session tokens. Use a long random string. |
-| `AGENT_TOKENS` | Yes | — | Comma or newline-separated `node-name=token` pairs. See [Agent Tokens](#agent-tokens). |
-| `WEBHOOK_SECRET` | Yes | — | Shared secret for validating webhook requests. |
-| `DB_PATH` | No | `/data/blackbox.db` | Path to the SQLite database file. |
-| `LISTEN_ADDR` | No | `:8080` | TCP address the server binds to. |
-| `JWT_TTL` | No | `24h` | JWT cookie lifetime. Accepts Go duration strings (e.g., `12h`, `7d`). |
-| `TZ` | No | Container default | IANA timezone for process logs (for example `America/New_York`). Set this if you want container log timestamps to match your local clock. |
-| `TRUSTED_PROXY_IP` | No | — | IP address of a trusted reverse proxy on a separate host. When set, `X-Forwarded-For` from this IP is trusted for audit log IP recording. By default only loopback (`127.0.0.1`) is trusted. |
-
-### Agent Environment Variables
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `SERVER_URL` | Yes | — | Base URL of the Blackbox server (e.g., `http://blackbox-server:8080`). |
-| `AGENT_TOKEN` | Yes | — | Token matching an entry in the server's `AGENT_TOKENS`. |
-| `NODE_NAME` | No | System hostname | Identifier for this node in the timeline. |
-| `WATCH_PATHS` | No | — | Colon-separated list of directories to watch for file changes as seen inside the agent container (e.g., `/watch/etc:/watch/appdata`). |
-| `WATCH_IGNORE` | No | — | Colon-separated glob patterns to exclude from file watching. |
-| `WATCH_SYSTEMD` | No | `false` | Set to `true` on Linux agents to enable journal-based systemd monitoring for the units configured in the Admin UI. |
-| `QUEUE_DB_PATH` | No | `/data/queue.db` | Path to the agent's persistent event queue database. |
-| `PUID` | No | `65532` | UID the agent process runs as. Set to your host user's UID (`id -u`) when you own the watched paths. |
-| `PGID` | No | `65532` | GID the agent process runs as. Set to your host user's GID (`id -g`) when you own the watched paths. |
-| `TZ` | No | Container default | IANA timezone for process logs (for example `America/New_York`). Set this if you want container log timestamps to match your local clock. |
-
-#### Granting File Watcher Access
-
-The agent needs traversal access to directories it should watch and read access to files it should diff under your `WATCH_PATHS`. The right approach depends on who owns those files on the host.
-
-##### You own the files (easiest)
-
-Set `PUID` and `PGID` to your host user's IDs. The agent runs as you, so your files are already readable — no host permission changes needed.
-
-```yaml
-environment:
-  PUID: "1000"   # your host UID — run: id -u
-  PGID: "1000"   # your host GID — run: id -g
-```
-
-##### Root or another user owns the files
-
-Leave `PUID`/`PGID` at their defaults (or set them to match the owning user if you have that flexibility), then grant the agent's UID explicit read access on the host.
-
-**Recommended: ACLs** (non-destructive, works alongside existing permissions)
-
-```bash
-WATCH_ROOT=/srv/stacks
-AGENT_UID="${PUID:-65532}"   # match whatever PUID you set
-
-# Allow traversal of directories
-sudo find "$WATCH_ROOT" -type d -exec setfacl -m u:${AGENT_UID}:rx {} +
-
-# Allow reading files
-sudo find "$WATCH_ROOT" -type f -exec setfacl -m u:${AGENT_UID}:r {} +
-
-# Inherit for new files/directories
-sudo setfacl -d -m u:${AGENT_UID}:rx "$WATCH_ROOT"
-sudo find "$WATCH_ROOT" -type d -exec setfacl -d -m u:${AGENT_UID}:rx {} +
-```
-
-**Alternative: traditional Unix mode bits** (if ACLs are unavailable)
-
-```bash
-AGENT_GID="${PGID:-65532}"   # match whatever PGID you set
-
-sudo chgrp -R "$AGENT_GID" /srv/stacks
-sudo find /srv/stacks -type d -exec chmod 750 {} +
-sudo find /srv/stacks -type f -exec chmod 640 {} +
-```
-
-Notes:
-
-- `PUID`/`PGID` default to `65532` if not set. Numeric ownership is authoritative on the host — the agent image creates a `nonroot` user at UID 65532, but custom `PUID`/`PGID` values may not have a corresponding name entry in `/etc/passwd`, so always use numeric IDs when setting file ownership.
-- Parent directories must also be traversable (`x` bit), not just the final config file.
-- If part of a tree should stay unreadable, the watcher skips that inaccessible subtree and continues tracking the rest of the root. Mounting only the readable subtree is still cleaner when you intentionally exclude private data.
-- After changing permissions or `PUID`/`PGID`, restart the agent and look for `files watcher: registered ... directories` in the logs.
-
-### File Watcher Troubleshooting
-
-- `WATCH_PATHS` must match the container-side mount target, not the host source path. Example: `- /srv/stacks:/watch/stacks:ro` pairs with `WATCH_PATHS=/watch/stacks`.
-- On startup, the agent now logs a per-root registration line. If you see `failed to register root /watch/stacks`, the bind mount and `WATCH_PATHS` do not line up inside the container.
-- The agent runs as `PUID`/`PGID` (default `65532`). For watched bind mounts, that user must be able to traverse directories you want watched and read files you want diffed. Inaccessible child paths are skipped and logged without disabling the whole root.
-- `WATCH_IGNORE` helps skip noisy paths after they are reachable. It is still useful for reducing watch count and suppressing expected churn, but unreadable paths are ignored automatically.
-- Some editors save by replacing files instead of writing them in place. Blackbox now emits alerts for those `rename` and `chmod-style` config-file changes as well.
-- File-change metadata now includes a small line diff when the file is UTF-8 text and under the tracking limit. Obvious secret values such as `TOKEN`, `PASSWORD`, and `CLIENT_SECRET` are redacted before upload.
-
-### Systemd Monitoring
-
-- Systemd monitoring is Linux-only. On non-Linux hosts the watcher is a no-op.
-- Set `WATCH_SYSTEMD=true` on the agent to enable journal monitoring.
-- Configure watched systemd sources from **Admin > Data Sources**. Per-node systemd units are stored with each node's source config and the agent refreshes them from the server every minute.
-- The watcher emits `started`, `stopped`, `restart`, and `failed` events for configured units, plus `oom_kill` events from the kernel journal.
-- Failed unit entries include a recent journal snippet in entry metadata, which Blackbox also uses as a correlation scoring bonus.
-- A watched unit `failed` or `oom_kill` opens a suspected incident immediately. Repeated watched `restart`/`failed` events within 5 minutes also open a suspected incident, while a lone `restart` does not.
-- For containerized agents, mount the host journal read-only. The agent entrypoint auto-detects the journal GID at startup — no manual group configuration needed:
-
-```yaml
-volumes:
-  - /run/log/journal:/run/log/journal:ro
-  - /var/log/journal:/var/log/journal:ro
-  - /etc/machine-id:/etc/machine-id:ro
-```
-
-### Incident Enrichment
-
-- Incident detection works without extra configuration. Confirmed incidents come from Uptime Kuma Down/Up pairs; suspected incidents come from Docker crash loops and non-zero exits, watched systemd `failed` and `oom_kill` events, watched systemd restart/failure loops, and watchtower-triggered restarts.
-- Systemd-sourced suspected incidents resolve immediately on matching monitor `up` events, or automatically after a watched unit emits `started` and stays stable for 2 minutes without another failure/restart.
-- Ollama is optional and configured in **Admin > System** with an absolute base URL such as `http://192.168.1.10:11434`, a model name such as `llama3.2`, and an AI mode.
-- `analysis` mode stores a concise AI-written incident summary in incident metadata.
-- `enhanced` mode asks Ollama to analyze the deterministic incident chain plus recent same-node events, then writes validated `ai_cause` links and an AI summary back onto the incident.
-- AI mode applies to both confirmed and suspected incidents. Suspected incidents still pull in captured crash logs and run the same selected Ollama path.
-- Leaving the Ollama URL or model blank disables all optional AI behavior while keeping the incident engine and deterministic correlation active.
-- The same Admin > System page also controls whether newly captured file diffs redact obvious secret-bearing keys before upload.
-- When AI analysis completes, Blackbox fires an `AI Review Generated` notification event. Subscribe notification destinations to this event to receive the summary via Discord, Slack, or ntfy without opening the UI.
-- To include a direct link to the incident in notification payloads, set **Instance Base URL** in Admin > Integrations > Notifications (e.g., `https://blackbox.myserver.com`). Leave blank to omit links.
-
-### Agent Tokens
-
-The `AGENT_TOKENS` variable maps node names to secrets. Each agent authenticates using its name and token pair via `X-Blackbox-Node-Name` and `X-Blackbox-Agent-Key` headers.
-
-```bash
-# Single node
-AGENT_TOKENS="my-homelab=supersecrettoken"
-
-# Multiple nodes
-AGENT_TOKENS="node-01=token1,node-02=token2,nas=token3"
-```
-
-Generate strong tokens with:
-
-```bash
-openssl rand -hex 32
-```
-
----
-
-## Multi-Node Deployment
-
-Deploy an agent on each machine you want to monitor. All agents point at the same central server.
-> Both images run as non-root. The server uses UID 65532 (fixed). The agent defaults to UID/GID 65532 but can be overridden with `PUID`/`PGID` to match the owner of your watched host paths. The agent entrypoint auto-detects the GIDs of any mounted resources (Docker socket, systemd journal) at startup — no manual group configuration needed.
-
-**Node 01 — Primary server (also runs an agent):**
-
-```yaml
-services:
-  blackbox-server:
-    image: ghcr.io/maxjb-xyz/blackbox-server:latest
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-    volumes:
-      - blackbox-data:/data
-    environment:
-      JWT_SECRET: "your-jwt-secret"
-      AGENT_TOKENS: "node-01=token-for-node-01,node-02=token-for-node-02,nas=token-for-nas"
-      WEBHOOK_SECRET: "your-webhook-secret"
-      TZ: "America/New_York"
-
-  blackbox-agent:
-    image: ghcr.io/maxjb-xyz/blackbox-agent:latest
-    restart: unless-stopped
-    cap_drop:
-      - ALL
-    cap_add:
-      - SETUID
-      - SETGID
-    security_opt:
-      - no-new-privileges:true
-    read_only: true
-    volumes:
-      - blackbox-agent-data:/data
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /run/log/journal:/run/log/journal:ro
-      - /var/log/journal:/var/log/journal:ro
-      - /etc/machine-id:/etc/machine-id:ro
-    environment:
-      SERVER_URL: "http://blackbox-server:8080"
-      AGENT_TOKEN: "token-for-node-01"
-      NODE_NAME: "node-01"
-      WATCH_SYSTEMD: "true"
-      TZ: "America/New_York"
-
-volumes:
-  blackbox-agent-data:
-  blackbox-data:
-```
-
-**Node 02 — Any other machine on your network:**
-
-```yaml
-services:
-  blackbox-agent:
-    image: ghcr.io/maxjb-xyz/blackbox-agent:latest
-    restart: unless-stopped
-    cap_drop:
-      - ALL
-    cap_add:
-      - SETUID
-      - SETGID
-    security_opt:
-      - no-new-privileges:true
-    read_only: true
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /opt/appdata:/watch/appdata:ro
-      - /run/log/journal:/run/log/journal:ro
-      - /var/log/journal:/var/log/journal:ro
-      - /etc/machine-id:/etc/machine-id:ro
-      - blackbox-agent-data:/data
-    environment:
-      SERVER_URL: "http://node-01.lan:8080"
-      AGENT_TOKEN: "token-for-node-02"
-      NODE_NAME: "node-02"
-      WATCH_PATHS: "/watch/appdata"
-      WATCH_SYSTEMD: "true"
-      TZ: "America/New_York"
-
-volumes:
-  blackbox-agent-data:
-```
-
----
-
-## Webhook Integrations
-
-### Uptime Kuma
-
-In Uptime Kuma, add a notification with type **Webhook** and URL:
-
-```
-http://blackbox.example.com/api/webhooks/uptime
-```
-
-Add a header: `X-Webhook-Secret: your-webhook-secret`
-
-When a monitor goes down, Blackbox will automatically query the 120-second window before the incident and surface correlated events (e.g., a container that died, a config file that changed). If Ollama is enabled, the resulting incident can also receive an AI summary or AI-derived cause links, depending on the selected mode.
-
-### Watchtower
-
-In your Watchtower config, add:
-
-```bash
-WATCHTOWER_NOTIFICATION_URL="webhook+http://blackbox.example.com/api/webhooks/watchtower"
-WATCHTOWER_HTTP_API_TOKEN="your-webhook-secret"
-```
-
-Blackbox will log every image update with the container name and new image version.
-
----
-
-## MCP Server
-
-Blackbox includes an optional MCP (Model Context Protocol) server that lets AI assistants query your incident history, timeline, and node status conversationally.
-
-### Enabling
-
-1. Go to **Admin > System > MCP Server**
-2. Toggle **Enabled**
-3. Set the port (default: `3001`)
-4. Copy the generated auth token
-
-### Connecting Claude Desktop
-
-Add to your `claude_desktop_config.json` (on macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`):
-
-```json
-{
-  "mcpServers": {
-    "blackbox": {
-      "url": "http://your-server:3001/sse",
-      "headers": {
-        "Authorization": "Bearer <your-token>"
-      }
-    }
-  }
-}
-```
-
-Restart Claude Desktop. Blackbox will appear as a connected server and Claude can answer questions like:
-- *"What incidents happened in the last 24 hours?"*
-- *"What was the root cause of the nginx incident?"*
-- *"Search my timeline for OOM kills"*
-
-### Available Tools
-
-| Tool | Description |
-|------|-------------|
-| `list_incidents` | List incidents, filterable by status and confidence |
-| `get_incident` | Get full incident detail including AI analysis and event chain |
-| `list_entries` | List timeline entries with optional filters and cursor pagination |
-| `search_entries` | Full-text search across entry content |
-| `list_nodes` | List registered nodes and their status |
-
-### Security
-
-The MCP server requires a Bearer token on every request. The token is auto-generated on first enable and can be regenerated at any time from the admin panel. The full token is never shown after generation — only the last 8 characters are displayed for identification.
-
-> **Note:** If you run Blackbox behind a reverse proxy, ensure the MCP port (`3001` by default) is also proxied or accessible to your AI client. The MCP port is separate from the main Blackbox port.
-
----
-
-## OIDC / SSO Setup
-
-Blackbox supports multiple OIDC providers configured from the Admin panel under **Admin > Access > OIDC**.
-
-Each provider entry requires:
-
-- **Name**
-- **Issuer URL**
-- **Client ID**
-- **Client Secret**
-- **Redirect URL**
-
-You can configure providers such as Google, Authentik, Keycloak, and other OIDC-compliant identity providers. The redirect URL format is:
-
-```text
-https://<your-domain>/api/auth/oidc/<provider-id>/callback
-```
-
-Each provider also has an access policy:
-
-- `open`
-- `existing accounts only`
-- `invite required`
-
-Once configured, the login page shows one or more **Sign in with SSO** options alongside local auth.
-
----
-
-## User Registration / Invites
-
-Admin users can create invite codes in the Admin panel and copy the full invite link directly for sharing with new users.
-
-Invited users register at:
-
-```text
-/register?code=<invite-code>
-```
-
-Admins can also revoke unused invite codes from the Admin panel at any time.
-
----
-
-## Reverse Proxy
-
-### Nginx
-
-```nginx
-server {
-    listen 443 ssl;
-    server_name blackbox.example.com;
-
-    location / {
-        proxy_pass http://localhost:8080;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-
-### Caddy
-
-```caddyfile
-blackbox.example.com {
-    reverse_proxy localhost:8080
-}
-```
-
-> **Audit log IP accuracy:** Blackbox trusts `X-Forwarded-For` only from loopback by default (i.e., a reverse proxy running on the same host). If your reverse proxy runs on a separate machine, set `TRUSTED_PROXY_IP` to its IP address on the server container so the audit log records real client IPs.
-
----
-
-## Architecture
-
-Blackbox is split into two components designed to run across multiple nodes.
-
-```
-┌─────────────────────────────────────────────┐
-│               Blackbox Server               │
-│  ┌──────────┐  ┌──────────┐  ┌───────────┐  │
-│  │ React UI │  │ REST API │  │  SQLite   │  │
-│  │(embedded)│  │ + Auth   │  │  /data/   │  │
-│  └──────────┘  └──────────┘  └───────────┘  │
-│         ▲              ▲              ▲     │
-└─────────┼──────────────┼──────────────┼─────┘
-          │              │              │
-    Browser           Agents        Webhooks
-                         │
-         ┌───────────────┼───────────────┐
-         │               │               │
-  ┌──────┴─────┐  ┌──────┴─────┐  ┌──────┴─────┐
-  │  Agent     │  │  Agent     │  │  Agent     │
-  │  node-01   │  │  node-02   │  │  node-03   │
-  │            │  │            │  │            │
-  │ Docker sock│  │ Docker sock│  │ Watch paths│
-  └────────────┘  └────────────┘  └────────────┘
-```
-
-| Component | Role |
-|-----------|------|
-| **Server** | Central brain. Hosts the UI, stores the database, receives events from agents, handles webhook ingestion, and runs the incident/correlation engine. |
-| **Agent** | Lightweight binary deployed on each node. Watches Docker, config files, and optional systemd journals, reports its capabilities to the server, and pushes events to the server. |
-
----
-
-## API Reference
-
-Blackbox ships an interactive API reference at **`/api/docs`** on every running server instance. It is powered by [Scalar](https://scalar.com) and auto-detects the server URL — no configuration needed.
-
-The raw OpenAPI 3.1 spec is available at `/api/openapi.yaml` for use with any OpenAPI-compatible tooling.
-
-| URL | Description |
-|-----|-------------|
-| `/api/docs` | Interactive Scalar UI |
-| `/api/openapi.yaml` | Raw OpenAPI 3.1 spec |
+## Documentation
+
+Full docs: [docs.blackboxd.dev](https://docs.blackboxd.dev)
+
+- [Quick Start](https://docs.blackboxd.dev/docs/getting-started/quick-start)
+- [Single-Node Deployment](https://docs.blackboxd.dev/docs/deployment/single-node)
+- [Multi-Node Deployment](https://docs.blackboxd.dev/docs/deployment/multi-node)
+- [Server Environment](https://docs.blackboxd.dev/docs/configuration/server-environment)
+- [Agent Environment](https://docs.blackboxd.dev/docs/configuration/agent-environment)
+- [Data Sources Overview](https://docs.blackboxd.dev/docs/data-sources/overview)
+- [Authentication](https://docs.blackboxd.dev/docs/operations/authentication)
+- [MCP Server](https://docs.blackboxd.dev/docs/integrations/mcp-server)
+- [API Reference](https://docs.blackboxd.dev/docs/integrations/api-reference)
 
 ---
 
 ## Building from Source
 
-**Requirements:**
-- Go 1.22+
-- Node.js 20+
-- Docker (optional, for building images)
+Development setup, local run instructions, and contributor docs live at:
 
-```bash
-git clone https://github.com/maxjb-xyz/blackbox.git
-cd blackbox
-
-# Build the frontend and stage it for the embedded server build
-cd web && npm install && npm run build:server && cd ..
-
-# Build the server (embeds the built frontend)
-cd server && go build -o blackbox-server ./... && cd ..
-
-# Build the agent
-cd agent && go build -o blackbox-agent ./... && cd ..
-```
-
-**Run locally:**
-
-```bash
-# Server
-TZ=America/New_York JWT_SECRET=dev AGENT_TOKENS="local=devtoken" WEBHOOK_SECRET=dev ./server/blackbox-server
-
-# Agent (separate terminal)
-TZ=America/New_York SERVER_URL=http://localhost:8080 AGENT_TOKEN=devtoken NODE_NAME=local ./agent/blackbox-agent
-```
-
-To test systemd monitoring locally on Linux, add `WATCH_SYSTEMD=true` and make sure the agent can read the host journal. Then configure the node's systemd source from **Admin > Data Sources** after the node registers.
-
-**Build Docker images:**
-
-```bash
-# Server
-docker build -f server/Dockerfile -t blackbox-server .
-
-# Agent
-docker build -f agent/Dockerfile -t blackbox-agent .
-```
-
----
-
-## Persistent Data
-
-The server stores all data in a single SQLite file at `/data/blackbox.db` (configurable via `DB_PATH`). Mount a named volume or host path to persist it across container restarts.
-
-The agent maintains its own persistent event queue at `/data/queue.db` (configurable via `QUEUE_DB_PATH`). Events are written to this queue before being sent to the server, so they survive agent restarts and network outages. Mount a named volume on the agent container to preserve the queue across restarts — without it, unsent events are lost when the container stops. Entries older than 7 days are automatically swept on startup.
-
-```yaml
-volumes:
-  - blackbox-data:/data        # named volume (recommended)
-  - /opt/appdata/blackbox:/data  # or host path
-```
-
-If you bind-mount a host directory instead of a named volume, make sure it is writable by the server container's runtime user (`uid=65532`, `gid=65532`), for example `sudo chown 65532:65532 /opt/appdata/blackbox`.
-
-The database is automatically migrated on startup — no manual schema management required.
-
----
-
-## Roadmap
-
-- [x] Monorepo scaffold (Go workspace + Docker builds)
-- [x] Agent Docker event watching
-- [x] Agent file watching (fsnotify)
-- [x] Server REST API + SQLite
-- [x] JWT + OIDC authentication
-- [x] Uptime Kuma + Watchtower webhook ingestion
-- [x] React timeline UI (Zerobyte inspired)
-- [x] Node management + pulse indicator
-- [x] Manual note creation with attribution
-- [x] Incident lifecycle engine
-- [x] Improved correlation engine (automatic causation for downtime events)
-- [x] Optional local AI analysis via Ollama
-- [x] Incidents UI + header badge
-- [x] Optional AI-enhanced correlation engine
-- [x] Support tracking systemd services
-- [x] Mobile-friendly view
-- [x] Support OpenAI/Other AI Providers
-- [x] Webhook notification support
-- [x] MCP server for AI assistant integration
-- [x] GitHub tab in admin (release notes, feature requests, bug reports)
-- [x] AI review notifications — notify subscribed destinations when Ollama completes incident analysis
-- [x] Container and stack exclusion list
-- [x] FTS5 full-text timeline search
-- [x] Admin audit log
-- [x] Webhook delivery log
-- [x] Resolved incident PDF report export
-- [x] Data source catalog and revamped UI
-- [ ] Timeline UI polish and interaction improvements
-- [ ] Grafana data source plugin
-- [ ] Bi-directional agent analysis
+- [Development Setup](https://docs.blackboxd.dev/docs/contributing/development-setup)
+- [Testing](https://docs.blackboxd.dev/docs/contributing/testing)
+- [Project Structure](https://docs.blackboxd.dev/docs/contributing/project-structure)
 
 ---
 
@@ -710,11 +215,15 @@ The database is automatically migrated on startup — no manual schema managemen
 
 ## AI Usage
 
-A disclaimer - generative AI is used in the development of this repository. The agenda, features, roadmap, etc. are all set by me (a human), but a large portion of the code in this project is created by generative AI. I scan this code for issues and vulnerabilities the best I know how, but I'm not an experienced programmer. 
+A disclaimer - generative AI is used in the development of this repository. The agenda, features, roadmap, etc. are all set by me (a human), but a large portion of the code in this project is created by generative AI. I scan this code for issues and vulnerabilities the best I know how, but I'm not an experienced programmer.
 
 If that makes you uncomfortable, please feel free to poke around the codebase and submit issues for anything out of place. I welcome feedback and suggestions from those more experienced than me. Please send me a private message if you find a security vulnerability that may affect other users, so I can fix it before informing everyone.
 
 ---
+
+## Contributing
+
+[Contributing](https://docs.blackboxd.dev/docs/contributing/)
 
 <p align="center">
   Built for homelabbers who want to know what broke their lab at 2 AM.
