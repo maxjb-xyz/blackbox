@@ -6,16 +6,16 @@ import styles from './index.module.css';
 
 const cards = [
   {
-    title: 'Deployable from day one',
-    body: 'The site is configured for Cloudflare Pages with docs/site as the project root and build as the publish directory.'
+    title: 'Quick Start',
+    body: 'Get a single-node Blackbox install running in minutes with the shortest path from compose file to first timeline events.'
   },
   {
-    title: 'Separated from app code',
-    body: 'Documentation lives in its own Node project so docs changes stay isolated from the main web application build.'
+    title: 'Multi-Node Deployment',
+    body: 'Run one central server with multiple agents and keep node tokens, capabilities, and source setup understandable.'
   },
   {
-    title: 'Ready for expansion',
-    body: 'Add server, agent, and demo sections later without restructuring the scaffold.'
+    title: 'Contributing',
+    body: 'Follow the contributor path for development setup, project structure, testing, and adding new data sources.'
   }
 ];
 
@@ -27,15 +27,18 @@ export default function Home() {
     >
       <header className={clsx('hero hero--primary', styles.heroBanner)}>
         <div className={styles.container}>
-          <span className={styles.eyebrow}>Cloudflare-ready scaffold</span>
+          <span className={styles.eyebrow}>Operator docs for Blackbox</span>
           <h1 className={styles.title}>Blackbox Docs</h1>
           <p className={styles.subtitle}>
-            A standalone Docusaurus site for publishing Blackbox documentation
-            at <code>docs.blackboxd.dev</code>.
+            Deployment, data source, operations, and contributor guidance for
+            running Blackbox across one node or many.
           </p>
           <div className={styles.actions}>
-            <Link className="button button--primary button--lg" to="/docs/intro">
-              Open docs
+            <Link
+              className="button button--primary button--lg"
+              to="/docs/getting-started/quick-start"
+            >
+              Open quick start
             </Link>
             <Link
               className={clsx(
@@ -44,7 +47,7 @@ export default function Home() {
               )}
               to="/docs/intro"
             >
-              View starter page
+              Browse all docs
             </Link>
           </div>
         </div>
