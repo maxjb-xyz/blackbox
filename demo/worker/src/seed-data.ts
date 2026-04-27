@@ -872,7 +872,6 @@ export function createDemoData(nowMs = Date.now()): DemoData {
   ]
 
   return {
-    dataCreatedAt: nowMs,
     setupStatus,
     healthStatus,
     sessionUser,
