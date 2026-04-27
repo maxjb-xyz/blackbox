@@ -50,7 +50,6 @@ docker-compose.override.yml
 
 # Web build output (root Vite output — git-ignored)
 web/dist/
-demo/worker/public/
 !server/web/
 !server/web/dist/
 server/web/dist/*
