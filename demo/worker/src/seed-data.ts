@@ -845,6 +845,27 @@ export function createDemoData(nowMs = Date.now()): DemoData {
     base_url: 'https://demo.blackboxd.dev',
   }
 
+  // Recent activity within the default 6h view window
+  const recentActivity = [
+    { minsAgo: 8,   node: 'mikoshi', service: 'nginx',         event: 'start',   content: 'nginx started after routine config reload',                  metadata: { image: 'library/nginx:alpine', phase: 'reload' } },
+    { minsAgo: 23,  node: 'atlas',   service: 'caddy',         event: 'pull',    content: 'pulled caddy:latest for the scheduled update window',        metadata: { image: 'library/caddy:latest', phase: 'prefetch' } },
+    { minsAgo: 37,  node: 'hexcore', service: 'ollama',        event: 'start',   content: 'ollama started and entered healthcheck warmup',               metadata: { image: 'ollama/ollama:latest', phase: 'replace' } },
+    { minsAgo: 51,  node: 'mikoshi', service: 'vaultwarden',   event: 'stop',    content: 'stopped previous vaultwarden instance after traffic handoff', metadata: { image: 'vaultwarden/server:latest', phase: 'handoff' } },
+    { minsAgo: 72,  node: 'atlas',   service: 'crowdsec',      event: 'start',   content: 'crowdsec came back healthy after config refresh',             metadata: { image: 'crowdsecurity/crowdsec:latest', phase: 'refresh' } },
+    { minsAgo: 95,  node: 'mikoshi', service: 'jellyfin',      event: 'pull',    content: 'pulled jellyfin:latest for the afternoon maintenance window', metadata: { image: 'jellyfin/jellyfin:latest', phase: 'prefetch' } },
+    { minsAgo: 118, node: 'hexcore', service: 'paperless',     event: 'create',  content: 'created replacement paperless container on hexcore',          metadata: { image: 'ghcr.io/paperless-ngx/paperless-ngx:latest', phase: 'replace' } },
+    { minsAgo: 140, node: 'mikoshi', service: 'gitea',         event: 'destroy', content: 'removed retired gitea container from the compose stack',      metadata: { image: 'gitea/gitea:latest', phase: 'handoff' } },
+    { minsAgo: 175, node: 'atlas',   service: 'tailscale',     event: 'start',   content: 'tailscale started and entered healthcheck warmup',            metadata: { image: 'tailscale/tailscale:latest', phase: 'replace' } },
+    { minsAgo: 210, node: 'hexcore', service: 'minio',         event: 'pull',    content: 'pulled minio:latest for the morning refresh window',          metadata: { image: 'minio/minio:latest', phase: 'prefetch' } },
+    { minsAgo: 248, node: 'mikoshi', service: 'immich-server', event: 'start',   content: 'immich-server started after image update',                    metadata: { image: 'ghcr.io/immich-app/immich-server:release', phase: 'replace' } },
+    { minsAgo: 290, node: 'atlas',   service: 'oauth2-proxy',  event: 'stop',    content: 'stopped previous oauth2-proxy instance after traffic handoff', metadata: { image: 'quay.io/oauth2-proxy/oauth2-proxy:latest', phase: 'handoff' } },
+    { minsAgo: 315, node: 'mikoshi', service: 'redis',         event: 'create',  content: 'created replacement redis container on mikoshi',              metadata: { image: 'library/redis:alpine', phase: 'replace' } },
+    { minsAgo: 342, node: 'hexcore', service: 'scrutiny-web',  event: 'start',   content: 'scrutiny-web came back healthy after config refresh',         metadata: { image: 'ghcr.io/analogj/scrutiny:master-web', phase: 'refresh' } },
+  ]
+  for (const r of recentActivity) {
+    pushEntry({ timestamp: iso(nowMs, r.minsAgo), node_name: r.node, source: 'docker', service: r.service, compose_service: r.service, event: r.event, content: r.content, metadata: r.metadata })
+  }
+
   const webhooks: WebhookEndpoint[] = [
     { id: 'webhook-uptime', method: 'POST', path: '/api/webhooks/uptime', source: 'uptime_kuma', description: 'Inbound downtime and recovery events from Uptime Kuma.' },
     { id: 'webhook-watchtower', method: 'POST', path: '/api/webhooks/watchtower', source: 'watchtower', description: 'Inbound image refresh notifications from Watchtower.' },
