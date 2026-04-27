@@ -6,6 +6,7 @@
     "node": ">=20 <25"
   },
   "scripts": {
+    "sync:snippets": "node ./scripts/sync-compose-snippet.mjs",
     "start": "docusaurus start",
     "build": "docusaurus build",
     "serve": "docusaurus serve",
@@ -14,6 +15,9 @@
     "deploy": "npm run build && wrangler deploy",
     "preview": "npm run build && wrangler dev"
   },
+  "prestart": "npm run sync:snippets",
+  "prebuild": "npm run sync:snippets",
+  "pretypecheck": "npm run sync:snippets",
   "dependencies": {
     "@docusaurus/core": "3.10.0",
     "@docusaurus/preset-classic": "3.10.0",

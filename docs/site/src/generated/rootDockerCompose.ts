@@ -1,0 +1,4 @@
+// Auto-generated from repo-root docker-compose.yml. Do not edit by hand.
+const rootDockerCompose = "services:\n  blackbox-server:\n    image: ghcr.io/maxjb-xyz/blackbox-server:latest\n    restart: unless-stopped\n    ports:\n      - \"8080:8080\"\n    volumes:\n      - blackbox-data:/data\n    environment:\n      JWT_SECRET: \"change-me\"\n      AGENT_TOKENS: \"homelab=change-me\"\n      WEBHOOK_SECRET: \"change-me\"\n\n  blackbox-agent:\n    image: ghcr.io/maxjb-xyz/blackbox-agent:latest\n    restart: unless-stopped\n    volumes:\n      - /var/run/docker.sock:/var/run/docker.sock:ro\n      - /etc:/watch/etc:ro\n    environment:\n      SERVER_URL: \"http://blackbox-server:8080\"\n      AGENT_TOKEN: \"change-me\"\n      NODE_NAME: \"homelab\"\n      WATCH_PATHS: \"/watch/etc\"\n\nvolumes:\n  blackbox-data:\n";
+
+export default rootDockerCompose;

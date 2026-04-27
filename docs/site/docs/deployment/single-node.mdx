@@ -2,13 +2,15 @@
 title: Single-Node Deployment
 ---
 
+import RepoComposeSnippet from '@site/src/components/RepoComposeSnippet';
+
 # Single-Node Deployment
 
 Single-node deployment means running the server and one agent together on the
 same host.
 
 This is the easiest way to get started and is the deployment model used in the
-[Quick Start](../getting-started/quick-start.md).
+[Quick Start](../getting-started/quick-start.mdx).
 
 ## When To Use It
 
@@ -16,6 +18,12 @@ This is the easiest way to get started and is the deployment model used in the
 - You are monitoring one homelab machine first.
 - You want to validate Docker, file watcher, and systemd behavior before
   expanding to more nodes.
+
+## Canonical Compose Example
+
+This snippet is pulled from the repo-root `docker-compose.yml`.
+
+<RepoComposeSnippet />
 
 ## Recommended Layout
 

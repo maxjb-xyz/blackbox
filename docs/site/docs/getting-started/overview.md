@@ -53,7 +53,7 @@ from local failure patterns.
 
 ## Recommended Reading Order
 
-1. [Quick Start](./quick-start.md)
+1. [Quick Start](./quick-start)
 2. [How Blackbox Thinks](./how-blackbox-thinks.md)
 3. [Multi-Node Deployment](../deployment/multi-node.md)
 4. [Data Sources Overview](../data-sources/overview.md)

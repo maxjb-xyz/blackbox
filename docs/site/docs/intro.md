@@ -20,7 +20,7 @@ These docs are organized around the jobs people usually need to do:
 
 ## Start Here
 
-- New install: [Quick Start](./getting-started/quick-start.md)
+- New install: [Quick Start](./getting-started/quick-start)
 - Multiple machines: [Multi-Node Deployment](./deployment/multi-node.md)
 - Contributor onboarding: [Contributing Overview](./contributing/overview.md)
 - New source work: [Adding a Data Source](./contributing/adding-a-data-source.md)
