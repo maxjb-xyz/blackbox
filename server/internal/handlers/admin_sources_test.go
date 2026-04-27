@@ -497,15 +497,32 @@ func TestCreateSource_SystemdRequiresUnitsArray(t *testing.T) {
 	require.Contains(t, w.Body.String(), "units must be an array of strings")
 }
 
-func TestCreateSource_SystemdRequiresAtLeastOneUnit(t *testing.T) {
+func TestCreateSource_SystemdAllowsEmptyUnitList(t *testing.T) {
 	db := newSourcesTestDB(t)
 	raw := []byte(`{"type":"systemd","scope":"agent","node_id":"homelab-01","name":"systemd","config":{"units":[]},"enabled":true}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/admin/sources", bytes.NewReader(raw))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	handlers.CreateSource(db)(w, req)
-	require.Equal(t, http.StatusBadRequest, w.Code)
-	require.Contains(t, w.Body.String(), "units must contain at least one unit")
+	require.Equal(t, http.StatusCreated, w.Code)
+
+	var inst models.DataSourceInstance
+	require.NoError(t, db.Where("type = ? AND node_id = ?", "systemd", "homelab-01").First(&inst).Error)
+	require.JSONEq(t, `{"units":[]}`, inst.Config)
+}
+
+func TestCreateSource_SystemdNormalizesUnits(t *testing.T) {
+	db := newSourcesTestDB(t)
+	raw := []byte(`{"type":"systemd","scope":"agent","node_id":"homelab-01","name":"systemd","config":{"units":[" nginx ","nginx.service","","redis"]},"enabled":true}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/sources", bytes.NewReader(raw))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	handlers.CreateSource(db)(w, req)
+	require.Equal(t, http.StatusCreated, w.Code)
+
+	var inst models.DataSourceInstance
+	require.NoError(t, db.Where("type = ? AND node_id = ?", "systemd", "homelab-01").First(&inst).Error)
+	require.JSONEq(t, `{"units":["nginx.service","redis.service"]}`, inst.Config)
 }
 
 func TestCreateSource_WebhookRequiresStringSecret(t *testing.T) {

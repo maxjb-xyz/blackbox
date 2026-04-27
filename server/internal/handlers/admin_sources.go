@@ -186,7 +186,6 @@ func CreateSource(db *gorm.DB) http.HandlerFunc {
 			}
 		}
 
-		cfg := "{}"
 		obj := map[string]any{}
 		if len(req.Config) > 0 {
 			// Validate it's a JSON object
@@ -198,12 +197,17 @@ func CreateSource(db *gorm.DB) http.HandlerFunc {
 				writeError(w, http.StatusBadRequest, "config must be a JSON object")
 				return
 			}
-			cfg = string(req.Config)
 		}
 		if err := validateSourceConfig(req.Type, obj); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		cfgJSON, err := json.Marshal(obj)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to serialize config")
+			return
+		}
+		cfg := string(cfgJSON)
 		enabled := true
 		if req.Enabled != nil {
 			enabled = *req.Enabled
@@ -431,19 +435,11 @@ func validateSourceConfig(sourceType string, config map[string]any) error {
 		if !ok {
 			return errors.New("units is required")
 		}
-		units, ok := rawValue.([]any)
-		if !ok {
-			return errors.New("units must be an array of strings")
+		normalizedUnits, err := normalizeSystemdUnits(rawValue)
+		if err != nil {
+			return err
 		}
-		if len(units) == 0 {
-			return errors.New("units must contain at least one unit")
-		}
-		for _, unit := range units {
-			unitStr, ok := unit.(string)
-			if !ok || strings.TrimSpace(unitStr) == "" {
-				return errors.New("units must be an array of strings")
-			}
-		}
+		config["units"] = normalizedUnits
 	}
 	if strings.HasPrefix(sourceType, "webhook_") {
 		rawValue, ok := config["secret"]
@@ -465,6 +461,47 @@ func validateSourceConfig(sourceType string, config map[string]any) error {
 		}
 	}
 	return nil
+}
+
+func normalizeSystemdUnits(rawValue any) ([]string, error) {
+	var rawUnits []any
+	switch units := rawValue.(type) {
+	case []any:
+		rawUnits = units
+	case []string:
+		rawUnits = make([]any, 0, len(units))
+		for _, unit := range units {
+			rawUnits = append(rawUnits, unit)
+		}
+	default:
+		return nil, errors.New("units must be an array of strings")
+	}
+
+	seen := make(map[string]struct{}, len(rawUnits))
+	clean := make([]string, 0, len(rawUnits))
+	for _, rawUnit := range rawUnits {
+		unit, ok := rawUnit.(string)
+		if !ok {
+			return nil, errors.New("units must be an array of strings")
+		}
+		unit = strings.TrimSpace(unit)
+		if unit == "" {
+			continue
+		}
+		if !hasUnitTypeSuffix(unit) {
+			unit += ".service"
+		}
+		if !validUnitName.MatchString(unit) {
+			return nil, errors.New("invalid unit name: " + unit)
+		}
+		if _, dup := seen[unit]; dup {
+			continue
+		}
+		seen[unit] = struct{}{}
+		clean = append(clean, unit)
+	}
+
+	return clean, nil
 }
 
 func isDuplicateKeyError(err error) bool {

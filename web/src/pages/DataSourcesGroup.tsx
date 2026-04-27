@@ -52,6 +52,7 @@ export default function DataSourcesGroup() {
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null)
   const [confirmingExcludeId, setConfirmingExcludeId] = useState<string | null>(null)
   const [deletingExcludeId, setDeletingExcludeId] = useState<string | null>(null)
+  const [creatingSource, setCreatingSource] = useState<CreateSourceInput | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -138,6 +139,7 @@ export default function DataSourcesGroup() {
     try {
       const inst = await createSource(input)
       await load()
+      setCreatingSource(null)
       setCatalogNode(null)
       if (input.scope === 'server') {
         setSelection({ kind: 'server', id: inst.id })
@@ -149,6 +151,13 @@ export default function DataSourcesGroup() {
     } finally {
       setSaving(false)
     }
+  }
+
+  function handleCatalogSelect(input: CreateSourceInput) {
+    setSaveError(null)
+    setCatalogNode(null)
+    setSelection(null)
+    setCreatingSource(input)
   }
 
   if (loading) return <div style={{ padding: 20, color: 'var(--muted)', fontSize: 12 }}>Loading...</div>
@@ -171,10 +180,16 @@ export default function DataSourcesGroup() {
               type={inst.type}
               active={selection?.kind === 'server' && selection.id === inst.id}
               enabled={inst.enabled}
-              onClick={() => setSelection({ kind: 'server', id: inst.id })}
+              onClick={() => {
+                setCreatingSource(null)
+                setSelection({ kind: 'server', id: inst.id })
+              }}
             />
           ))}
-          <AddSourceButton onClick={() => setCatalogNode('__server__')} />
+          <AddSourceButton onClick={() => {
+            setCreatingSource(null)
+            setCatalogNode('__server__')
+          }} />
         </div>
 
         {sources.orphans.length > 0 && (
@@ -189,7 +204,10 @@ export default function DataSourcesGroup() {
                 type={inst.type}
                 active={selection?.kind === 'orphan' && selection.id === inst.id}
                 enabled={inst.enabled}
-                onClick={() => setSelection({ kind: 'orphan', id: inst.id })}
+                onClick={() => {
+                  setCreatingSource(null)
+                  setSelection({ kind: 'orphan', id: inst.id })
+                }}
               />
             ))}
           </div>
@@ -209,7 +227,10 @@ export default function DataSourcesGroup() {
                 type="docker"
                 active={selection?.kind === 'docker' && selection.nodeName === nodeName}
                 enabled={true}
-                onClick={() => setSelection({ kind: 'docker', nodeName })}
+                onClick={() => {
+                  setCreatingSource(null)
+                  setSelection({ kind: 'docker', nodeName })
+                }}
               />
               {ns.sources.map(inst => (
                 <SidebarTab
@@ -218,10 +239,16 @@ export default function DataSourcesGroup() {
                   type={inst.type}
                   active={selection?.kind === 'node' && selection.nodeName === nodeName && selection.id === inst.id}
                   enabled={inst.enabled}
-                  onClick={() => setSelection({ kind: 'node', nodeName, id: inst.id })}
+                  onClick={() => {
+                    setCreatingSource(null)
+                    setSelection({ kind: 'node', nodeName, id: inst.id })
+                  }}
                 />
               ))}
-              <AddSourceButton onClick={() => setCatalogNode(nodeName)} />
+              <AddSourceButton onClick={() => {
+                setCreatingSource(null)
+                setCatalogNode(nodeName)
+              }} />
             </div>
           )
         })}
@@ -234,8 +261,26 @@ export default function DataSourcesGroup() {
             nodeInfo={catalogNode === '__server__' ? null : sources.nodes[catalogNode] ?? null}
             sourceTypes={sourceTypes}
             existingSources={catalogNode === '__server__' ? sources.server : (sources.nodes[catalogNode]?.sources ?? [])}
-            onSelect={handleCreate}
+            onSelect={handleCatalogSelect}
             onClose={() => setCatalogNode(null)}
+          />
+        )}
+
+        {creatingSource && (
+          <SourceConfigPanel
+            instance={draftInstanceFromInput(creatingSource)}
+            saving={saving}
+            saveError={saveError}
+            deleteConfirming={false}
+            creating={true}
+            onSave={(input) => handleCreate({
+              ...creatingSource,
+              name: input.name ?? creatingSource.name,
+              enabled: input.enabled ?? creatingSource.enabled,
+              config: input.config ?? creatingSource.config,
+            })}
+            onDelete={() => setCreatingSource(null)}
+            onCancelDelete={() => setCreatingSource(null)}
           />
         )}
 
@@ -303,7 +348,7 @@ export default function DataSourcesGroup() {
           />
         )}
 
-        {!selectedInstance && selection?.kind !== 'docker' && catalogNode === null && (
+        {!creatingSource && !selectedInstance && selection?.kind !== 'docker' && catalogNode === null && (
           <div style={{ padding: 20, color: 'var(--muted)', fontSize: 12 }}>
             Select a source from the sidebar to configure it.
           </div>
@@ -356,7 +401,8 @@ function AddSourceButton({ onClick }: { onClick: () => void }) {
   )
 }
 
-function SourceConfigPanel({ instance, saving, saveError, deleteConfirming, onSave, onDelete, onCancelDelete }: {
+function SourceConfigPanel({ creating = false, instance, saving, saveError, deleteConfirming, onSave, onDelete, onCancelDelete }: {
+  creating?: boolean
   instance: DataSourceInstance
   saving: boolean
   saveError: string | null
@@ -399,17 +445,25 @@ function SourceConfigPanel({ instance, saving, saveError, deleteConfirming, onSa
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0, 0, 0, 0)', whiteSpace: 'nowrap', border: 0 }} aria-live="polite">
-            {deleteConfirming ? 'Click again to confirm removing this source' : 'Remove source'}
-          </span>
-          {deleteConfirming && (
-            <button type="button" onClick={onCancelDelete} style={{ fontSize: 10, color: 'var(--muted)', border: '1px solid var(--border)', padding: '3px 8px', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit' }}>
+          {creating ? (
+            <button type="button" onClick={onDelete} style={{ fontSize: 10, color: 'var(--muted)', border: '1px solid var(--border)', padding: '3px 8px', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit' }}>
               Cancel
             </button>
+          ) : (
+            <>
+              <span style={{ position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0, 0, 0, 0)', whiteSpace: 'nowrap', border: 0 }} aria-live="polite">
+                {deleteConfirming ? 'Click again to confirm removing this source' : 'Remove source'}
+              </span>
+              {deleteConfirming && (
+                <button type="button" onClick={onCancelDelete} style={{ fontSize: 10, color: 'var(--muted)', border: '1px solid var(--border)', padding: '3px 8px', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit' }}>
+                  Cancel
+                </button>
+              )}
+              <button type="button" aria-label={deleteConfirming ? 'Click again to confirm removing this source' : 'Remove source'} onClick={onDelete} style={{ fontSize: 10, color: deleteConfirming ? 'var(--danger)' : 'var(--muted)', border: '1px solid var(--border)', padding: '3px 8px', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit' }}>
+                {deleteConfirming ? 'Click again to confirm' : 'Remove'}
+              </button>
+            </>
           )}
-          <button type="button" aria-label={deleteConfirming ? 'Click again to confirm removing this source' : 'Remove source'} onClick={onDelete} style={{ fontSize: 10, color: deleteConfirming ? 'var(--danger)' : 'var(--muted)', border: '1px solid var(--border)', padding: '3px 8px', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit' }}>
-            {deleteConfirming ? 'Click again to confirm' : 'Remove'}
-          </button>
         </div>
       </div>
 
@@ -448,9 +502,14 @@ function SourceConfigPanel({ instance, saving, saveError, deleteConfirming, onSa
                 placeholder="Enter webhook secret"
                 style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'inherit', fontSize: 11, padding: '4px 8px', width: '100%' }}
               />
-              {!editedFields.has('secret') && (
+              {!creating && !editedFields.has('secret') && (
                 <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 3 }}>
                   Leave blank to keep existing secret
+                </div>
+              )}
+              {creating && (
+                <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 3 }}>
+                  Required before this webhook source can be created.
                 </div>
               )}
             </ConfigRow>
@@ -493,7 +552,7 @@ function SourceConfigPanel({ instance, saving, saveError, deleteConfirming, onSa
             disabled={saving}
             onClick={() => {
               const configPayload = Object.fromEntries(
-                Object.entries(localCfg).filter(([key]) => !(key === 'secret' && !editedFields.has(key))),
+                Object.entries(localCfg).filter(([key]) => creating || !(key === 'secret' && !editedFields.has(key))),
               )
               if (Array.isArray(configPayload.units)) {
                 configPayload.units = configPayload.units
@@ -504,12 +563,26 @@ function SourceConfigPanel({ instance, saving, saveError, deleteConfirming, onSa
             }}
             style={{ fontSize: 10, border: '1px solid var(--border)', padding: '4px 12px', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontFamily: 'inherit' }}
           >
-            {saving ? 'Saving...' : 'Save'}
+            {saving ? (creating ? 'Creating...' : 'Saving...') : (creating ? 'Create' : 'Save')}
           </button>
         </div>
       </div>
     </div>
   )
+}
+
+function draftInstanceFromInput(input: CreateSourceInput): DataSourceInstance {
+  return {
+    id: '__draft__',
+    type: input.type,
+    scope: input.scope,
+    node_id: input.node_id,
+    name: input.name,
+    config: JSON.stringify(input.config),
+    enabled: input.enabled,
+    created_at: '',
+    updated_at: '',
+  }
 }
 
 function ConfigRow({ label, children }: { label: string; children: React.ReactNode }) {
