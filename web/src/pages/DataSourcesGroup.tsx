@@ -181,7 +181,7 @@ export default function DataSourcesGroup() {
   const nodeNames = Object.keys(sources.nodes).sort()
 
   return (
-    <div style={{ display: 'flex', minHeight: '100%', gap: 24, gridColumn: '1 / -1' }}>
+    <div style={{ display: 'flex', minHeight: 560, gap: 24, gridColumn: '1 / -1' }}>
       {/* Sidebar */}
       <div style={{ width: 200, flexShrink: 0, borderRight: '1px solid var(--border)' }}>
         {/* Server section */}
