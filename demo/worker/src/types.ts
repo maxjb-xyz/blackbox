@@ -213,8 +213,3 @@ export interface DemoData {
   sources: SourcesResponse
 }
 
-export interface WorkerBindings {
-  ASSETS: {
-    fetch: typeof fetch
-  }
-}

@@ -5,9 +5,9 @@ import { createAdminRouter } from './routes/admin'
 import { createEntriesRouter } from './routes/entries'
 import { createIncidentsRouter } from './routes/incidents'
 import { createNodesRouter } from './routes/nodes'
-import type { WorkerBindings } from './types'
+import indexHtml from '../public/index.html'
 
-const app = new Hono<{ Bindings: WorkerBindings }>()
+const app = new Hono()
 
 app.get('/api/setup/status', c => c.json(demoData.setupStatus))
 app.get('/api/setup/health', c => c.json(demoData.healthStatus))
@@ -41,9 +41,6 @@ app.route('/api', createAdminRouter(demoData))
 app.on(['POST', 'PUT', 'PATCH', 'DELETE'], '/api/*', c => c.json({ error: 'Disabled in demo mode' }, 403))
 app.all('/api/*', c => c.json({ error: 'Not found' }, 404))
 
-app.get('*', async c => {
-  if (!c.env.ASSETS) return c.text('Demo assets not built. Run the deploy workflow first.', 503)
-  return c.env.ASSETS.fetch(c.req.raw)
-})
+app.get('*', c => c.html(indexHtml))
 
 export default app
