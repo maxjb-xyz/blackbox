@@ -1,0 +1,78 @@
+.heroBanner {
+  padding: 7rem 1.5rem 5rem;
+}
+
+.container {
+  margin: 0 auto;
+  max-width: 960px;
+}
+
+.eyebrow {
+  display: inline-block;
+  margin-bottom: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  padding: 0.35rem 0.65rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(2.5rem, 5vw, 4.5rem);
+  line-height: 1;
+}
+
+.subtitle {
+  margin: 1rem 0 0;
+  max-width: 42rem;
+  font-size: 1.15rem;
+  line-height: 1.7;
+  color: rgba(247, 251, 255, 0.84);
+}
+
+.actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 2rem;
+  flex-wrap: wrap;
+}
+
+.secondaryButton {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #f7fbff;
+}
+
+.section {
+  padding: 3rem 1.5rem 5rem;
+}
+
+.cardGrid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.card {
+  border: 1px solid rgba(106, 166, 255, 0.18);
+  background: linear-gradient(180deg, rgba(16, 27, 40, 0.96), rgba(8, 17, 27, 0.96));
+  padding: 1.25rem;
+}
+
+.cardTitle {
+  margin: 0 0 0.75rem;
+  font-size: 1.05rem;
+}
+
+.cardBody {
+  margin: 0;
+  color: #c7d4e6;
+  line-height: 1.6;
+}
+
+@media (max-width: 640px) {
+  .heroBanner {
+    padding-top: 5rem;
+  }
+}

@@ -1,0 +1,39 @@
+:root {
+  --ifm-color-primary: #6aa6ff;
+  --ifm-color-primary-dark: #4d92ff;
+  --ifm-color-primary-darker: #3f88ff;
+  --ifm-color-primary-darkest: #1268ff;
+  --ifm-color-primary-light: #87b8ff;
+  --ifm-color-primary-lighter: #95c2ff;
+  --ifm-color-primary-lightest: #bfdcff;
+  --ifm-background-color: #08111b;
+  --ifm-background-surface-color: #101b28;
+  --ifm-font-color-base: #e6edf7;
+  --ifm-heading-color: #f7fbff;
+  --ifm-navbar-background-color: rgba(8, 17, 27, 0.92);
+  --ifm-footer-background-color: #050b12;
+  --ifm-code-font-size: 95%;
+  --ifm-font-family-base: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  --ifm-font-family-monospace: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  --docusaurus-highlighted-code-line-bg: rgba(106, 166, 255, 0.14);
+}
+
+html[data-theme='light'] {
+  --ifm-background-color: #f5f8fc;
+  --ifm-background-surface-color: #ffffff;
+  --ifm-font-color-base: #1b2635;
+  --ifm-heading-color: #111827;
+  --ifm-navbar-background-color: rgba(255, 255, 255, 0.96);
+  --ifm-footer-background-color: #0b1220;
+}
+
+.hero--primary {
+  background:
+    radial-gradient(circle at top, rgba(106, 166, 255, 0.28), transparent 46%),
+    linear-gradient(180deg, #0c1724 0%, #08111b 100%);
+  color: #f7fbff;
+}
+
+.footer--dark {
+  color: #c7d4e6;
+}
