@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"blackbox/server/internal/auth"
 	"blackbox/server/internal/models"
 	"github.com/go-chi/chi/v5"
 	"github.com/oklog/ulid/v2"
@@ -227,6 +228,12 @@ func CreateSource(db *gorm.DB) http.HandlerFunc {
 			return
 		}
 		refreshWebhookSecretCacheIfNeeded(db, req.Type)
+		claims, _ := auth.ClaimsFromContext(r.Context())
+		meta := map[string]interface{}{"type": inst.Type, "name": inst.Name, "scope": inst.Scope}
+		if inst.NodeID != nil {
+			meta["node_id"] = *inst.NodeID
+		}
+		WriteAuditLog(db, r, claims, "source.create", "data_source", inst.ID, meta)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		redacted := inst
@@ -294,6 +301,10 @@ func UpdateSource(db *gorm.DB) http.HandlerFunc {
 			return
 		}
 		refreshWebhookSecretCacheIfNeeded(db, inst.Type)
+		claims, _ := auth.ClaimsFromContext(r.Context())
+		WriteAuditLog(db, r, claims, "source.update", "data_source", inst.ID, map[string]interface{}{
+			"type": inst.Type, "name": inst.Name, "enabled": inst.Enabled,
+		})
 		w.Header().Set("Content-Type", "application/json")
 		redacted := inst
 		redacted.Config = redactConfig(inst.Type, inst.Config)
@@ -326,6 +337,10 @@ func DeleteSource(db *gorm.DB) http.HandlerFunc {
 			return
 		}
 		refreshWebhookSecretCacheIfNeeded(db, inst.Type)
+		claims, _ := auth.ClaimsFromContext(r.Context())
+		WriteAuditLog(db, r, claims, "source.delete", "data_source", id, map[string]interface{}{
+			"type": inst.Type, "name": inst.Name,
+		})
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
