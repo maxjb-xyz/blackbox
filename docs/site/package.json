@@ -10,7 +10,9 @@
     "build": "docusaurus build",
     "serve": "docusaurus serve",
     "clear": "docusaurus clear",
-    "typecheck": "tsc"
+    "typecheck": "tsc",
+    "deploy": "npm run build && wrangler deploy",
+    "preview": "npm run build && wrangler dev"
   },
   "dependencies": {
     "@docusaurus/core": "3.10.0",
@@ -25,6 +27,7 @@
     "@docusaurus/tsconfig": "3.10.0",
     "@docusaurus/types": "3.10.0",
     "typescript": "^5.9.3",
-    "webpack": "5.105.1"
+    "webpack": "5.105.1",
+    "wrangler": "^4.85.0"
   }
 }
