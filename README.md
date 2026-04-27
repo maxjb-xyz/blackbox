@@ -223,7 +223,11 @@ If that makes you uncomfortable, please feel free to poke around the codebase an
 
 ## Contributing
 
-[Contributing](https://docs.blackboxd.dev/docs/contributing/)
+Contributions are welcome. Please review the contributing docs before doing so.
+
+[Contributing](https://docs.blackboxd.dev/docs/contributing/overview/)
+
+---
 
 <p align="center">
   Built for homelabbers who want to know what broke their lab at 2 AM.
