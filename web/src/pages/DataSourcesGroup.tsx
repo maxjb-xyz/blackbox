@@ -35,6 +35,15 @@ const WEBHOOK_ENDPOINTS: Record<string, string> = {
   webhook_watchtower: '/api/webhooks/watchtower',
 }
 
+function isSourceVisible(inst: DataSourceInstance): boolean {
+  if (!inst.enabled) return false
+  if (inst.type.startsWith('webhook_')) {
+    const cfg = parseSourceConfig<{ secret?: string }>(inst)
+    return Boolean(cfg?.secret)
+  }
+  return true
+}
+
 export default function DataSourcesGroup() {
   const [sources, setSources] = useState<SourcesResponse | null>(null)
   const [sourceTypes, setSourceTypes] = useState<SourceTypeDef[]>([])
@@ -177,12 +186,12 @@ export default function DataSourcesGroup() {
   const nodeNames = Object.keys(sources.nodes).sort()
 
   return (
-    <div style={{ display: 'flex', minHeight: '100%', gap: 24 }}>
+    <div style={{ display: 'flex', minHeight: '100%', gap: 24, gridColumn: '1 / -1' }}>
       {/* Sidebar */}
-      <div style={{ width: 200, flexShrink: 0 }} className="admin-tab-list">
+      <div style={{ width: 200, flexShrink: 0, borderRight: '1px solid var(--border)' }}>
         {/* Server section */}
         <SidebarSection label="Server" />
-        {sources.server.filter(i => i.enabled).map(inst => (
+        {sources.server.filter(isSourceVisible).map(inst => (
           <SidebarTab
             key={inst.id}
             label={inst.name}
@@ -201,7 +210,7 @@ export default function DataSourcesGroup() {
         {sources.orphans.length > 0 && (
           <>
             <SidebarSection label="Orphans" />
-            {sources.orphans.filter(i => i.enabled).map(inst => (
+            {sources.orphans.filter(isSourceVisible).map(inst => (
               <SidebarTab
                 key={inst.id}
                 label={inst.name}
@@ -229,7 +238,7 @@ export default function DataSourcesGroup() {
                 active={selection?.kind === 'docker' && selection.nodeName === nodeName}
                 onClick={() => selectSidebar({ kind: 'docker', nodeName })}
               />
-              {ns.sources.filter(i => i.enabled).map(inst => (
+              {ns.sources.filter(isSourceVisible).map(inst => (
                 <SidebarTab
                   key={inst.id}
                   label={inst.name}
@@ -359,9 +368,9 @@ function SidebarSection({ label, dot }: { label: string; dot?: React.ReactNode }
   return (
     <div style={{
       fontSize: 10, letterSpacing: '0.12em', color: 'var(--muted)',
-      padding: '10px 16px 4px', textTransform: 'uppercase',
+      padding: '16px 14px 6px',
+      textTransform: 'uppercase',
       display: 'flex', alignItems: 'center', gap: 6,
-      borderBottom: '1px solid var(--border)',
     }}>
       {dot}
       {label}
@@ -377,8 +386,17 @@ function SidebarTab({ label, type, active, onClick }: {
     <button
       type="button"
       onClick={onClick}
-      className={`admin-tab-button${active ? ' active' : ''}`}
-      style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        width: '100%', padding: '10px 14px 10px 12px',
+        fontSize: 12, letterSpacing: '0.06em',
+        color: active ? 'var(--text)' : 'var(--muted)',
+        background: active ? 'linear-gradient(90deg, rgba(255,51,51,0.14), rgba(255,51,51,0.04) 70%, transparent)' : 'transparent',
+        border: 'none',
+        borderLeft: active ? '2px solid var(--accent)' : '2px solid transparent',
+        cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+        fontWeight: active ? 600 : 400,
+      }}
     >
       <span style={{ color, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
         <SourceIcon type={type} size={14} strokeWidth={1.7} />
@@ -394,10 +412,9 @@ function AddSourceButton({ onClick }: { onClick: () => void }) {
       type="button"
       onClick={onClick}
       style={{
-        display: 'block', width: '100%', padding: '8px 16px',
-        fontSize: 11, letterSpacing: '0.08em', color: 'var(--muted)',
-        background: 'transparent', border: 'none',
-        borderBottom: '1px solid var(--border)',
+        display: 'block', width: '100%', padding: '6px 14px 12px',
+        fontSize: 11, letterSpacing: '0.06em', color: 'var(--muted)',
+        background: 'transparent', border: 'none', borderLeft: '2px solid transparent',
         cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
       }}
     >
@@ -594,7 +611,7 @@ function WebhookURLRow({ path }: { path: string }) {
   return (
     <>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={{ fontSize: 12, color: 'var(--text)', flex: 1, wordBreak: 'break-all' }}>{url}</span>
+        <span style={{ fontSize: 12, color: 'var(--text)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{url}</span>
         <button
           type="button"
           onClick={handleCopy}
