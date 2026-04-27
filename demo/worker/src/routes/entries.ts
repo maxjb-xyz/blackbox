@@ -120,8 +120,17 @@ export function createEntriesRouter(data: DemoData) {
       limit: Number.isFinite(limit) ? limit : 50,
     })
 
+    // Shift timestamps to be relative to this request's time.
+    // Date.now() at Workers module-init may be 0 (no active request),
+    // producing 1969 timestamps that the client-side 6h filter removes.
+    const shift = Date.now() - data.dataCreatedAt
+    const shiftedEntries = page.entries.map(e => ({
+      ...e,
+      timestamp: new Date(Date.parse(e.timestamp) + shift).toISOString(),
+    }))
+
     return c.json({
-      entries: page.entries,
+      entries: shiftedEntries,
       ...(page.nextCursor ? { next_cursor: page.nextCursor } : {}),
     })
   })

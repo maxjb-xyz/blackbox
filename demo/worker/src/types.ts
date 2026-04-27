@@ -191,6 +191,7 @@ export interface WebhookEndpoint {
 }
 
 export interface DemoData {
+  dataCreatedAt: number
   setupStatus: SetupStatus
   healthStatus: HealthStatus
   sessionUser: SessionUser
