@@ -53,6 +53,49 @@
   padding: 3rem 1.5rem 5rem;
 }
 
+.coverageBlock {
+  border: 1px solid rgba(185, 28, 28, 0.18);
+  background: linear-gradient(180deg, rgba(17, 9, 9, 0.98), rgba(9, 9, 9, 0.98));
+  padding: 1.5rem;
+}
+
+.sectionHeader {
+  max-width: 44rem;
+  margin-bottom: 1.5rem;
+}
+
+.sectionEyebrow {
+  margin: 0 0 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #f98b8b;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: clamp(1.8rem, 3vw, 2.5rem);
+  color: #fff8f8;
+}
+
+.sectionText {
+  margin: 0.75rem 0 0;
+  color: #ead6d6;
+  line-height: 1.7;
+}
+
+.coverageList {
+  margin: 0.5rem 0 0;
+  padding-left: 1.2rem;
+}
+
+.coverageItem {
+  margin: 0.7rem 0;
+  color: #f1dfdf;
+  line-height: 1.7;
+}
+
 .cardGrid {
   display: grid;
   gap: 1rem;
@@ -76,6 +119,23 @@
   margin: 0;
   color: #f1dfdf;
   line-height: 1.6;
+}
+
+.linkList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.inlineLink {
+  font-weight: 600;
+  color: #f98b8b;
+}
+
+.inlineLink:hover {
+  color: #ffd1d1;
+  text-decoration: none;
 }
 
 html[data-theme='light'] .eyebrow {
@@ -109,12 +169,42 @@ html[data-theme='light'] .card {
   box-shadow: 0 18px 40px rgba(20, 9, 9, 0.06);
 }
 
+html[data-theme='light'] .coverageBlock {
+  border-color: rgba(153, 27, 27, 0.16);
+  background: linear-gradient(180deg, #fffefe, #f8eded);
+  box-shadow: 0 18px 40px rgba(20, 9, 9, 0.06);
+}
+
+html[data-theme='light'] .sectionEyebrow {
+  color: #991b1b;
+}
+
+html[data-theme='light'] .sectionTitle {
+  color: #170b0b;
+}
+
+html[data-theme='light'] .sectionText {
+  color: #412626;
+}
+
+html[data-theme='light'] .coverageItem {
+  color: #412626;
+}
+
 html[data-theme='light'] .cardTitle {
   color: #170b0b;
 }
 
 html[data-theme='light'] .cardBody {
   color: #412626;
+}
+
+html[data-theme='light'] .inlineLink {
+  color: #991b1b;
+}
+
+html[data-theme='light'] .inlineLink:hover {
+  color: #7f1010;
 }
 
 @media (max-width: 640px) {
