@@ -106,14 +106,26 @@ export function createEntriesRouter(data: DemoData) {
 
   app.get('/entries', c => {
     const limit = Number(c.req.query('limit') ?? '50')
+    // Shift browser time filters to be relative to when seed data was created.
+    // Cloudflare keeps isolates alive, so timestamps baked at module-init time
+    // drift from the browser's "now". Subtracting ageMs keeps the window correct.
+    const ageMs = Date.now() - data.dataCreatedAt
+    const rawTimeStart = c.req.query('time_start')
+    const rawTimeEnd = c.req.query('time_end')
+    const shiftedTimeStart = rawTimeStart
+      ? new Date(Date.parse(rawTimeStart) - ageMs).toISOString()
+      : null
+    const shiftedTimeEnd = rawTimeEnd
+      ? new Date(Date.parse(rawTimeEnd) - ageMs).toISOString()
+      : null
     const filtered = filterEntries(data.entries, {
       node: c.req.query('node'),
       source: c.req.query('source'),
       service: c.req.query('service'),
       q: c.req.query('q'),
       hideHeartbeat: c.req.query('hide_heartbeat') === 'true',
-      timeStart: c.req.query('time_start'),
-      timeEnd: c.req.query('time_end'),
+      timeStart: shiftedTimeStart,
+      timeEnd: shiftedTimeEnd,
     })
     const page = paginateEntries(filtered, {
       before: c.req.query('before'),
