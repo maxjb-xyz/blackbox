@@ -18,29 +18,23 @@ import { SessionProvider } from './session'
 
 const demoMode = isDemoModeEnabled(import.meta.env.VITE_DEMO_MODE)
 
-function ShellRoutes() {
-  return (
-    <Route path="/" element={<Shell />}>
-      <Route index element={<Navigate to="/incidents" replace />} />
-      <Route path="incidents" element={<IncidentsPage />} />
-      <Route path="timeline" element={<TimelinePage />} />
-      <Route path="nodes" element={<NodesPage />} />
-      <Route path="webhooks" element={<WebhooksPage />} />
-      <Route path="account" element={<AccountPage />} />
-      <Route path="admin" element={<AdminPage />} />
-      <Route path="diagnostics" element={<DiagnosticsPage />} />
-      <Route path="*" element={<Navigate to="/incidents" replace />} />
-    </Route>
-  )
-}
-
 function DemoRoutes() {
   return (
     <Routes>
       <Route path="/setup" element={<Navigate to="/incidents" replace />} />
       <Route path="/login" element={<Navigate to="/incidents" replace />} />
       <Route path="/register" element={<Navigate to="/incidents" replace />} />
-      <ShellRoutes />
+      <Route path="/" element={<Shell />}>
+        <Route index element={<Navigate to="/incidents" replace />} />
+        <Route path="incidents" element={<IncidentsPage />} />
+        <Route path="timeline" element={<TimelinePage />} />
+        <Route path="nodes" element={<NodesPage />} />
+        <Route path="webhooks" element={<WebhooksPage />} />
+        <Route path="account" element={<AccountPage />} />
+        <Route path="admin" element={<AdminPage />} />
+        <Route path="diagnostics" element={<DiagnosticsPage />} />
+        <Route path="*" element={<Navigate to="/incidents" replace />} />
+      </Route>
     </Routes>
   )
 }
@@ -152,7 +146,17 @@ function StandardRoutes() {
       <Route path="/setup" element={<Navigate to="/" replace />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
-      <ShellRoutes />
+      <Route path="/" element={<Shell />}>
+        <Route index element={<Navigate to="/incidents" replace />} />
+        <Route path="incidents" element={<IncidentsPage />} />
+        <Route path="timeline" element={<TimelinePage />} />
+        <Route path="nodes" element={<NodesPage />} />
+        <Route path="webhooks" element={<WebhooksPage />} />
+        <Route path="account" element={<AccountPage />} />
+        <Route path="admin" element={<AdminPage />} />
+        <Route path="diagnostics" element={<DiagnosticsPage />} />
+        <Route path="*" element={<Navigate to="/incidents" replace />} />
+      </Route>
     </Routes>
   )
 }
