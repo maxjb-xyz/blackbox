@@ -42,12 +42,8 @@ app.on(['POST', 'PUT', 'PATCH', 'DELETE'], '/api/*', c => c.json({ error: 'Disab
 app.all('/api/*', c => c.json({ error: 'Not found' }, 404))
 
 app.get('*', async c => {
-  const assetResponse = await c.env.ASSETS.fetch(c.req.raw)
-  if (assetResponse.status !== 404) return assetResponse
-
-  const url = new URL(c.req.url)
-  url.pathname = '/index.html'
-  return c.env.ASSETS.fetch(new Request(url.toString(), c.req.raw))
+  if (!c.env.ASSETS) return c.text('Demo assets not built. Run the deploy workflow first.', 503)
+  return c.env.ASSETS.fetch(c.req.raw)
 })
 
 export default app
