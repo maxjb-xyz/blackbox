@@ -56,6 +56,11 @@ const config: Config = {
         }
       ],
       copyright: `Copyright ${new Date().getFullYear()} Blackbox`
+    },
+    colorMode: {
+      defaultMode: 'dark',
+      disableSwitch: false,
+      respectPrefersColorScheme: false
     }
   } satisfies Preset.ThemeConfig
 };

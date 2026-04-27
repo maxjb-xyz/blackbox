@@ -10,18 +10,22 @@
 .eyebrow {
   display: inline-block;
   margin-bottom: 1rem;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(248, 113, 113, 0.38);
+  background: rgba(88, 8, 8, 0.4);
   padding: 0.35rem 0.65rem;
   font-size: 0.8rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  color: #ffe1e1;
 }
 
 .title {
   margin: 0;
   font-size: clamp(2.5rem, 5vw, 4.5rem);
   line-height: 1;
+  color: #fffdfd;
+  text-shadow: 0 0 24px rgba(159, 18, 18, 0.28);
 }
 
 .subtitle {
@@ -29,7 +33,7 @@
   max-width: 42rem;
   font-size: 1.15rem;
   line-height: 1.7;
-  color: rgba(247, 251, 255, 0.84);
+  color: rgba(255, 241, 241, 0.92);
 }
 
 .actions {
@@ -40,8 +44,9 @@
 }
 
 .secondaryButton {
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  color: #f7fbff;
+  border: 1px solid rgba(248, 113, 113, 0.46);
+  color: #fff4f4;
+  background: rgba(38, 10, 10, 0.5);
 }
 
 .section {
@@ -55,20 +60,57 @@
 }
 
 .card {
-  border: 1px solid rgba(106, 166, 255, 0.18);
-  background: linear-gradient(180deg, rgba(16, 27, 40, 0.96), rgba(8, 17, 27, 0.96));
+  border: 1px solid rgba(185, 28, 28, 0.18);
+  background: linear-gradient(180deg, rgba(20, 9, 9, 0.98), rgba(10, 10, 10, 0.98));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
   padding: 1.25rem;
 }
 
 .cardTitle {
   margin: 0 0 0.75rem;
   font-size: 1.05rem;
+  color: #fff5f5;
 }
 
 .cardBody {
   margin: 0;
-  color: #c7d4e6;
+  color: #f1dfdf;
   line-height: 1.6;
+}
+
+html[data-theme='light'] .eyebrow {
+  border-color: rgba(153, 27, 27, 0.22);
+  background: rgba(185, 28, 28, 0.06);
+  color: #7f1010;
+}
+
+html[data-theme='light'] .title {
+  color: #170b0b;
+  text-shadow: none;
+}
+
+html[data-theme='light'] .subtitle {
+  color: rgba(36, 19, 19, 0.86);
+}
+
+html[data-theme='light'] .secondaryButton {
+  border-color: rgba(153, 27, 27, 0.28);
+  color: #7f1010;
+  background: rgba(255, 255, 255, 0.74);
+}
+
+html[data-theme='light'] .card {
+  border-color: rgba(153, 27, 27, 0.16);
+  background: linear-gradient(180deg, #fffefe, #f8eded);
+  box-shadow: 0 18px 40px rgba(20, 9, 9, 0.06);
+}
+
+html[data-theme='light'] .cardTitle {
+  color: #170b0b;
+}
+
+html[data-theme='light'] .cardBody {
+  color: #412626;
 }
 
 @media (max-width: 640px) {

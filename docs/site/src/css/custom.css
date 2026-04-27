@@ -1,39 +1,111 @@
 :root {
-  --ifm-color-primary: #6aa6ff;
-  --ifm-color-primary-dark: #4d92ff;
-  --ifm-color-primary-darker: #3f88ff;
-  --ifm-color-primary-darkest: #1268ff;
-  --ifm-color-primary-light: #87b8ff;
-  --ifm-color-primary-lighter: #95c2ff;
-  --ifm-color-primary-lightest: #bfdcff;
-  --ifm-background-color: #08111b;
-  --ifm-background-surface-color: #101b28;
-  --ifm-font-color-base: #e6edf7;
-  --ifm-heading-color: #f7fbff;
-  --ifm-navbar-background-color: rgba(8, 17, 27, 0.92);
-  --ifm-footer-background-color: #050b12;
+  --ifm-color-primary: #b91c1c;
+  --ifm-color-primary-dark: #991b1b;
+  --ifm-color-primary-darker: #8b1717;
+  --ifm-color-primary-darkest: #651111;
+  --ifm-color-primary-light: #dc2626;
+  --ifm-color-primary-lighter: #ef4444;
+  --ifm-color-primary-lightest: #f87171;
+  --ifm-background-color: #f7f4f3;
+  --ifm-background-surface-color: #ffffff;
+  --ifm-font-color-base: #171212;
+  --ifm-heading-color: #100808;
+  --ifm-navbar-background-color: rgba(255, 251, 251, 0.96);
+  --ifm-footer-background-color: #160c0c;
+  --ifm-navbar-link-color: #241313;
+  --ifm-link-color: #991b1b;
+  --ifm-link-hover-color: #7f1010;
+  --ifm-code-background: rgba(185, 28, 28, 0.08);
   --ifm-code-font-size: 95%;
   --ifm-font-family-base: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   --ifm-font-family-monospace: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
-  --docusaurus-highlighted-code-line-bg: rgba(106, 166, 255, 0.14);
+  --ifm-button-border-radius: 0;
+  --ifm-card-border-radius: 0;
+  --ifm-global-radius: 0;
+  --docusaurus-highlighted-code-line-bg: rgba(185, 28, 28, 0.12);
 }
 
-html[data-theme='light'] {
-  --ifm-background-color: #f5f8fc;
-  --ifm-background-surface-color: #ffffff;
-  --ifm-font-color-base: #1b2635;
-  --ifm-heading-color: #111827;
-  --ifm-navbar-background-color: rgba(255, 255, 255, 0.96);
-  --ifm-footer-background-color: #0b1220;
+html[data-theme='dark'] {
+  --ifm-color-primary: #ef4444;
+  --ifm-color-primary-dark: #dc2626;
+  --ifm-color-primary-darker: #c81e1e;
+  --ifm-color-primary-darkest: #991b1b;
+  --ifm-color-primary-light: #f87171;
+  --ifm-color-primary-lighter: #f98b8b;
+  --ifm-color-primary-lightest: #fcb4b4;
+  --ifm-background-color: #060606;
+  --ifm-background-surface-color: #101010;
+  --ifm-font-color-base: #f4efef;
+  --ifm-heading-color: #ffffff;
+  --ifm-navbar-background-color: rgba(8, 8, 8, 0.96);
+  --ifm-footer-background-color: #080808;
+  --ifm-navbar-link-color: #f5eded;
+  --ifm-link-color: #f87171;
+  --ifm-link-hover-color: #fca5a5;
+  --ifm-code-background: rgba(248, 113, 113, 0.14);
+  --docusaurus-highlighted-code-line-bg: rgba(248, 113, 113, 0.16);
 }
 
 .hero--primary {
   background:
-    radial-gradient(circle at top, rgba(106, 166, 255, 0.28), transparent 46%),
-    linear-gradient(180deg, #0c1724 0%, #08111b 100%);
-  color: #f7fbff;
+    radial-gradient(circle at 50% 0%, rgba(185, 28, 28, 0.34), transparent 38%),
+    linear-gradient(180deg, #120606 0%, #080808 56%, #040404 100%);
+  color: #fff7f7;
+}
+
+.navbar {
+  border-bottom: 1px solid rgba(185, 28, 28, 0.22);
+  backdrop-filter: blur(14px);
+}
+
+.footer {
+  border-top: 1px solid rgba(185, 28, 28, 0.2);
 }
 
 .footer--dark {
-  color: #c7d4e6;
+  color: #f1dddd;
+}
+
+.button.button--primary {
+  border-color: #ef4444;
+  background: linear-gradient(180deg, #dc2626 0%, #991b1b 100%);
+  color: #fff8f8;
+}
+
+.button.button--primary:hover {
+  border-color: #f87171;
+  background: linear-gradient(180deg, #ef4444 0%, #b91c1c 100%);
+  color: #ffffff;
+}
+
+.button.button--outline {
+  border-color: rgba(185, 28, 28, 0.42);
+}
+
+.button.button--outline:hover {
+  background: rgba(185, 28, 28, 0.12);
+  border-color: rgba(239, 68, 68, 0.8);
+}
+
+.theme-doc-markdown code,
+.hero code {
+  border: 1px solid rgba(185, 28, 28, 0.22);
+  color: inherit;
+}
+
+html[data-theme='dark'] .theme-doc-markdown code,
+html[data-theme='dark'] .hero code {
+  border-color: rgba(248, 113, 113, 0.2);
+}
+
+html[data-theme='dark'] .pagination-nav__link,
+html[data-theme='dark'] .card,
+html[data-theme='dark'] .table-of-contents,
+html[data-theme='dark'] .menu {
+  border-color: rgba(239, 68, 68, 0.12);
+}
+
+html[data-theme='dark'] .navbar__toggle,
+html[data-theme='dark'] .clean-btn {
+  color: #fff5f5;
 }
