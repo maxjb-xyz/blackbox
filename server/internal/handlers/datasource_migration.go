@@ -123,32 +123,35 @@ func MigrateDataSources(db *gorm.DB, envWebhookSecret string) error {
 			}
 		}
 
-		// 3. Webhook instances
-		for _, wType := range []string{"webhook_uptime_kuma", "webhook_watchtower"} {
-			var existing models.DataSourceInstance
-			err := tx.Where("type = ? AND scope = ?", wType, models.ScopeServer).First(&existing).Error
-			if err == nil {
-				continue
-			}
-			if !errors.Is(err, gorm.ErrRecordNotFound) {
-				return fmt.Errorf("check %s instance: %w", wType, err)
-			}
-			wCfg, err := json.Marshal(map[string]any{"secret": envWebhookSecret})
-			if err != nil {
-				log.Printf("MigrateDataSources: failed to marshal webhook config for %s: %v", wType, err)
-				return fmt.Errorf("marshal webhook config for %s: %w", wType, err)
-			}
-			name := "Uptime Kuma"
-			if wType == "webhook_watchtower" {
-				name = "Watchtower"
-			}
-			inst := models.DataSourceInstance{
-				ID: ulid.Make().String(), Type: wType, Scope: "server",
-				Name: name, Config: string(wCfg), Enabled: true,
-				CreatedAt: now, UpdatedAt: now,
-			}
-			if err := tx.Create(&inst).Error; err != nil {
-				return fmt.Errorf("insert %s instance: %w", wType, err)
+		// 3. Webhook instances — only seed if WEBHOOK_SECRET was set; otherwise the user
+		// creates them explicitly via the catalog so they don't appear unconfigured.
+		if envWebhookSecret != "" {
+			for _, wType := range []string{"webhook_uptime_kuma", "webhook_watchtower"} {
+				var existing models.DataSourceInstance
+				err := tx.Where("type = ? AND scope = ?", wType, models.ScopeServer).First(&existing).Error
+				if err == nil {
+					continue
+				}
+				if !errors.Is(err, gorm.ErrRecordNotFound) {
+					return fmt.Errorf("check %s instance: %w", wType, err)
+				}
+				wCfg, err := json.Marshal(map[string]any{"secret": envWebhookSecret})
+				if err != nil {
+					log.Printf("MigrateDataSources: failed to marshal webhook config for %s: %v", wType, err)
+					return fmt.Errorf("marshal webhook config for %s: %w", wType, err)
+				}
+				name := "Uptime Kuma"
+				if wType == "webhook_watchtower" {
+					name = "Watchtower"
+				}
+				inst := models.DataSourceInstance{
+					ID: ulid.Make().String(), Type: wType, Scope: "server",
+					Name: name, Config: string(wCfg), Enabled: true,
+					CreatedAt: now, UpdatedAt: now,
+				}
+				if err := tx.Create(&inst).Error; err != nil {
+					return fmt.Errorf("insert %s instance: %w", wType, err)
+				}
 			}
 		}
 
