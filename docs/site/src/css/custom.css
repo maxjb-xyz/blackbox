@@ -53,6 +53,13 @@ html[data-theme='dark'] {
   color: #fff7f7;
 }
 
+html[data-theme='light'] .hero--primary {
+  background:
+    radial-gradient(circle at 50% 0%, rgba(185, 28, 28, 0.12), transparent 42%),
+    linear-gradient(180deg, #fff7f7 0%, #f8eded 58%, #f4e4e4 100%);
+  color: #170b0b;
+}
+
 .navbar {
   border-bottom: 1px solid rgba(185, 28, 28, 0.22);
   backdrop-filter: blur(14px);
@@ -85,6 +92,21 @@ html[data-theme='dark'] {
 .button.button--outline:hover {
   background: rgba(185, 28, 28, 0.12);
   border-color: rgba(239, 68, 68, 0.8);
+}
+
+html[data-theme='light'] .button.button--primary {
+  color: #fff8f8;
+}
+
+html[data-theme='light'] .button.button--outline {
+  border-color: rgba(153, 27, 27, 0.32);
+  color: #7f1010;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+html[data-theme='light'] .button.button--outline:hover {
+  background: rgba(185, 28, 28, 0.08);
+  border-color: rgba(153, 27, 27, 0.5);
 }
 
 .theme-doc-markdown code,

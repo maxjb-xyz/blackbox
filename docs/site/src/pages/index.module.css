@@ -99,6 +99,10 @@ html[data-theme='light'] .secondaryButton {
   background: rgba(255, 255, 255, 0.74);
 }
 
+html[data-theme='light'] .secondaryButton:hover {
+  color: #5f0c0c;
+}
+
 html[data-theme='light'] .card {
   border-color: rgba(153, 27, 27, 0.16);
   background: linear-gradient(180deg, #fffefe, #f8eded);
