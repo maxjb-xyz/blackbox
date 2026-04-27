@@ -176,6 +176,8 @@ func CreateSource(db *gorm.DB) http.HandlerFunc {
 			q := db.Model(&models.DataSourceInstance{}).Where("type = ?", req.Type)
 			if scope == "agent" {
 				q = q.Where("node_id = ?", *req.NodeID)
+			} else {
+				q = q.Where("scope = ?", models.ScopeServer)
 			}
 			if err := q.Count(&count).Error; err != nil {
 				writeError(w, http.StatusInternalServerError, "failed to check existing sources")

@@ -98,6 +98,12 @@ func UpdateSystemdSettings(db *gorm.DB) http.HandlerFunc {
 			return
 		}
 
+		var nodeExists int64
+		if err := db.Model(&models.Node{}).Where("name = ?", nodeName).Count(&nodeExists).Error; err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to verify node")
+			return
+		}
+
 		err = db.Transaction(func(tx *gorm.DB) error {
 			var existing models.DataSourceInstance
 			findErr := tx.Where("type = ? AND node_id = ?", "systemd", nodeName).First(&existing).Error
@@ -110,6 +116,9 @@ func UpdateSystemdSettings(db *gorm.DB) http.HandlerFunc {
 			if !errors.Is(findErr, gorm.ErrRecordNotFound) {
 				return findErr
 			}
+			if nodeExists == 0 {
+				return gorm.ErrRecordNotFound
+			}
 			inst := models.DataSourceInstance{
 				ID: ulid.Make().String(), Type: "systemd", Scope: "agent",
 				NodeID: &nodeName, Name: "Systemd", Config: string(cfgJSON),
@@ -118,6 +127,10 @@ func UpdateSystemdSettings(db *gorm.DB) http.HandlerFunc {
 			return tx.Create(&inst).Error
 		})
 		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				writeError(w, http.StatusNotFound, "node not found")
+				return
+			}
 			writeError(w, http.StatusInternalServerError, "failed to save systemd settings")
 			return
 		}
