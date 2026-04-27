@@ -93,8 +93,8 @@ func main() {
 	if err := handlers.MigrateDataSources(database, webhookSecret); err != nil {
 		log.Fatalf("data source migration failed: %v", err)
 	}
-	handlers.PrimeWebhookSecretCache(database, "webhook_uptime_kuma")
-	handlers.PrimeWebhookSecretCache(database, "webhook_watchtower")
+	handlers.PrimeWebhookSecretCache(database, "webhook_uptime_kuma", webhookSecret)
+	handlers.PrimeWebhookSecretCache(database, "webhook_watchtower", webhookSecret)
 	mcpMgr := bbmcp.NewMCPManager(database)
 	defer func() {
 		if err := mcpMgr.Shutdown(context.Background()); err != nil {
@@ -282,14 +282,14 @@ func main() {
 	r.With(
 		middleware.RateLimit(time.Minute, 60),
 		middleware.WebhookAuthFunc(func() string {
-			return handlers.GetCachedWebhookSecret(database, "webhook_uptime_kuma")
+			return handlers.GetCachedWebhookSecret(database, "webhook_uptime_kuma", webhookSecret)
 		}),
 	).Post("/api/webhooks/uptime", handlers.WebhookUptime(database, eventHub, incidentCh, managerCtx.Done()))
 
 	r.With(
 		middleware.RateLimit(time.Minute, 60),
 		middleware.WebhookAuthFunc(func() string {
-			return handlers.GetCachedWebhookSecret(database, "webhook_watchtower")
+			return handlers.GetCachedWebhookSecret(database, "webhook_watchtower", webhookSecret)
 		}),
 	).Post("/api/webhooks/watchtower", handlers.WebhookWatchtower(database, eventHub, incidentCh, managerCtx.Done()))
 

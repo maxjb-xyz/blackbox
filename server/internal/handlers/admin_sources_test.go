@@ -173,7 +173,7 @@ func TestUpdateSource_DisablingWebhookClearsRuntimeSecretCache(t *testing.T) {
 		Name: "UK", Config: `{"secret":"keep-me"}`, Enabled: true,
 	}
 	require.NoError(t, db.Create(&inst).Error)
-	require.Equal(t, "keep-me", handlers.PrimeWebhookSecretCache(db, "webhook_uptime_kuma"))
+	require.Equal(t, "keep-me", handlers.PrimeWebhookSecretCache(db, "webhook_uptime_kuma", ""))
 
 	r := chi.NewRouter()
 	r.Put("/api/admin/sources/{id}", handlers.UpdateSource(db))
@@ -183,7 +183,7 @@ func TestUpdateSource_DisablingWebhookClearsRuntimeSecretCache(t *testing.T) {
 	r.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 
-	require.Equal(t, "", handlers.GetCachedWebhookSecret(db, "webhook_uptime_kuma"))
+	require.Equal(t, "", handlers.GetCachedWebhookSecret(db, "webhook_uptime_kuma", ""))
 }
 
 func TestDeleteSource(t *testing.T) {
@@ -211,7 +211,7 @@ func TestDeleteSource_ClearsRuntimeWebhookSecretCache(t *testing.T) {
 		ID: "wh1", Type: "webhook_uptime_kuma", Scope: "server",
 		Name: "UK", Config: `{"secret":"db-secret"}`, Enabled: true,
 	}).Error)
-	require.Equal(t, "db-secret", handlers.PrimeWebhookSecretCache(db, "webhook_uptime_kuma"))
+	require.Equal(t, "db-secret", handlers.PrimeWebhookSecretCache(db, "webhook_uptime_kuma", ""))
 
 	r := chi.NewRouter()
 	r.Delete("/api/admin/sources/{id}", handlers.DeleteSource(db))
@@ -220,7 +220,7 @@ func TestDeleteSource_ClearsRuntimeWebhookSecretCache(t *testing.T) {
 	r.ServeHTTP(w, req)
 	require.Equal(t, http.StatusNoContent, w.Code)
 
-	require.Equal(t, "", handlers.GetCachedWebhookSecret(db, "webhook_uptime_kuma"))
+	require.Equal(t, "", handlers.GetCachedWebhookSecret(db, "webhook_uptime_kuma", ""))
 }
 
 func TestCreateSource_SingletonEnforced(t *testing.T) {
