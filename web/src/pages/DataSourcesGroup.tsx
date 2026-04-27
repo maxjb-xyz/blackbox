@@ -51,6 +51,7 @@ export default function DataSourcesGroup() {
   const [addingExclude, setAddingExclude] = useState(false)
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null)
   const [confirmingExcludeId, setConfirmingExcludeId] = useState<string | null>(null)
+  const [deletingExcludeId, setDeletingExcludeId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -81,6 +82,11 @@ export default function DataSourcesGroup() {
   useEffect(() => {
     if (selection?.kind === 'docker') void loadExcludes()
   }, [selection?.kind, loadExcludes])
+
+  useEffect(() => {
+    setConfirmingDeleteId(null)
+    setConfirmingExcludeId(null)
+  }, [selection])
 
   const selectedInstance: DataSourceInstance | null = (() => {
     if (!sources) return null
@@ -273,11 +279,13 @@ export default function DataSourcesGroup() {
               }
             }}
             onRemoveExclude={async (id) => {
+              if (deletingExcludeId) return
               if (confirmingExcludeId !== id) {
                 setConfirmingExcludeId(id)
                 return
               }
               setExcludeError(null)
+              setDeletingExcludeId(id)
               try {
                 await deleteExcludedTarget(id)
                 setConfirmingExcludeId(null)
@@ -285,9 +293,12 @@ export default function DataSourcesGroup() {
               } catch (error) {
                 console.error('Failed to delete excluded target', error)
                 setExcludeError(error instanceof Error ? error.message : 'Failed to delete')
+              } finally {
+                setDeletingExcludeId(null)
               }
             }}
             confirmingExcludeId={confirmingExcludeId}
+            deletingExcludeId={deletingExcludeId}
             onCancelRemoveExclude={() => setConfirmingExcludeId(null)}
           />
         )}
@@ -388,12 +399,15 @@ function SourceConfigPanel({ instance, saving, saveError, deleteConfirming, onSa
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0, 0, 0, 0)', whiteSpace: 'nowrap', border: 0 }} aria-live="polite">
+            {deleteConfirming ? 'Click again to confirm removing this source' : 'Remove source'}
+          </span>
           {deleteConfirming && (
             <button type="button" onClick={onCancelDelete} style={{ fontSize: 10, color: 'var(--muted)', border: '1px solid var(--border)', padding: '3px 8px', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit' }}>
               Cancel
             </button>
           )}
-          <button type="button" onClick={onDelete} style={{ fontSize: 10, color: deleteConfirming ? 'var(--danger)' : 'var(--muted)', border: '1px solid var(--border)', padding: '3px 8px', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit' }}>
+          <button type="button" aria-label={deleteConfirming ? 'Click again to confirm removing this source' : 'Remove source'} onClick={onDelete} style={{ fontSize: 10, color: deleteConfirming ? 'var(--danger)' : 'var(--muted)', border: '1px solid var(--border)', padding: '3px 8px', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit' }}>
             {deleteConfirming ? 'Click again to confirm' : 'Remove'}
           </button>
         </div>
@@ -507,13 +521,14 @@ function ConfigRow({ label, children }: { label: string; children: React.ReactNo
   )
 }
 
-function DockerPanel({ excludes, excludeInput, excludeType, excludeError, addingExclude, confirmingExcludeId, onExcludeInputChange, onExcludeTypeChange, onAddExclude, onRemoveExclude, onCancelRemoveExclude }: {
+function DockerPanel({ excludes, excludeInput, excludeType, excludeError, addingExclude, confirmingExcludeId, deletingExcludeId, onExcludeInputChange, onExcludeTypeChange, onAddExclude, onRemoveExclude, onCancelRemoveExclude }: {
   excludes: ExcludedTarget[]
   excludeInput: string
   excludeType: 'container' | 'stack'
   excludeError: string | null
   addingExclude: boolean
   confirmingExcludeId: string | null
+  deletingExcludeId: string | null
   onExcludeInputChange: (v: string) => void
   onExcludeTypeChange: (v: 'container' | 'stack') => void
   onAddExclude: () => void
@@ -555,6 +570,7 @@ function DockerPanel({ excludes, excludeInput, excludeType, excludeError, adding
                 <button
                   type="button"
                   onClick={onCancelRemoveExclude}
+                  disabled={deletingExcludeId === ex.id}
                   style={{ fontSize: 10, color: 'var(--muted)', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
                 >
                   Cancel
@@ -563,9 +579,10 @@ function DockerPanel({ excludes, excludeInput, excludeType, excludeError, adding
               <button
                 type="button"
                 onClick={() => onRemoveExclude(ex.id)}
+                disabled={deletingExcludeId === ex.id}
                 style={{ fontSize: 10, color: confirmingExcludeId === ex.id ? 'var(--danger)' : 'var(--muted)', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
               >
-                {confirmingExcludeId === ex.id ? 'Click again to confirm' : 'Remove'}
+                {deletingExcludeId === ex.id ? 'Removing...' : confirmingExcludeId === ex.id ? 'Click again to confirm' : 'Remove'}
               </button>
             </div>
           </div>

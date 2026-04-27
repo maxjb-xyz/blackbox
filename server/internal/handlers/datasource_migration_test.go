@@ -141,7 +141,7 @@ func TestMigrateDataSources_DoesNotRecreateDeletedFileWatcherAfterMarker(t *test
 
 	var inst models.DataSourceInstance
 	require.NoError(t, db.Where("type = ? AND node_id = ?", "filewatcher", "homelab-01").First(&inst).Error)
-	require.NoError(t, db.Delete(&models.DataSourceInstance{}, "id = ?", inst.ID).Error)
+	require.NoError(t, db.Delete(&inst).Error)
 
 	require.NoError(t, handlers.MigrateDataSources(db, ""))
 

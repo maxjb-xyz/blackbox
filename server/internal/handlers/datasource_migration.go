@@ -89,12 +89,15 @@ func MigrateDataSources(db *gorm.DB, envWebhookSecret string) error {
 		for _, node := range nodes {
 			nodeName := node.Name
 			if !nodeHasCapability(node.Capabilities, "filewatcher") {
+				// Treat empty capability payloads as legacy nodes that still need filewatcher seeding.
 				if strings.TrimSpace(node.Capabilities) == "" || node.Capabilities == "[]" {
 					capsJSON, err := json.Marshal([]string{"filewatcher"})
 					if err != nil {
 						return fmt.Errorf("marshal capabilities for %s: %w", nodeName, err)
 					}
+					log.Printf("MigrateDataSources: seeding legacy capabilities for node %s from %q to %s", nodeName, node.Capabilities, string(capsJSON))
 					if err := tx.Model(&models.Node{}).Where("name = ?", nodeName).Update("capabilities", string(capsJSON)).Error; err != nil {
+						log.Printf("MigrateDataSources: failed to update capabilities for node %s: %v", nodeName, err)
 						return fmt.Errorf("update capabilities for %s: %w", nodeName, err)
 					}
 				} else {

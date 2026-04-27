@@ -497,6 +497,17 @@ func TestCreateSource_SystemdRequiresUnitsArray(t *testing.T) {
 	require.Contains(t, w.Body.String(), "units must be an array of strings")
 }
 
+func TestCreateSource_SystemdRequiresAtLeastOneUnit(t *testing.T) {
+	db := newSourcesTestDB(t)
+	raw := []byte(`{"type":"systemd","scope":"agent","node_id":"homelab-01","name":"systemd","config":{"units":[]},"enabled":true}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/sources", bytes.NewReader(raw))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	handlers.CreateSource(db)(w, req)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Contains(t, w.Body.String(), "units must contain at least one unit")
+}
+
 func TestCreateSource_WebhookRequiresStringSecret(t *testing.T) {
 	db := newSourcesTestDB(t)
 	raw := []byte(`{"type":"webhook_uptime_kuma","scope":"server","name":"UK","config":{"secret":123},"enabled":true}`)
@@ -505,7 +516,18 @@ func TestCreateSource_WebhookRequiresStringSecret(t *testing.T) {
 	w := httptest.NewRecorder()
 	handlers.CreateSource(db)(w, req)
 	require.Equal(t, http.StatusBadRequest, w.Code)
-	require.Contains(t, w.Body.String(), "secret must be a string")
+	require.Contains(t, w.Body.String(), "secret must be a non-empty string")
+}
+
+func TestCreateSource_WebhookRequiresNonEmptySecret(t *testing.T) {
+	db := newSourcesTestDB(t)
+	raw := []byte(`{"type":"webhook_uptime_kuma","scope":"server","name":"UK","config":{"secret":"   "},"enabled":true}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/sources", bytes.NewReader(raw))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	handlers.CreateSource(db)(w, req)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Contains(t, w.Body.String(), "secret must be a non-empty string")
 }
 
 func TestUpdateSource_FileWatcherEmptyPartialConfigPreservesRedactSecrets(t *testing.T) {

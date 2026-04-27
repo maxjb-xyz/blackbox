@@ -207,7 +207,7 @@ func loadFileWatcherConfig(ctx context.Context, c *client.Client, caps []string)
 func refreshFileWatcherSettings(ctx context.Context, c *client.Client, caps []string, settings *files.Settings) {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
-	refreshFileWatcherSettingsLoop(ctx, c, caps, settings, ticker.C, true)
+	refreshFileWatcherSettingsLoop(ctx, c, caps, settings, ticker.C, false)
 }
 
 func refreshFileWatcherSettingsWithTicker(ctx context.Context, c *client.Client, caps []string, settings *files.Settings, ticks <-chan time.Time) {

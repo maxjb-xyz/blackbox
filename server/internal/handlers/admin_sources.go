@@ -435,6 +435,9 @@ func validateSourceConfig(sourceType string, config map[string]any) error {
 		if !ok {
 			return errors.New("units must be an array of strings")
 		}
+		if len(units) == 0 {
+			return errors.New("units must contain at least one unit")
+		}
 		for _, unit := range units {
 			unitStr, ok := unit.(string)
 			if !ok || strings.TrimSpace(unitStr) == "" {
@@ -447,8 +450,9 @@ func validateSourceConfig(sourceType string, config map[string]any) error {
 		if !ok {
 			return errors.New("secret is required")
 		}
-		if _, ok := rawValue.(string); !ok {
-			return errors.New("secret must be a string")
+		secret, ok := rawValue.(string)
+		if !ok || strings.TrimSpace(secret) == "" {
+			return errors.New("secret must be a non-empty string")
 		}
 	}
 	if sourceType == "filewatcher" {

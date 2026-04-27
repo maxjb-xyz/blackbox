@@ -143,10 +143,9 @@ func (c *Client) SendBatch(ctx context.Context, entries []types.Entry) (accepted
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
 		msg := strings.TrimSpace(string(bodyBytes))
-		// 4xx responses are permanent — retrying will not help.
-		if resp.StatusCode >= 400 && resp.StatusCode < 500 &&
-			resp.StatusCode != http.StatusRequestTimeout &&
-			resp.StatusCode != http.StatusTooManyRequests {
+		// Only validation/auth/conflict style 4xx responses are permanent.
+		switch resp.StatusCode {
+		case 400, 401, 403, 404, 409:
 			return nil, nil, &PermanentError{StatusCode: resp.StatusCode, Message: msg}
 		}
 		return nil, nil, fmt.Errorf("server returned %d: %s", resp.StatusCode, msg)
@@ -191,9 +190,8 @@ func (c *Client) GetAgentConfig(ctx context.Context, capabilities []string) (Age
 		if readErr != nil {
 			msg = fmt.Sprintf("(could not read body: %v)", readErr)
 		}
-		if resp.StatusCode >= 400 && resp.StatusCode < 500 &&
-			resp.StatusCode != http.StatusRequestTimeout &&
-			resp.StatusCode != http.StatusTooManyRequests {
+		switch resp.StatusCode {
+		case 400, 401, 403, 404, 409:
 			return AgentConfig{}, &PermanentError{StatusCode: resp.StatusCode, Message: msg}
 		}
 		return AgentConfig{}, fmt.Errorf("server returned %d: %s", resp.StatusCode, msg)
@@ -217,7 +215,7 @@ func sanitizeCapabilities(capabilities []string) ([]string, error) {
 			return nil, fmt.Errorf("invalid capability %q: capability values must not contain commas", capability)
 		}
 		for _, r := range capability {
-			if r < 0x20 || r == 0x7f || unicode.IsControl(r) {
+			if unicode.IsControl(r) {
 				return nil, fmt.Errorf("invalid capability %q: capability values must not contain control characters", capability)
 			}
 		}

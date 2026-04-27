@@ -104,7 +104,7 @@ func TestSendBatch_FourXXReturnsPermanentError(t *testing.T) {
 }
 
 func TestSendBatch_TimeoutAndRateLimitRemainRetryable(t *testing.T) {
-	for _, status := range []int{http.StatusRequestTimeout, http.StatusTooManyRequests} {
+	for _, status := range []int{http.StatusRequestTimeout, http.StatusTooManyRequests, http.StatusGone} {
 		status := status
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -222,7 +222,7 @@ func TestGetAgentConfig_FourXXReturnsPermanentError(t *testing.T) {
 }
 
 func TestGetAgentConfig_TimeoutAndRateLimitRemainRetryable(t *testing.T) {
-	for _, status := range []int{http.StatusRequestTimeout, http.StatusTooManyRequests} {
+	for _, status := range []int{http.StatusRequestTimeout, http.StatusTooManyRequests, http.StatusGone} {
 		status := status
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

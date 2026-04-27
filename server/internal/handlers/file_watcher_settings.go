@@ -142,7 +142,10 @@ func getSystemdUnitsForNode(db *gorm.DB, nodeName string) ([]string, error) {
 		return nil, err
 	}
 
-	// This is intentional: an enabled source with malformed inst.Config fails closed to no units, whereas getFileWatcherSettingsForNode keeps collection enabled and falls back to the global redact setting.
+	// Intentional asymmetry:
+	// Systemd fail-closes, so an enabled source with malformed inst.Config yields no units.
+	// getFileWatcherSettingsForNode fail-opens, keeping collection enabled and falling back
+	// to the global redact setting when filewatcher config cannot be parsed.
 	var existingSource models.DataSourceInstance
 	if err := db.Where("type = ? AND node_id = ?", "systemd", nodeName).Order("created_at ASC").First(&existingSource).Error; err == nil {
 		return []string{}, nil
