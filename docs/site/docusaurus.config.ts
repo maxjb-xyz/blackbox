@@ -7,6 +7,7 @@ const config: Config = {
   url: 'https://docs.blackboxd.dev',
   baseUrl: '/',
   onBrokenLinks: 'throw',
+  favicon: 'img/favicon.png',
   organizationName: 'blackboxd',
   projectName: 'blackbox',
   markdown: {
@@ -33,6 +34,10 @@ const config: Config = {
   themeConfig: {
     navbar: {
       title: 'Blackbox Docs',
+      logo: {
+        alt: 'Blackbox logo',
+        src: 'img/blackbox-logo.png'
+      },
       items: [
         {
           type: 'docSidebar',
