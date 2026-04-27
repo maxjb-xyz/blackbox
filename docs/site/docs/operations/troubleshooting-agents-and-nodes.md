@@ -4,6 +4,9 @@ title: Troubleshooting Agents And Nodes
 
 # Troubleshooting Agents And Nodes
 
+For the normal node lifecycle and heartbeat model, see
+[Nodes And Heartbeats](./nodes-and-heartbeats.md).
+
 ## Node Does Not Register
 
 Check:

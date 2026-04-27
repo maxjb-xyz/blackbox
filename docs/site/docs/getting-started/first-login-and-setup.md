@@ -40,6 +40,14 @@ Use **Admin > Integrations** to:
 - Set a base URL for incident links in notifications.
 - Review webhook delivery logs after you connect external systems.
 
+### Access
+
+Use **Admin > Access** to:
+
+- Configure OIDC providers.
+- Create and revoke invite codes.
+- Review how local auth, SSO, and onboarding fit together.
+
 ## Good First Validation Checks
 
 - Change a container state and confirm an event appears in the timeline.
@@ -47,3 +55,9 @@ Use **Admin > Integrations** to:
   file event appears.
 - If systemd is enabled, confirm the node exposes that capability and has units
   configured.
+- Confirm the registered node shows a recent heartbeat and expected metadata.
+
+Related docs:
+
+- [Authentication](../operations/authentication.md)
+- [Nodes And Heartbeats](../operations/nodes-and-heartbeats.md)

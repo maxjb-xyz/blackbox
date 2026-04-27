@@ -25,3 +25,5 @@ Invited users register with a URL like:
 - Invite behavior also interacts with OIDC provider policy when SSO is enabled.
 - This gives operators a middle ground between fully open registration and
   purely manual account creation.
+- Local authentication and session behavior are documented in
+  [Authentication](./authentication.md).

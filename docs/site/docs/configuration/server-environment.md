@@ -27,5 +27,6 @@ At minimum, most deployments need:
 
 ## Related Docs
 
+- [Authentication](../operations/authentication.md)
 - [Agent Tokens](./agent-tokens.md)
 - [Reverse Proxy And TLS](../deployment/reverse-proxy-and-tls.md)

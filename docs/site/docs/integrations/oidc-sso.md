@@ -30,3 +30,6 @@ https://<your-domain>/api/auth/oidc/<provider-id>/callback
 ## Result
 
 Configured providers appear on the login page alongside local authentication.
+
+For the broader auth model, including local sign-in and session behavior, see
+[Authentication](../operations/authentication.md).

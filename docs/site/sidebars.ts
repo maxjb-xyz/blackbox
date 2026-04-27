@@ -65,7 +65,6 @@ const sidebars: SidebarsConfig = {
       items: [
         'integrations/notifications',
         'integrations/oidc-sso',
-        'integrations/user-registration-and-invites',
         'integrations/mcp-server',
         'integrations/api-reference'
       ]
@@ -74,6 +73,9 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Operations',
       items: [
+        'operations/authentication',
+        'operations/user-registration-and-invites',
+        'operations/nodes-and-heartbeats',
         'operations/admin-observability',
         'operations/troubleshooting-file-watcher',
         'operations/troubleshooting-systemd',
