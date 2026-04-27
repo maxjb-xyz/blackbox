@@ -2,9 +2,6 @@ name = "blackbox-demo"
 main = "./src/index.ts"
 compatibility_date = "2026-04-27"
 
-[[routes]]
-pattern = "demo.blackboxd.dev/*"
-zone_name = "blackboxd.dev"
 
 [assets]
 directory = "./public"
