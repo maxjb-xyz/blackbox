@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"blackbox/server/internal/auth"
 	"blackbox/server/internal/middleware"
 	"blackbox/server/internal/models"
 	"gorm.io/gorm"
@@ -56,12 +55,6 @@ func setFileWatcherRedactSecrets(db *gorm.DB, enabled bool) error {
 
 func UpdateFileWatcherSettings(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		claims, ok := auth.ClaimsFromContext(r.Context())
-		if !ok || !claims.IsAdmin {
-			writeError(w, http.StatusForbidden, "admin required")
-			return
-		}
-
 		var req struct {
 			RedactSecrets *bool `json:"redact_secrets"`
 		}

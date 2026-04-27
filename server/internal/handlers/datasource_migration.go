@@ -172,6 +172,7 @@ func MigrateDataSources(db *gorm.DB, envWebhookSecret string) error {
 func nodeHasCapability(rawCapabilities, capability string) bool {
 	var capabilities []string
 	if err := json.Unmarshal([]byte(rawCapabilities), &capabilities); err != nil {
+		log.Printf("nodeHasCapability: malformed capabilities JSON %q: %v", rawCapabilities, err)
 		return false
 	}
 	return slices.Contains(capabilities, capability)

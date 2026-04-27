@@ -403,6 +403,14 @@ func mergeSourceConfig(sourceType, existingConfig string, incoming map[string]an
 		return "", errors.New("config must be a JSON object")
 	}
 
+	// Defensive copy: this function mutates its working map (back-filling missing
+	// keys and restoring blank sensitive fields). Copy incoming so callers are unaffected.
+	work := make(map[string]any, len(incoming))
+	for k, v := range incoming {
+		work[k] = v
+	}
+	incoming = work
+
 	existing := map[string]any{}
 	if existingConfig != "" {
 		if err := json.Unmarshal([]byte(existingConfig), &existing); err != nil {
