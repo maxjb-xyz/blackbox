@@ -1,0 +1,45 @@
+name: Deploy Demo
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-demo
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            demo/worker/package-lock.json
+
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Build frontend in demo mode
+        working-directory: web
+        run: npm run build:demo
+
+      - name: Copy frontend build into worker assets
+        run: |
+          rm -rf demo/worker/public
+          cp -R web/dist demo/worker/public
+
+      - name: Install worker dependencies
+        working-directory: demo/worker
+        run: npm ci
+
+      - name: Deploy worker
+        working-directory: demo/worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy

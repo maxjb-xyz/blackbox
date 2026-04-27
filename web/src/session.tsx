@@ -11,17 +11,29 @@ interface SessionContextValue {
 
 const SessionContext = createContext<SessionContextValue | null>(null)
 
-export function SessionProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<SessionUser | null>(null)
-  const [loading, setLoading] = useState(true)
+export function SessionProvider({
+  children,
+  fixedUser,
+}: {
+  children: ReactNode
+  fixedUser?: SessionUser | null
+}) {
+  const isFixedSession = fixedUser !== undefined
+  const [user, setUser] = useState<SessionUser | null>(fixedUser ?? null)
+  const [loading, setLoading] = useState(!isFixedSession)
   const requestSeqRef = useRef(0)
 
   const updateSession = useCallback((nextUser: SessionUser | null) => {
-    setUser(nextUser)
+    setUser(isFixedSession ? (fixedUser ?? null) : nextUser)
     setLoading(false)
-  }, [])
+  }, [fixedUser, isFixedSession])
 
   const refreshSession = useCallback(async () => {
+    if (isFixedSession) {
+      setUser(fixedUser ?? null)
+      setLoading(false)
+      return fixedUser ?? null
+    }
     const requestID = requestSeqRef.current + 1
     requestSeqRef.current = requestID
     try {
@@ -36,16 +48,26 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setLoading(false)
       return null
     }
-  }, [])
+  }, [fixedUser, isFixedSession])
 
   const logout = useCallback(async () => {
+    if (isFixedSession) {
+      setUser(fixedUser ?? null)
+      setLoading(false)
+      return
+    }
     await logoutRequest()
     updateSession(null)
-  }, [updateSession])
+  }, [fixedUser, isFixedSession, updateSession])
 
   useEffect(() => {
+    if (isFixedSession) {
+      setUser(fixedUser ?? null)
+      setLoading(false)
+      return
+    }
     void refreshSession()
-  }, [refreshSession])
+  }, [fixedUser, isFixedSession, refreshSession])
 
   const value = useMemo(
     () => ({

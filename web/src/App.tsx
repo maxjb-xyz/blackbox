@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { checkSetupStatus } from './api/client'
+import DemoIntroModal from './components/DemoIntroModal'
 import Shell from './components/Shell'
+import { DEMO_SESSION_USER, isDemoModeEnabled } from './demoMode'
 import AccountPage from './pages/AccountPage'
 import AdminPage from './pages/AdminPage'
 import DiagnosticsPage from './pages/DiagnosticsPage'
@@ -14,7 +16,36 @@ import TimelinePage from './pages/TimelinePage'
 import WebhooksPage from './pages/WebhooksPage'
 import { SessionProvider } from './session'
 
-function AppRoutes() {
+const demoMode = isDemoModeEnabled(import.meta.env.VITE_DEMO_MODE)
+
+function ShellRoutes() {
+  return (
+    <Route path="/" element={<Shell />}>
+      <Route index element={<Navigate to="/incidents" replace />} />
+      <Route path="incidents" element={<IncidentsPage />} />
+      <Route path="timeline" element={<TimelinePage />} />
+      <Route path="nodes" element={<NodesPage />} />
+      <Route path="webhooks" element={<WebhooksPage />} />
+      <Route path="account" element={<AccountPage />} />
+      <Route path="admin" element={<AdminPage />} />
+      <Route path="diagnostics" element={<DiagnosticsPage />} />
+      <Route path="*" element={<Navigate to="/incidents" replace />} />
+    </Route>
+  )
+}
+
+function DemoRoutes() {
+  return (
+    <Routes>
+      <Route path="/setup" element={<Navigate to="/incidents" replace />} />
+      <Route path="/login" element={<Navigate to="/incidents" replace />} />
+      <Route path="/register" element={<Navigate to="/incidents" replace />} />
+      <ShellRoutes />
+    </Routes>
+  )
+}
+
+function StandardRoutes() {
   const [bootstrapped, setBootstrapped] = useState<boolean | null>(null)
   const [checkingSetup, setCheckingSetup] = useState(true)
   const [setupError, setSetupError] = useState<string | null>(null)
@@ -121,25 +152,20 @@ function AppRoutes() {
       <Route path="/setup" element={<Navigate to="/" replace />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
-      <Route path="/" element={<Shell />}>
-        <Route index element={<Navigate to="/incidents" replace />} />
-        <Route path="incidents" element={<IncidentsPage />} />
-        <Route path="timeline" element={<TimelinePage />} />
-        <Route path="nodes" element={<NodesPage />} />
-        <Route path="webhooks" element={<WebhooksPage />} />
-        <Route path="account" element={<AccountPage />} />
-        <Route path="admin" element={<AdminPage />} />
-        <Route path="diagnostics" element={<DiagnosticsPage />} />
-        <Route path="*" element={<Navigate to="/incidents" replace />} />
-      </Route>
+      <ShellRoutes />
     </Routes>
   )
+}
+
+function AppRoutes() {
+  return demoMode ? <DemoRoutes /> : <StandardRoutes />
 }
 
 export default function App() {
   return (
     <BrowserRouter>
-      <SessionProvider>
+      <SessionProvider fixedUser={demoMode ? DEMO_SESSION_USER : undefined}>
+        {demoMode && <DemoIntroModal />}
         <AppRoutes />
       </SessionProvider>
     </BrowserRouter>

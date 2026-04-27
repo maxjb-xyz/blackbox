@@ -50,6 +50,7 @@ docker-compose.override.yml
 
 # Web build output (root Vite output — git-ignored)
 web/dist/
+demo/worker/public/
 !server/web/
 !server/web/dist/
 server/web/dist/*
@@ -58,3 +59,6 @@ server/web/dist/*
 # --- Superpowers (if used) ---
 .superpowers/
 docs/superpowers/
+
+# Demo worker
+demo/worker/node_modules/
