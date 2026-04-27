@@ -1,0 +1,27 @@
+services:
+  blackbox-server:
+    image: ghcr.io/maxjb-xyz/blackbox-server:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - blackbox-data:/data
+    environment:
+      JWT_SECRET: "change-me"
+      AGENT_TOKENS: "homelab=change-me"
+      WEBHOOK_SECRET: "change-me"
+
+  blackbox-agent:
+    image: ghcr.io/maxjb-xyz/blackbox-agent:latest
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /etc:/watch/etc:ro
+    environment:
+      SERVER_URL: "http://blackbox-server:8080"
+      AGENT_TOKEN: "change-me"
+      NODE_NAME: "homelab"
+      WATCH_PATHS: "/watch/etc"
+
+volumes:
+  blackbox-data:

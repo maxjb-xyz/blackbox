@@ -1,0 +1,1219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Blackbox — The Forensic Journal for your Infrastructure</title>
+  <meta name="description" content="Know what changed, when it changed, and why things broke — across every node in your homelab." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --black:        #080808;
+      --black-2:      #111111;
+      --black-3:      #1a1a1a;
+      --border:       #2a2a2a;
+      --border-light: #333333;
+      --white:        #f5f5f3;
+      --white-dim:    #999999;
+      --white-dimmer: #555555;
+      --red:          oklch(52% 0.22 25);
+      --red-bright:   oklch(58% 0.22 25);
+      --red-dim:      oklch(38% 0.15 25);
+      --mono: 'IBM Plex Mono', monospace;
+      --sans: 'IBM Plex Sans', sans-serif;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--black);
+      color: var(--white);
+      font-family: var(--sans);
+      font-size: 16px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    /* ── NAV ── */
+    nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 48px;
+      height: 60px;
+      background: rgba(8,8,8,0.92);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+    }
+
+    .nav-logo-box {
+      width: 28px;
+      height: 28px;
+      background: var(--red);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .nav-logo-box svg { width: 16px; height: 16px; }
+
+    .nav-logo-text {
+      font-family: var(--mono);
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--white);
+      letter-spacing: 0.04em;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 32px;
+      list-style: none;
+    }
+
+    .nav-links a {
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--white-dim);
+      text-decoration: none;
+      letter-spacing: 0.04em;
+      transition: color 0.15s;
+    }
+
+    .nav-links a:hover { color: var(--white); }
+
+    .nav-links .nav-cta {
+      color: var(--white);
+      border: 1px solid var(--border-light);
+      padding: 6px 16px;
+      transition: border-color 0.15s, background 0.15s;
+    }
+
+    .nav-links .nav-cta:hover {
+      border-color: var(--red);
+      background: rgba(200,30,30,0.06);
+      color: var(--white);
+    }
+
+    /* ── BETA BANNER ── */
+    .beta-banner {
+      background: var(--black-3);
+      border-bottom: 1px solid var(--border);
+      padding: 8px 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 60px;
+    }
+
+    .beta-pill {
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      background: var(--red-dim);
+      color: var(--red-bright);
+      padding: 2px 8px;
+      border: 1px solid var(--red-dim);
+    }
+
+    .beta-text {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--white-dimmer);
+    }
+
+    .beta-text a { color: var(--white-dim); text-decoration: none; }
+    .beta-text a:hover { color: var(--white); }
+
+    #beta-version { color: var(--white-dim); }
+
+    /* ── HERO ── */
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 120px 48px 80px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-grid-lines {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.04;
+    }
+
+    .hero-grid-lines::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(var(--white) 1px, transparent 1px),
+        linear-gradient(90deg, var(--white) 1px, transparent 1px);
+      background-size: 80px 80px;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      color: var(--red-bright);
+      text-transform: uppercase;
+      margin-bottom: 28px;
+    }
+
+    .hero-badge::before {
+      content: '';
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      background: var(--red);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.3; }
+    }
+
+    .hero-title {
+      font-family: var(--mono);
+      font-size: clamp(36px, 6vw, 76px);
+      font-weight: 600;
+      line-height: 1.05;
+      letter-spacing: -0.02em;
+      max-width: 900px;
+      margin-bottom: 28px;
+      text-wrap: pretty;
+    }
+
+    .hero-title em {
+      font-style: normal;
+      color: var(--red-bright);
+    }
+
+    .hero-subtitle {
+      font-size: clamp(16px, 2vw, 20px);
+      color: var(--white-dim);
+      max-width: 580px;
+      margin-bottom: 48px;
+      font-weight: 300;
+      line-height: 1.7;
+    }
+
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: 0.04em;
+      text-decoration: none;
+      padding: 12px 24px;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+
+    .btn-primary {
+      background: var(--red);
+      color: var(--white);
+      border: 1px solid var(--red);
+    }
+
+    .btn-primary:hover {
+      background: var(--red-bright);
+      border-color: var(--red-bright);
+    }
+
+    .btn-secondary {
+      background: transparent;
+      color: var(--white-dim);
+      border: 1px solid var(--border-light);
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--white-dimmer);
+      color: var(--white);
+    }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--white-dim);
+      border: 1px solid var(--border-light);
+    }
+
+    .btn-ghost:hover { border-color: var(--white-dimmer); color: var(--white); }
+
+    .hero-meta {
+      margin-top: 64px;
+      display: flex;
+      align-items: center;
+      gap: 40px;
+      flex-wrap: wrap;
+    }
+
+    .hero-stat { display: flex; flex-direction: column; gap: 2px; }
+
+    .hero-stat-value {
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--white);
+    }
+
+    .hero-stat-label {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--white-dimmer);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .hero-stat-divider {
+      width: 1px;
+      height: 32px;
+      background: var(--border);
+    }
+
+    /* ── TIMELINE PREVIEW ── */
+    .preview-section { padding: 0 48px 100px; }
+
+    .preview-label {
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--white-dimmer);
+      margin-bottom: 20px;
+    }
+
+    .timeline-mockup {
+      background: var(--black-2);
+      border: 1px solid var(--border);
+      overflow: hidden;
+      max-width: 900px;
+    }
+
+    .tm-bar {
+      background: var(--black-3);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .tm-dot { width: 8px; height: 8px; background: var(--border-light); }
+    .tm-dot.red    { background: var(--red); }
+    .tm-dot.yellow { background: #a37a00; }
+    .tm-dot.green  { background: #2a5a2a; }
+
+    .tm-title {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--white-dimmer);
+      letter-spacing: 0.06em;
+      margin-left: 4px;
+    }
+
+    .tm-body { padding: 0; }
+
+    .tm-row {
+      display: grid;
+      grid-template-columns: 140px 1fr auto;
+      align-items: center;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      gap: 16px;
+      animation: rowfade 0.4s ease both;
+    }
+
+    @keyframes rowfade {
+      from { opacity: 0; transform: translateX(-8px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+
+    .tm-row:last-child { border-bottom: none; }
+    .tm-row:nth-child(1) { animation-delay: 0.1s; }
+    .tm-row:nth-child(2) { animation-delay: 0.2s; }
+    .tm-row:nth-child(3) { animation-delay: 0.3s; }
+    .tm-row:nth-child(4) { animation-delay: 0.4s; }
+    .tm-row:nth-child(5) { animation-delay: 0.5s; }
+
+    .tm-time {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--white-dimmer);
+      letter-spacing: 0.04em;
+    }
+
+    .tm-event {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .tm-source-tag {
+      font-family: var(--mono);
+      font-size: 10px;
+      padding: 2px 7px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    .tag-docker { background: rgba(0,100,180,0.18);  color: #5aadff; border: 1px solid rgba(90,173,255,0.2); }
+    .tag-file   { background: rgba(160,120,0,0.18);  color: #d4a843; border: 1px solid rgba(212,168,67,0.2); }
+    .tag-kuma   { background: rgba(180,0,180,0.15);  color: #d479d4; border: 1px solid rgba(212,121,212,0.2); }
+    .tag-system { background: rgba(0,150,100,0.15);  color: #42c89a; border: 1px solid rgba(66,200,154,0.2); }
+
+    .tm-desc {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--white);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .tm-desc .dim { color: var(--white-dimmer); }
+    .tm-desc .hi  { color: var(--red-bright); }
+    .tm-desc .yi  { color: #d4a843; }
+
+    .tm-badge {
+      font-family: var(--mono);
+      font-size: 10px;
+      padding: 2px 8px;
+      border: 1px solid var(--border);
+      color: var(--white-dimmer);
+      white-space: nowrap;
+    }
+
+    /* ── FEATURES ── */
+    .section {
+      padding: 100px 48px;
+      border-top: 1px solid var(--border);
+    }
+
+    .section-label {
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--red-bright);
+      margin-bottom: 16px;
+    }
+
+    .section-title {
+      font-family: var(--mono);
+      font-size: clamp(24px, 3.5vw, 44px);
+      font-weight: 600;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      max-width: 700px;
+      margin-bottom: 16px;
+    }
+
+    .section-subtitle {
+      font-size: 16px;
+      color: var(--white-dim);
+      max-width: 520px;
+      margin-bottom: 64px;
+      font-weight: 300;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 0;
+      border: 1px solid var(--border);
+    }
+
+    .feature {
+      padding: 36px;
+      border-right: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      transition: background 0.2s;
+    }
+
+    .feature:hover { background: var(--black-2); }
+
+    .feature-icon {
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 20px;
+      color: var(--red-bright);
+    }
+
+    .feature-icon svg { width: 22px; height: 22px; }
+
+    .feature-title {
+      font-family: var(--mono);
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 10px;
+      letter-spacing: 0.02em;
+    }
+
+    .feature-desc {
+      font-size: 14px;
+      color: var(--white-dim);
+      line-height: 1.65;
+    }
+
+    /* ── ARCHITECTURE ── */
+    .arch-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 80px;
+      align-items: start;
+    }
+
+    .arch-steps { display: flex; flex-direction: column; gap: 0; }
+
+    .arch-step {
+      display: grid;
+      grid-template-columns: 52px 1fr;
+      gap: 20px;
+      padding: 28px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .arch-step:first-child { padding-top: 0; }
+    .arch-step:last-child  { border-bottom: none; }
+
+    .arch-step-num {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--red-bright);
+      letter-spacing: 0.06em;
+      padding-top: 3px;
+    }
+
+    .arch-step-title {
+      font-family: var(--mono);
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .arch-step-desc {
+      font-size: 14px;
+      color: var(--white-dim);
+      line-height: 1.65;
+    }
+
+    .arch-diagram {
+      background: var(--black-2);
+      border: 1px solid var(--border);
+      padding: 32px;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--white-dim);
+      line-height: 1.8;
+      white-space: pre;
+      overflow-x: auto;
+    }
+
+    .arch-diagram .dim { color: var(--white-dimmer); }
+    .arch-diagram .red { color: var(--red-bright); }
+    .arch-diagram .wh  { color: var(--white); }
+
+    /* ── QUICK START ── */
+    .quickstart-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 48px;
+      align-items: start;
+    }
+
+    .code-block {
+      background: var(--black-2);
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+
+    .code-header {
+      background: var(--black-3);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .code-header-title {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--white-dimmer);
+      letter-spacing: 0.06em;
+    }
+
+    .copy-btn {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--white-dimmer);
+      background: none;
+      border: 1px solid var(--border);
+      padding: 2px 8px;
+      cursor: pointer;
+      letter-spacing: 0.06em;
+      transition: color 0.15s, border-color 0.15s;
+    }
+
+    .copy-btn:hover { color: var(--white); border-color: var(--border-light); }
+    .copy-btn.copied { color: #42c89a; border-color: rgba(66,200,154,0.3); }
+
+    .code-body {
+      padding: 24px;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.8;
+      overflow-x: auto;
+    }
+
+    /* YAML syntax highlight classes */
+    .code-body .key { color: #5aadff; }
+    .code-body .val { color: #d4a843; }
+    .code-body .str { color: #42c89a; }
+    .code-body .cmt { color: var(--white-dimmer); }
+    .code-body .cmd { color: var(--white); }
+
+    #compose-loading {
+      color: var(--white-dimmer);
+      font-size: 12px;
+      font-family: var(--mono);
+      padding: 24px;
+    }
+
+    .qs-steps { display: flex; flex-direction: column; gap: 24px; }
+
+    .qs-step { display: flex; gap: 16px; }
+
+    .qs-step-num {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--red-bright);
+      min-width: 24px;
+      padding-top: 2px;
+    }
+
+    .qs-step-title {
+      font-family: var(--mono);
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .qs-step-desc {
+      font-size: 14px;
+      color: var(--white-dim);
+    }
+
+    /* ── CTA STRIP ── */
+    .cta-strip {
+      border-top: 1px solid var(--border);
+      padding: 100px 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 48px;
+      flex-wrap: wrap;
+    }
+
+    .cta-title {
+      font-family: var(--mono);
+      font-size: clamp(22px, 3vw, 38px);
+      font-weight: 600;
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+      margin-bottom: 12px;
+    }
+
+    .cta-desc { font-size: 15px; color: var(--white-dim); }
+    .cta-actions { display: flex; gap: 16px; flex-wrap: wrap; }
+
+    /* ── FOOTER ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 36px 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 24px;
+    }
+
+    .footer-left { display: flex; align-items: center; gap: 16px; }
+
+    .footer-logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-decoration: none;
+    }
+
+    .footer-logo-box { width: 20px; height: 20px; background: var(--red); }
+
+    .footer-logo-text {
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--white);
+    }
+
+    .footer-copy {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--white-dimmer);
+    }
+
+    .footer-right { display: flex; gap: 28px; }
+
+    .footer-right a {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--white-dimmer);
+      text-decoration: none;
+      letter-spacing: 0.04em;
+      transition: color 0.15s;
+    }
+
+    .footer-right a:hover { color: var(--white-dim); }
+
+    /* ── RESPONSIVE ── */
+    @media (max-width: 900px) {
+      nav { padding: 0 24px; }
+      .hero, .section, .cta-strip, footer { padding-left: 24px; padding-right: 24px; }
+      .preview-section { padding-left: 24px; padding-right: 24px; }
+      .beta-banner { padding-left: 24px; padding-right: 24px; }
+      .arch-grid, .quickstart-grid { grid-template-columns: 1fr; gap: 40px; }
+      .features-grid { grid-template-columns: 1fr; }
+      .cta-strip { flex-direction: column; align-items: flex-start; }
+      .nav-links .nav-cta { display: none; }
+      .tm-row { grid-template-columns: 120px 1fr; }
+      .tm-badge { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- NAV -->
+  <nav>
+    <a class="nav-logo" href="#">
+      <div class="nav-logo-box">
+        <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="2" y="2" width="5" height="5" fill="white"/>
+          <rect x="9" y="2" width="5" height="5" fill="white" opacity="0.5"/>
+          <rect x="2" y="9" width="5" height="5" fill="white" opacity="0.5"/>
+          <rect x="9" y="9" width="5" height="5" fill="white"/>
+        </svg>
+      </div>
+      <span class="nav-logo-text">blackbox</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="https://github.com/maxjb-xyz/blackbox">GitHub</a></li>
+      <li><a href="#quickstart">Quick Start</a></li>
+      <li><a href="https://docs.blackboxd.dev" class="nav-cta">Docs →</a></li>
+    </ul>
+  </nav>
+
+  <!-- BETA BANNER -->
+  <div class="beta-banner">
+    <span class="beta-pill">Beta</span>
+    <span class="beta-text">
+      <span id="beta-version">…</span> — actively developed.
+      <a href="https://github.com/maxjb-xyz/blackbox/issues">Report issues</a> and help shape v1.0.
+    </span>
+  </div>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="hero-grid-lines" aria-hidden="true"></div>
+
+    <div class="hero-badge">
+      <span>Open Source · Self-Hosted · Go + React</span>
+    </div>
+
+    <h1 class="hero-title">
+      The forensic journal<br/>
+      for your <em>infrastructure.</em>
+    </h1>
+
+    <p class="hero-subtitle">
+      Know what changed, when it changed, and why things broke — across every node in your homelab.
+    </p>
+
+    <div class="hero-actions">
+      <a href="https://docs.blackboxd.dev" class="btn btn-primary">
+        Read the Docs →
+      </a>
+      <a href="https://demo.blackboxd.dev" class="btn btn-secondary">
+        View Demo →
+      </a>
+      <a href="https://github.com/maxjb-xyz/blackbox" class="btn btn-ghost">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1C3.69 1 1 3.69 1 7c0 2.65 1.72 4.9 4.1 5.69.3.05.41-.13.41-.29v-1.02c-1.67.36-2.02-.8-2.02-.8-.27-.69-.67-.87-.67-.87-.55-.37.04-.37.04-.37.61.04.93.63.93.63.54.93 1.42.66 1.76.5.06-.39.21-.66.38-.81-1.34-.15-2.74-.67-2.74-2.98 0-.66.24-1.2.62-1.62-.06-.15-.27-.77.06-1.6 0 0 .5-.16 1.65.62A5.75 5.75 0 0 1 7 4.84c.51 0 1.02.07 1.5.2 1.15-.78 1.65-.62 1.65-.62.33.83.12 1.45.06 1.6.39.42.62.96.62 1.62 0 2.32-1.41 2.83-2.75 2.98.22.19.41.56.41 1.13v1.67c0 .16.11.34.41.29A6.006 6.006 0 0 0 13 7c0-3.31-2.69-6-6-6Z" fill="currentColor"/></svg>
+        GitHub →
+      </a>
+    </div>
+
+    <div class="hero-meta">
+      <div class="hero-stat">
+        <span class="hero-stat-value">Go</span>
+        <span class="hero-stat-label">Language</span>
+      </div>
+      <div class="hero-stat-divider"></div>
+      <div class="hero-stat">
+        <span class="hero-stat-value">SQLite</span>
+        <span class="hero-stat-label">Storage</span>
+      </div>
+      <div class="hero-stat-divider"></div>
+      <div class="hero-stat">
+        <span class="hero-stat-value">Docker-ready</span>
+        <span class="hero-stat-label">Deployment</span>
+      </div>
+      <div class="hero-stat-divider"></div>
+      <div class="hero-stat">
+        <span class="hero-stat-value">AGPL-3.0</span>
+        <span class="hero-stat-label">License</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- TIMELINE PREVIEW -->
+  <div class="preview-section">
+    <div class="preview-label">// live event timeline</div>
+    <div class="timeline-mockup">
+      <div class="tm-bar">
+        <div class="tm-dot red"></div>
+        <div class="tm-dot yellow"></div>
+        <div class="tm-dot green"></div>
+        <span class="tm-title">Timeline — my-homelab · node-01</span>
+      </div>
+      <div class="tm-body">
+        <div class="tm-row">
+          <span class="tm-time">02:17:04 UTC</span>
+          <div class="tm-event">
+            <span class="tm-source-tag tag-docker">docker</span>
+            <span class="tm-desc">nginx-proxy <span class="dim">container</span> died <span class="dim">exit(1)</span></span>
+          </div>
+          <span class="tm-badge">node-01</span>
+        </div>
+        <div class="tm-row">
+          <span class="tm-time">02:16:26 UTC</span>
+          <div class="tm-event">
+            <span class="tm-source-tag tag-file">file</span>
+            <span class="tm-desc"><span class="dim">/etc/nginx/</span>nginx.conf <span class="dim">modified — diff available</span></span>
+          </div>
+          <span class="tm-badge">node-01</span>
+        </div>
+        <div class="tm-row">
+          <span class="tm-time">02:14:11 UTC</span>
+          <div class="tm-event">
+            <span class="tm-source-tag tag-docker">docker</span>
+            <span class="tm-desc">watchtower <span class="dim">pulled</span> nginx:1.27.4 <span class="dim">→ 1.27.5</span></span>
+          </div>
+          <span class="tm-badge">node-01</span>
+        </div>
+        <div class="tm-row">
+          <span class="tm-time">01:58:03 UTC</span>
+          <div class="tm-event">
+            <span class="tm-source-tag tag-system">systemd</span>
+            <span class="tm-desc">fail2ban.service <span class="dim">restarted</span></span>
+          </div>
+          <span class="tm-badge">node-02</span>
+        </div>
+        <div class="tm-row">
+          <span class="tm-time">01:44:55 UTC</span>
+          <div class="tm-event">
+            <span class="tm-source-tag tag-kuma">uptime</span>
+            <span class="tm-desc">plex.home <span class="dim">monitor</span> up <span class="dim">— recovered after 4m12s</span></span>
+          </div>
+          <span class="tm-badge">resolved</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FEATURES -->
+  <section class="section">
+    <div class="section-label">// capabilities</div>
+    <h2 class="section-title">Everything your homelab needs to stay forensic.</h2>
+    <p class="section-subtitle">One timeline. Every node. Zero guesswork when something breaks at 2 AM.</p>
+
+    <div class="features-grid">
+
+      <div class="feature">
+        <div class="feature-icon">
+          <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="2" y="2" width="18" height="18" rx="0"/>
+            <path d="M6 8h10M6 12h7"/>
+          </svg>
+        </div>
+        <div class="feature-title">Docker Event Watching</div>
+        <p class="feature-desc">Captures container start, stop, die, create, pull, and delete events per node. Collapses restart loops and attaches crash log tails directly to incidents.</p>
+      </div>
+
+      <div class="feature">
+        <div class="feature-icon">
+          <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M4 4h14v14H4zM4 9h14M9 9v9"/>
+          </svg>
+        </div>
+        <div class="feature-title">Config File Diffs</div>
+        <p class="feature-desc">inotify-based watching of .yaml, .yml, .conf, .env, .json, and .ini files. Every change includes a text diff with optional secret redaction.</p>
+      </div>
+
+      <div class="feature">
+        <div class="feature-icon">
+          <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="11" cy="11" r="3"/>
+            <path d="M11 2v3M11 17v3M2 11h3M17 11h3"/>
+          </svg>
+        </div>
+        <div class="feature-title">Incident Correlation</div>
+        <p class="feature-desc">Weighted cause scoring ranks likely culprits from recent Docker, file, systemd, and update events using event-specific lookback windows and log-snippet bonuses.</p>
+      </div>
+
+      <div class="feature">
+        <div class="feature-icon">
+          <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M3 17L8 10l4 5 3-4 4 6H3z"/>
+          </svg>
+        </div>
+        <div class="feature-title">Multi-Node Support</div>
+        <p class="feature-desc">Deploy an agent on every machine. All agents report to a single central server. Per-node metadata, live pulse indicators, and cross-node event correlation.</p>
+      </div>
+
+      <div class="feature">
+        <div class="feature-icon">
+          <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M11 3v5l3 3M4.22 4.22l1.42 1.42M17.78 4.22l-1.42 1.42M3 11h2M17 11h2M4.22 17.78l1.42-1.42M17.78 17.78l-1.42-1.42M11 17v2"/>
+          </svg>
+        </div>
+        <div class="feature-title">Systemd Journal Monitoring</div>
+        <p class="feature-desc">Watches configured systemd units for started, stopped, restart, and failed events. OOM kill detection with journal log snippets for fast triage.</p>
+      </div>
+
+      <div class="feature">
+        <div class="feature-icon">
+          <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M11 2C6.03 2 2 6.03 2 11s4.03 9 9 9 9-4.03 9-9-4.03-9-9-9zm0 4v5l3 3"/>
+          </svg>
+        </div>
+        <div class="feature-title">Optional AI Analysis</div>
+        <p class="feature-desc">Connect Ollama locally for AI-derived incident summaries and enhanced correlation. AI mode also runs on suspected incidents with full crash log context.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section class="section">
+    <div class="section-label">// architecture</div>
+    <h2 class="section-title">Two components. Total clarity.</h2>
+    <p class="section-subtitle">A lightweight agent runs on each node; a central server correlates everything and hosts the UI.</p>
+
+    <div class="arch-grid">
+      <div class="arch-steps">
+        <div class="arch-step">
+          <span class="arch-step-num">01 /</span>
+          <div>
+            <div class="arch-step-title">Agents watch your nodes</div>
+            <p class="arch-step-desc">Deploy <code style="font-family:var(--mono);font-size:12px;color:var(--red-bright)">blackbox-agent</code> on any machine. It monitors Docker, config files, and systemd — then pushes events to the server over a persistent queue that survives network outages.</p>
+          </div>
+        </div>
+        <div class="arch-step">
+          <span class="arch-step-num">02 /</span>
+          <div>
+            <div class="arch-step-title">Server correlates events</div>
+            <p class="arch-step-desc">The central server ingests agent events, Uptime Kuma monitors, and Watchtower updates. It runs the incident engine — grouping outages and scoring probable causes automatically.</p>
+          </div>
+        </div>
+        <div class="arch-step">
+          <span class="arch-step-num">03 /</span>
+          <div>
+            <div class="arch-step-title">You see the full picture</div>
+            <p class="arch-step-desc">A React timeline UI shows every event across every node — filterable by source, node, or text search. Incidents surface the event chain, scored candidates, and optional AI narrative.</p>
+          </div>
+        </div>
+        <div class="arch-step">
+          <span class="arch-step-num">04 /</span>
+          <div>
+            <div class="arch-step-title">Secure by default</div>
+            <p class="arch-step-desc">Non-root distroless containers. JWT + OIDC auth. Rate limiting. Argon2id password hashing. Read-only agent filesystem. No shell in the server image.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="arch-diagram" aria-label="Architecture diagram">
+<span class="wh">┌──────────────────────────────────────┐</span>
+<span class="wh">│         Blackbox Server              │</span>
+<span class="wh">│  ┌──────────┐  ┌──────┐  ┌────────┐  │</span>
+<span class="red">│  │ React UI │  │ API  │  │SQLite  │  │</span>
+<span class="wh">│  └──────────┘  └──────┘  └────────┘  │</span>
+<span class="wh">│        ▲           ▲          ▲      │</span>
+<span class="wh">└────────┼───────────┼──────────┼──────┘</span>
+<span class="dim">         │           │          │</span>
+<span class="dim">      Browser     Agents    Webhooks</span>
+<span class="dim">                    │</span>
+<span class="dim">       ┌────────────┼────────────┐</span>
+<span class="dim">       │            │            │</span>
+<span class="red">  ┌────┴────┐  ┌────┴────┐  ┌────┴────┐</span>
+<span class="red">  │ Agent   │  │ Agent   │  │ Agent   │</span>
+<span class="wh">  │ node-01 │  │ node-02 │  │ node-03 │</span>
+<span class="dim">  │ Docker  │  │ Docker  │  │  Files  │</span>
+<span class="dim">  │ systemd │  │ Files   │  │         │</span>
+<span class="red">  └─────────┘  └─────────┘  └─────────┘</span></div>
+    </div>
+  </section>
+
+  <!-- QUICK START -->
+  <section class="section" id="quickstart">
+    <div class="section-label">// quick start</div>
+    <h2 class="section-title">Up in minutes.</h2>
+    <p class="section-subtitle">A single <code style="font-family:var(--mono);font-size:14px;color:var(--white-dim)">docker compose up -d</code> is all it takes to get going.</p>
+
+    <div class="quickstart-grid">
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-header-title">docker-compose.yml</span>
+          <button class="copy-btn" id="copy-btn" onclick="copyCompose()">COPY</button>
+        </div>
+        <div class="code-body" id="compose-body">
+          <span id="compose-loading" style="color:var(--white-dimmer);font-family:var(--mono);font-size:12px;">loading…</span>
+        </div>
+      </div>
+
+      <div class="qs-steps">
+        <div class="qs-step">
+          <span class="qs-step-num">01 /</span>
+          <div>
+            <div class="qs-step-title">Create docker-compose.yml</div>
+            <p class="qs-step-desc">Copy the config and fill in your secrets. Generate strong tokens with <code style="font-family:var(--mono);font-size:12px;color:var(--red-bright)">openssl rand -hex 32</code>.</p>
+          </div>
+        </div>
+        <div class="qs-step">
+          <span class="qs-step-num">02 /</span>
+          <div>
+            <div class="qs-step-title">Run docker compose up -d</div>
+            <p class="qs-step-desc">Both containers start. The agent registers with the server and begins watching Docker events and file changes immediately.</p>
+          </div>
+        </div>
+        <div class="qs-step">
+          <span class="qs-step-num">03 /</span>
+          <div>
+            <div class="qs-step-title">Open :8080 and complete setup</div>
+            <p class="qs-step-desc">The bootstrap wizard walks you through creating your admin account. No manual database setup required — schema migrations run on startup.</p>
+          </div>
+        </div>
+        <div class="qs-step">
+          <span class="qs-step-num">04 /</span>
+          <div>
+            <div class="qs-step-title">Add more nodes or integrations</div>
+            <p class="qs-step-desc">Deploy more agents, connect Uptime Kuma webhooks, and optionally configure Ollama for AI analysis — all from the Admin panel.</p>
+          </div>
+        </div>
+
+        <div style="margin-top:8px;">
+          <a href="https://docs.blackboxd.dev" class="btn btn-primary">Full Documentation →</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <div class="cta-strip">
+    <div>
+      <h2 class="cta-title">Know what broke your lab<br/>before your coffee gets cold.</h2>
+      <p class="cta-desc">Open source. Self-hosted. Built for homelabbers.</p>
+    </div>
+    <div class="cta-actions">
+      <a href="https://demo.blackboxd.dev" class="btn btn-primary">View Demo →</a>
+      <a href="https://github.com/maxjb-xyz/blackbox" class="btn btn-secondary">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1C3.69 1 1 3.69 1 7c0 2.65 1.72 4.9 4.1 5.69.3.05.41-.13.41-.29v-1.02c-1.67.36-2.02-.8-2.02-.8-.27-.69-.67-.87-.67-.87-.55-.37.04-.37.04-.37.61.04.93.63.93.63.54.93 1.42.66 1.76.5.06-.39.21-.66.38-.81-1.34-.15-2.74-.67-2.74-2.98 0-.66.24-1.2.62-1.62-.06-.15-.27-.77.06-1.6 0 0 .5-.16 1.65.62A5.75 5.75 0 0 1 7 4.84c.51 0 1.02.07 1.5.2 1.15-.78 1.65-.62 1.65-.62.33.83.12 1.45.06 1.6.39.42.62.96.62 1.62 0 2.32-1.41 2.83-2.75 2.98.22.19.41.56.41 1.13v1.67c0 .16.11.34.41.29A6.006 6.006 0 0 0 13 7c0-3.31-2.69-6-6-6Z" fill="currentColor"/></svg>
+        GitHub →
+      </a>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <footer>
+    <div class="footer-left">
+      <a class="footer-logo" href="#">
+        <div class="footer-logo-box"></div>
+        <span class="footer-logo-text">blackbox</span>
+      </a>
+      <span class="footer-copy">AGPL-3.0 · Built for homelabbers</span>
+    </div>
+    <div class="footer-right">
+      <a href="https://docs.blackboxd.dev">Docs</a>
+      <a href="https://demo.blackboxd.dev">Demo</a>
+      <a href="https://github.com/maxjb-xyz/blackbox">GitHub</a>
+      <a href="https://github.com/maxjb-xyz/blackbox/releases">Releases</a>
+    </div>
+  </footer>
+
+  <script>
+    // ── Dynamic version from GitHub releases ──────────────────────────────────
+    (async () => {
+      const el = document.getElementById('beta-version');
+      try {
+        const res = await fetch(
+          'https://api.github.com/repos/maxjb-xyz/blackbox/releases/latest',
+          { headers: { Accept: 'application/vnd.github+json' } }
+        );
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        el.textContent = data.tag_name;
+      } catch {
+        el.textContent = 'latest';
+      }
+    })();
+
+    // ── YAML syntax highlighter ───────────────────────────────────────────────
+    let rawCompose = '';
+
+    function escHtml(s) {
+      return s
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+
+    function highlightYaml(yaml) {
+      return yaml.split('\n').map(line => {
+        const escaped = escHtml(line);
+
+        // Comment lines
+        if (/^\s*#/.test(line)) {
+          return `<span class="cmt">${escaped}</span>`;
+        }
+
+        // Key: value  — match "  key: value" patterns
+        return escaped.replace(
+          /^(\s*)([a-zA-Z_][\w-]*)(:)(\s*)(.*)$/,
+          (_, indent, key, colon, space, rest) => {
+            const coloredKey = `${indent}<span class="key">${key}</span>${colon}${space}`;
+            if (!rest) return coloredKey;
+
+            // Bare string values that look like image refs → green
+            if (/^ghcr\.io\/|^docker\.io\//.test(rest.replace(/['"]/g, ''))) {
+              return coloredKey + `<span class="str">${rest}</span>`;
+            }
+            // Quoted strings → yellow
+            if (/^["']/.test(rest)) {
+              return coloredKey + `<span class="val">${rest}</span>`;
+            }
+            // Plain values (unless-stopped, true, false, numbers) → yellow
+            if (/^[a-zA-Z0-9/_.-]+$/.test(rest)) {
+              return coloredKey + `<span class="val">${rest}</span>`;
+            }
+            return coloredKey + rest;
+          }
+        );
+      }).join('\n');
+    }
+
+    // ── Dynamic docker-compose from raw GitHub ────────────────────────────────
+    (async () => {
+      const body = document.getElementById('compose-body');
+      const RAW_URL =
+        'https://raw.githubusercontent.com/maxjb-xyz/blackbox/main/docker-compose.yml';
+
+      try {
+        const res = await fetch(RAW_URL);
+        if (!res.ok) throw new Error();
+        rawCompose = await res.text();
+        body.innerHTML = highlightYaml(rawCompose);
+      } catch {
+        // Fallback: show a static version if fetch fails
+        rawCompose = [
+          'services:',
+          '  blackbox-server:',
+          '    image: ghcr.io/maxjb-xyz/blackbox-server:latest',
+          '    restart: unless-stopped',
+          '    ports:',
+          '      - "8080:8080"',
+          '    volumes:',
+          '      - blackbox-data:/data',
+          '    environment:',
+          '      JWT_SECRET: "change-me"',
+          '      AGENT_TOKENS: "homelab=change-me"',
+          '      WEBHOOK_SECRET: "change-me"',
+          '',
+          '  blackbox-agent:',
+          '    image: ghcr.io/maxjb-xyz/blackbox-agent:latest',
+          '    restart: unless-stopped',
+          '    volumes:',
+          '      - /var/run/docker.sock:/var/run/docker.sock:ro',
+          '      - /etc:/watch/etc:ro',
+          '    environment:',
+          '      SERVER_URL: "http://blackbox-server:8080"',
+          '      AGENT_TOKEN: "change-me"',
+          '      NODE_NAME: "homelab"',
+          '      WATCH_PATHS: "/watch/etc"',
+          '',
+          'volumes:',
+          '  blackbox-data:',
+        ].join('\n');
+        body.innerHTML = highlightYaml(rawCompose);
+      }
+    })();
+
+    // ── Copy button ───────────────────────────────────────────────────────────
+    async function copyCompose() {
+      if (!rawCompose) return;
+      try {
+        await navigator.clipboard.writeText(rawCompose);
+        const btn = document.getElementById('copy-btn');
+        btn.textContent = 'COPIED';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.textContent = 'COPY';
+          btn.classList.remove('copied');
+        }, 2000);
+      } catch {}
+    }
+  </script>
+
+</body>
+</html>
