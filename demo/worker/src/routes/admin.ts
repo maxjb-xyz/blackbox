@@ -22,7 +22,7 @@ function compareByCreatedAtDesc<T extends { created_at?: string; received_at?: s
 
 function filterAuditLogs(items: readonly AuditLogEntry[], action?: string | null) {
   if (!action) return [...items].sort(compareByCreatedAtDesc)
-  return items.filter(item => item.action.includes(action)).sort(compareByCreatedAtDesc)
+  return items.filter(item => item.action === action).sort(compareByCreatedAtDesc)
 }
 
 function filterWebhookDeliveries(items: readonly WebhookDelivery[], source?: string | null, status?: string | null) {
@@ -45,20 +45,23 @@ export function createAdminRouter(data: DemoData) {
     const units = Object.fromEntries(
       data.dataSourceInstances
         .filter(source => source.type === 'systemd' && source.node_id)
-        .map(source => [source.node_id!, JSON.parse(source.config) as { units?: string[] }])
-        .map(([nodeName, config]) => [nodeName, Array.isArray(config.units) ? config.units.map(value => String(value)) : []]),
+        .map(source => {
+          let config: { units?: unknown } = {}
+          try { config = JSON.parse(source.config) as { units?: unknown } } catch { /* use empty default */ }
+          return [source.node_id!, Array.isArray(config.units) ? config.units.map(value => String(value)) : []]
+        }),
     )
     return c.json(units)
   })
   app.get('/admin/audit-logs', c => {
     const page = Number(c.req.query('page') ?? '1')
     const perPage = Number(c.req.query('per_page') ?? '50')
-    return c.json(paginate(filterAuditLogs(data.auditLogs, c.req.query('action')), page, perPage))
+    return c.json(paginate(filterAuditLogs(data.auditLogs, c.req.query('action')), Number.isFinite(page) ? page : 1, Number.isFinite(perPage) ? perPage : 50))
   })
   app.get('/admin/webhook-deliveries', c => {
     const page = Number(c.req.query('page') ?? '1')
     const perPage = Number(c.req.query('per_page') ?? '50')
-    return c.json(paginate(filterWebhookDeliveries(data.webhookDeliveries, c.req.query('source'), c.req.query('status')), page, perPage))
+    return c.json(paginate(filterWebhookDeliveries(data.webhookDeliveries, c.req.query('source'), c.req.query('status')), Number.isFinite(page) ? page : 1, Number.isFinite(perPage) ? perPage : 50))
   })
   app.get('/admin/oidc', c => c.json({ providers: data.oidcProviders, policy: data.oidcPolicy }))
   app.get('/admin/oidc/providers', c => c.json(data.oidcProviders))

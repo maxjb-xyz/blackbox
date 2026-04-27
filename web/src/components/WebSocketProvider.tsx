@@ -18,22 +18,23 @@ export function useWebSocketContext() {
   return useContext(WebSocketContext)
 }
 
-export function WebSocketProvider({ children }: { children: React.ReactNode }) {
-  if (demoMode) {
-    return (
-      <WebSocketContext.Provider
-        value={{
-          status: 'disconnected',
-          lastMessage: null,
-          lastConnectedAt: null,
-          reconnect: () => {},
-        }}
-      >
-        {children}
-      </WebSocketContext.Provider>
-    )
-  }
+const DEMO_WS_VALUE: UseWebSocketResult = {
+  status: 'disconnected',
+  lastMessage: null,
+  lastConnectedAt: null,
+  reconnect: () => {},
+}
 
+function DemoWebSocketProvider({ children }: { children: React.ReactNode }) {
+  return <WebSocketContext.Provider value={DEMO_WS_VALUE}>{children}</WebSocketContext.Provider>
+}
+
+function LiveWebSocketProvider({ children }: { children: React.ReactNode }) {
   const ws = useWebSocket(wsUrl)
   return <WebSocketContext.Provider value={ws}>{children}</WebSocketContext.Provider>
+}
+
+export function WebSocketProvider({ children }: { children: React.ReactNode }) {
+  if (demoMode) return <DemoWebSocketProvider>{children}</DemoWebSocketProvider>
+  return <LiveWebSocketProvider>{children}</LiveWebSocketProvider>
 }

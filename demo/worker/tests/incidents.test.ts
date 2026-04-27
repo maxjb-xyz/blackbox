@@ -19,7 +19,7 @@ test('createDemoData yields the expected demo scale and recent timestamps', () =
   assert.ok(oldestTimestamp >= Date.parse('2026-04-13T00:00:00.000Z'))
 })
 
-test('filterIncidents applies status, confidence, service, and limit filters', () => {
+test('filterIncidents applies status, service, and limit filters', () => {
   const open = filterIncidents(demoData.incidents, {
     status: 'open',
   })

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "build:demo": "vite build --mode demo",
+    "build:demo": "tsc -b && vite build --mode demo",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "stage:server": "node ./scripts/stage-server-dist.mjs",
     "build:server": "npm run build && npm run stage:server",

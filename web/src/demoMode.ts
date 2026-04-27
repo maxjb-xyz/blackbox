@@ -3,7 +3,7 @@ import type { SessionUser } from './api/client'
 export const DEMO_INTRO_DISMISSED_KEY = 'blackbox_demo_intro_dismissed'
 
 export const DEMO_SESSION_USER: SessionUser = {
-  user_id: 'demo-admin',
+  user_id: 'user-admin',
   username: 'operator',
   is_admin: true,
   email: 'operator@blackboxd.dev',

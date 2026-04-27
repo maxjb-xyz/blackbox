@@ -24,7 +24,7 @@ export function SessionProvider({
   const requestSeqRef = useRef(0)
 
   const updateSession = useCallback((nextUser: SessionUser | null) => {
-    setUser(isFixedSession ? (fixedUser ?? nextUser) : nextUser)
+    setUser(isFixedSession ? (fixedUser ?? null) : nextUser)
     setLoading(false)
   }, [fixedUser, isFixedSession])
 
