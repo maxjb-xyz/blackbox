@@ -10,7 +10,17 @@ import (
 	"blackbox/server/internal/handlers"
 	"blackbox/server/internal/models"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
+
+type systemdConfigPayload struct {
+	Units []string `json:"units"`
+}
+
+func seedNode(t *testing.T, db *gorm.DB, name string) {
+	t.Helper()
+	require.NoError(t, db.Create(&models.Node{ID: name, Name: name, Capabilities: "[]"}).Error)
+}
 
 func TestGetSystemdSettings_ReturnsEmptyMapWhenNoneConfigured(t *testing.T) {
 	database := newTestDB(t)
@@ -25,6 +35,7 @@ func TestGetSystemdSettings_ReturnsEmptyMapWhenNoneConfigured(t *testing.T) {
 
 func TestUpdateSystemdSettings_UpsertsUnitList(t *testing.T) {
 	database := newTestDB(t)
+	seedNode(t, database, "node-01")
 	body := `{"units":["nginx.service","postgres.service"]}`
 	req := httptest.NewRequest(http.MethodPut, "/api/admin/settings/systemd/node-01",
 		bytes.NewBufferString(body))
@@ -34,18 +45,20 @@ func TestUpdateSystemdSettings_UpsertsUnitList(t *testing.T) {
 	handlers.UpdateSystemdSettings(database)(w, req)
 	require.Equal(t, http.StatusNoContent, w.Code)
 
-	var config models.SystemdUnitConfig
-	require.NoError(t, database.First(&config, "node_name = ?", "node-01").Error)
-	var units []string
-	require.NoError(t, json.Unmarshal([]byte(config.Units), &units))
-	require.Equal(t, []string{"nginx.service", "postgres.service"}, units)
+	var inst models.DataSourceInstance
+	require.NoError(t, database.Where("type = ? AND node_id = ?", "systemd", "node-01").First(&inst).Error)
+	var cfg systemdConfigPayload
+	require.NoError(t, json.Unmarshal([]byte(inst.Config), &cfg))
+	require.Equal(t, []string{"nginx.service", "postgres.service"}, cfg.Units)
 }
 
 func TestUpdateSystemdSettings_OverwritesExistingList(t *testing.T) {
 	database := newTestDB(t)
-	require.NoError(t, database.Create(&models.SystemdUnitConfig{
-		NodeName: "node-01",
-		Units:    `["old.service"]`,
+	nodeName := "node-01"
+	existingCfg, _ := json.Marshal(map[string]any{"units": []string{"old.service"}})
+	require.NoError(t, database.Create(&models.DataSourceInstance{
+		ID: "sys-test-1", Type: "systemd", Scope: "agent", NodeID: &nodeName,
+		Name: "Systemd", Config: string(existingCfg), Enabled: true,
 	}).Error)
 
 	body := `{"units":["nginx.service"]}`
@@ -57,11 +70,11 @@ func TestUpdateSystemdSettings_OverwritesExistingList(t *testing.T) {
 	handlers.UpdateSystemdSettings(database)(w, req)
 	require.Equal(t, http.StatusNoContent, w.Code)
 
-	var config models.SystemdUnitConfig
-	require.NoError(t, database.First(&config, "node_name = ?", "node-01").Error)
-	var units []string
-	require.NoError(t, json.Unmarshal([]byte(config.Units), &units))
-	require.Equal(t, []string{"nginx.service"}, units)
+	var inst models.DataSourceInstance
+	require.NoError(t, database.Where("type = ? AND node_id = ?", "systemd", "node-01").First(&inst).Error)
+	var cfg systemdConfigPayload
+	require.NoError(t, json.Unmarshal([]byte(inst.Config), &cfg))
+	require.Equal(t, []string{"nginx.service"}, cfg.Units)
 }
 
 func TestUpdateSystemdSettings_RequiresNodeName(t *testing.T) {
@@ -91,6 +104,7 @@ func TestUpdateSystemdSettings_RejectsInvalidJSON(t *testing.T) {
 
 func TestUpdateSystemdSettings_PersistsEmptyUnitList(t *testing.T) {
 	database := newTestDB(t)
+	seedNode(t, database, "node-01")
 	req := httptest.NewRequest(http.MethodPut, "/api/admin/settings/systemd/node-01",
 		bytes.NewBufferString(`{"units":[]}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -101,17 +115,16 @@ func TestUpdateSystemdSettings_PersistsEmptyUnitList(t *testing.T) {
 
 	require.Equal(t, http.StatusNoContent, w.Code)
 
-	var config models.SystemdUnitConfig
-	require.NoError(t, database.First(&config, "node_name = ?", "node-01").Error)
-	require.Equal(t, "[]", config.Units)
-
-	var units []string
-	require.NoError(t, json.Unmarshal([]byte(config.Units), &units))
-	require.Empty(t, units)
+	var inst models.DataSourceInstance
+	require.NoError(t, database.Where("type = ? AND node_id = ?", "systemd", "node-01").First(&inst).Error)
+	var cfg systemdConfigPayload
+	require.NoError(t, json.Unmarshal([]byte(inst.Config), &cfg))
+	require.Empty(t, cfg.Units)
 }
 
 func TestUpdateSystemdSettings_DeduplicatesMixedForms(t *testing.T) {
 	database := newTestDB(t)
+	seedNode(t, database, "node-01")
 	body := `{"units":["nginx","nginx.service","redis.service","redis"]}`
 	req := httptest.NewRequest(http.MethodPut, "/api/admin/settings/systemd/node-01",
 		bytes.NewBufferString(body))
@@ -121,15 +134,16 @@ func TestUpdateSystemdSettings_DeduplicatesMixedForms(t *testing.T) {
 	handlers.UpdateSystemdSettings(database)(w, req)
 	require.Equal(t, http.StatusNoContent, w.Code)
 
-	var config models.SystemdUnitConfig
-	require.NoError(t, database.First(&config, "node_name = ?", "node-01").Error)
-	var units []string
-	require.NoError(t, json.Unmarshal([]byte(config.Units), &units))
-	require.Equal(t, []string{"nginx.service", "redis.service"}, units)
+	var inst models.DataSourceInstance
+	require.NoError(t, database.Where("type = ? AND node_id = ?", "systemd", "node-01").First(&inst).Error)
+	var cfg systemdConfigPayload
+	require.NoError(t, json.Unmarshal([]byte(inst.Config), &cfg))
+	require.Equal(t, []string{"nginx.service", "redis.service"}, cfg.Units)
 }
 
 func TestUpdateSystemdSettings_NormalizesBareName(t *testing.T) {
 	database := newTestDB(t)
+	seedNode(t, database, "node-01")
 	body := `{"units":["nginx","redis.service"]}`
 	req := httptest.NewRequest(http.MethodPut, "/api/admin/settings/systemd/node-01",
 		bytes.NewBufferString(body))
@@ -139,15 +153,16 @@ func TestUpdateSystemdSettings_NormalizesBareName(t *testing.T) {
 	handlers.UpdateSystemdSettings(database)(w, req)
 	require.Equal(t, http.StatusNoContent, w.Code)
 
-	var config models.SystemdUnitConfig
-	require.NoError(t, database.First(&config, "node_name = ?", "node-01").Error)
-	var units []string
-	require.NoError(t, json.Unmarshal([]byte(config.Units), &units))
-	require.Equal(t, []string{"nginx.service", "redis.service"}, units)
+	var inst models.DataSourceInstance
+	require.NoError(t, database.Where("type = ? AND node_id = ?", "systemd", "node-01").First(&inst).Error)
+	var cfg systemdConfigPayload
+	require.NoError(t, json.Unmarshal([]byte(inst.Config), &cfg))
+	require.Equal(t, []string{"nginx.service", "redis.service"}, cfg.Units)
 }
 
 func TestUpdateSystemdSettings_DottedBareNameGetsSuffix(t *testing.T) {
 	database := newTestDB(t)
+	seedNode(t, database, "node-01")
 	body := `{"units":["dbus-org.freedesktop.resolve1"]}`
 	req := httptest.NewRequest(http.MethodPut, "/api/admin/settings/systemd/node-01",
 		bytes.NewBufferString(body))
@@ -157,17 +172,27 @@ func TestUpdateSystemdSettings_DottedBareNameGetsSuffix(t *testing.T) {
 	handlers.UpdateSystemdSettings(database)(w, req)
 	require.Equal(t, http.StatusNoContent, w.Code)
 
-	var config models.SystemdUnitConfig
-	require.NoError(t, database.First(&config, "node_name = ?", "node-01").Error)
-	var units []string
-	require.NoError(t, json.Unmarshal([]byte(config.Units), &units))
-	require.Equal(t, []string{"dbus-org.freedesktop.resolve1.service"}, units)
+	var inst models.DataSourceInstance
+	require.NoError(t, database.Where("type = ? AND node_id = ?", "systemd", "node-01").First(&inst).Error)
+	var cfg systemdConfigPayload
+	require.NoError(t, json.Unmarshal([]byte(inst.Config), &cfg))
+	require.Equal(t, []string{"dbus-org.freedesktop.resolve1.service"}, cfg.Units)
 }
 
 func TestGetSystemdSettings_ReturnsAllNodes(t *testing.T) {
 	database := newTestDB(t)
-	require.NoError(t, database.Create(&models.SystemdUnitConfig{NodeName: "node-01", Units: `["nginx.service"]`}).Error)
-	require.NoError(t, database.Create(&models.SystemdUnitConfig{NodeName: "node-02", Units: `["redis.service"]`}).Error)
+	node01 := "node-01"
+	node02 := "node-02"
+	cfg1, _ := json.Marshal(map[string]any{"units": []string{"nginx.service"}})
+	cfg2, _ := json.Marshal(map[string]any{"units": []string{"redis.service"}})
+	require.NoError(t, database.Create(&models.DataSourceInstance{
+		ID: "sys-n1", Type: "systemd", Scope: "agent", NodeID: &node01,
+		Name: "Systemd", Config: string(cfg1), Enabled: true,
+	}).Error)
+	require.NoError(t, database.Create(&models.DataSourceInstance{
+		ID: "sys-n2", Type: "systemd", Scope: "agent", NodeID: &node02,
+		Name: "Systemd", Config: string(cfg2), Enabled: true,
+	}).Error)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/admin/settings/systemd", nil)
 	w := httptest.NewRecorder()

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode"
 
 	"blackbox/shared/types"
 )
@@ -21,6 +22,7 @@ type Client struct {
 }
 
 type AgentConfig struct {
+	FileWatcherEnabled       *bool    `json:"file_watcher_enabled"`
 	FileWatcherRedactSecrets bool     `json:"file_watcher_redact_secrets"`
 	SystemdUnits             []string `json:"systemd_units"`
 }
@@ -141,8 +143,9 @@ func (c *Client) SendBatch(ctx context.Context, entries []types.Entry) (accepted
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
 		msg := strings.TrimSpace(string(bodyBytes))
-		// 4xx responses are permanent — retrying will not help.
-		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+		// Only validation/auth/conflict style 4xx responses are permanent.
+		switch resp.StatusCode {
+		case 400, 401, 403, 404, 409:
 			return nil, nil, &PermanentError{StatusCode: resp.StatusCode, Message: msg}
 		}
 		return nil, nil, fmt.Errorf("server returned %d: %s", resp.StatusCode, msg)
@@ -155,13 +158,22 @@ func (c *Client) SendBatch(ctx context.Context, entries []types.Entry) (accepted
 	return result.Accepted, result.Failed, nil
 }
 
-func (c *Client) GetAgentConfig(ctx context.Context) (AgentConfig, error) {
+func (c *Client) GetAgentConfig(ctx context.Context, capabilities []string) (AgentConfig, error) {
+	// Validate and normalize capability tokens before dispatch so callers can rely on pre-request rejection.
+	cleanCapabilities, err := sanitizeCapabilities(capabilities)
+	if err != nil {
+		return AgentConfig{}, err
+	}
+
 	req, err := http.NewRequest(http.MethodGet, c.serverURL+"/api/agent/config", nil)
 	if err != nil {
 		return AgentConfig{}, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("X-Blackbox-Agent-Key", c.token)
 	req.Header.Set("X-Blackbox-Node-Name", c.nodeName)
+	if len(cleanCapabilities) > 0 {
+		req.Header.Set("X-Blackbox-Agent-Capabilities", strings.Join(cleanCapabilities, ","))
+	}
 	req = req.WithContext(ctx)
 
 	resp, err := c.http.Do(req)
@@ -178,6 +190,10 @@ func (c *Client) GetAgentConfig(ctx context.Context) (AgentConfig, error) {
 		if readErr != nil {
 			msg = fmt.Sprintf("(could not read body: %v)", readErr)
 		}
+		switch resp.StatusCode {
+		case 400, 401, 403, 404, 409:
+			return AgentConfig{}, &PermanentError{StatusCode: resp.StatusCode, Message: msg}
+		}
 		return AgentConfig{}, fmt.Errorf("server returned %d: %s", resp.StatusCode, msg)
 	}
 
@@ -186,4 +202,24 @@ func (c *Client) GetAgentConfig(ctx context.Context) (AgentConfig, error) {
 		return AgentConfig{}, fmt.Errorf("decode agent config: %w", err)
 	}
 	return config, nil
+}
+
+func sanitizeCapabilities(capabilities []string) ([]string, error) {
+	cleaned := make([]string, 0, len(capabilities))
+	for _, capability := range capabilities {
+		capability = strings.TrimSpace(capability)
+		if capability == "" {
+			continue
+		}
+		if strings.Contains(capability, ",") {
+			return nil, fmt.Errorf("invalid capability %q: capability values must not contain commas", capability)
+		}
+		for _, r := range capability {
+			if unicode.IsControl(r) {
+				return nil, fmt.Errorf("invalid capability %q: capability values must not contain control characters", capability)
+			}
+		}
+		cleaned = append(cleaned, capability)
+	}
+	return cleaned, nil
 }

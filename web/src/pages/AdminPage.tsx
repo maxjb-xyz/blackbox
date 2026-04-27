@@ -4,21 +4,16 @@ import { Bug, ChevronDown, ChevronUp, ExternalLink, Lightbulb } from 'lucide-rea
 import { Navigate } from 'react-router-dom'
 import {
   createAdminOIDCProvider,
-  createExcludedTarget,
   createNotificationDest,
   deleteAdminOIDCProvider,
-  deleteExcludedTarget,
   deleteNotificationDest,
   deleteAdminUser,
   fetchAdminConfig,
-  fetchNodes,
-  fetchSystemdSettings,
   forceLogoutUser,
   getOIDCPolicy,
   listAdminOIDCProviders,
   listAdminUsers,
   listAuditLogs,
-  listExcludedTargets,
   listNotificationDests,
   regenerateMCPToken,
   listWebhookDeliveries,
@@ -33,9 +28,9 @@ import {
   updateAdminUser,
   updateMCPSettings,
   updateNotificationDest,
-  updateSystemdSettings,
+  fetchNodes,
 } from '../api/client'
-import type { AISettingsInput, AdminUser, AuditLogPage, ExcludedTarget, MCPSettingsInput, Node, NotificationDest, NotificationDestInput, OIDCProviderConfig, WebhookDeliveryPage } from '../api/client'
+import type { AISettingsInput, AdminUser, AuditLogPage, MCPSettingsInput, Node, NotificationDest, NotificationDestInput, OIDCProviderConfig, WebhookDeliveryPage } from '../api/client'
 import { readErrorMessage } from '../api/errorUtils'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useSession } from '../session'
@@ -49,6 +44,7 @@ import {
 } from './adminNavigation'
 import type { AdminGroup, Tab } from './adminNavigation'
 import { formatLocalDate, formatLocalTimestamp } from '../utils/time'
+import DataSourcesGroup from './DataSourcesGroup'
 
 interface InviteCode {
   id: string
@@ -79,10 +75,6 @@ interface GitHubRelease {
 
 type OIDCPolicy = 'open' | 'existing_only' | 'invite_required'
 
-const UNIT_SUFFIXES = ['.service','.socket','.device','.mount','.automount',
-  '.swap','.target','.path','.timer','.slice','.scope']
-const normalizeUnit = (name: string) =>
-  UNIT_SUFFIXES.some(s => name.endsWith(s)) ? name : name + '.service'
 
 const OIDC_POLICY_OPTIONS: Array<{ value: OIDCPolicy; description: string }> = [
   { value: 'open', description: 'Any OIDC user can sign in (new accounts created automatically)' },
@@ -161,13 +153,6 @@ export default function AdminPage() {
   const [group, setGroup] = useState<AdminGroup>('access')
   const [tab, setTab] = useState<Tab>('users')
   const isDesktopAdminSidebar = useMediaQuery(ADMIN_SIDEBAR_BREAKPOINT_QUERY)
-  const [nodes, setNodes] = useState<Node[]>([])
-  const [systemdSettings, setSystemdSettings] = useState<Record<string, string[]>>({})
-  const [systemdInputs, setSystemdInputs] = useState<Record<string, string>>({})
-  const [systemdSaving, setSystemdSaving] = useState<Record<string, boolean>>({})
-  const [systemdSaveError, setSystemdSaveError] = useState<Record<string, string | null>>({})
-  const [nodesError, setNodesError] = useState<string | null>(null)
-  const [systemdError, setSystemdError] = useState<string | null>(null)
   const [notificationDests, setNotificationDests] = useState<NotificationDest[]>([])
   const [notificationsLoading, setNotificationsLoading] = useState(false)
   const [notificationsError, setNotificationsError] = useState<string | null>(null)
@@ -198,18 +183,6 @@ export default function AdminPage() {
   const [expandedWebhookRow, setExpandedWebhookRow] = useState<string | null>(null)
   const adminTabRefs = useRef<Array<HTMLButtonElement | null>>([])
 
-  const handleAddUnit = useCallback((nodeName: string) => {
-    const units = systemdSettings[nodeName] ?? []
-    const raw = (systemdInputs[nodeName] ?? '').trim()
-    if (!raw) return
-    const val = normalizeUnit(raw)
-    if (units.map(normalizeUnit).includes(val)) return
-
-    setSystemdSettings(prev => ({ ...prev, [nodeName]: [...units, val] }))
-    setSystemdInputs(prev => ({ ...prev, [nodeName]: '' }))
-    setSystemdSaveError(prev => ({ ...prev, [nodeName]: null }))
-  }, [systemdInputs, systemdSettings])
-
   const loadNotificationDests = useCallback(async () => {
     setNotificationsLoading(true)
     setNotificationsError(null)
@@ -231,30 +204,6 @@ export default function AdminPage() {
       setBaseURLError(err instanceof Error ? err.message : 'Failed to load instance base URL')
     }
   }, [])
-
-  useEffect(() => {
-    if (tab !== 'systemd') return
-    void fetchNodes()
-      .then(data => {
-        setNodesError(null)
-        setNodes(data)
-      })
-      .catch(err => {
-        setNodesError(err instanceof Error ? err.message : 'Failed to fetch nodes')
-      })
-  }, [tab])
-
-  useEffect(() => {
-    if (tab !== 'systemd') return
-    void fetchSystemdSettings()
-      .then(data => {
-        setSystemdError(null)
-        setSystemdSettings(data)
-      })
-      .catch(err => {
-        setSystemdError(err instanceof Error ? err.message : 'Failed to fetch systemd settings')
-      })
-  }, [tab])
 
   useEffect(() => {
     if (tab !== 'notifications') return
@@ -297,7 +246,9 @@ export default function AdminPage() {
 
   function selectGroup(nextGroup: AdminGroup) {
     setGroup(nextGroup)
-    setTab(ADMIN_GROUPS[nextGroup].tabs[0])
+    if (nextGroup !== 'sources' && ADMIN_GROUPS[nextGroup].tabs.length > 0) {
+      setTab(ADMIN_GROUPS[nextGroup].tabs[0])
+    }
   }
 
   function selectAdminTabAt(index: number) {
@@ -357,6 +308,10 @@ export default function AdminPage() {
 
       <div className="admin-page-body">
         <div className="admin-shell">
+          {group === 'sources' ? (
+            <DataSourcesGroup />
+          ) : (
+            <>
           <div className="admin-tab-list" role="tablist" aria-label={`${ADMIN_GROUPS[group].label} sections`}>
             {ADMIN_GROUPS[group].tabs.map((t, index) => (
               <button
@@ -422,163 +377,7 @@ export default function AdminPage() {
           />
         )}
         {tab === 'agents' && <AgentsTab />}
-        {tab === 'excludes' && <ExcludedTargetsTab />}
         {tab === 'ai' && <SettingsTab section="ai" />}
-        {tab === 'filewatcher' && <SettingsTab section="filewatcher" />}
-        {tab === 'systemd' && (
-          <div>
-            <div
-              style={{
-                marginBottom: 16,
-                fontSize: 11,
-                color: 'var(--muted)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.08em',
-              }}
-            >
-              Per-Node Systemd Units
-            </div>
-            {nodesError && (
-              <div style={{ color: 'var(--danger)', fontSize: 11, marginBottom: 8 }}>
-                Failed to load nodes: {nodesError}
-              </div>
-            )}
-            {systemdError && (
-              <div style={{ color: 'var(--danger)', fontSize: 11, marginBottom: 8 }}>
-                Failed to load systemd settings: {systemdError}
-              </div>
-            )}
-            {nodes.length === 0 && (
-              <div style={{ color: 'var(--muted)', fontSize: 12 }}>No nodes registered yet.</div>
-            )}
-            {[...nodes].sort((a, b) => a.name.localeCompare(b.name)).map(node => {
-              const units = systemdSettings[node.name] ?? []
-              const inputVal = systemdInputs[node.name] ?? ''
-              const saving = systemdSaving[node.name] ?? false
-              const saveError = systemdSaveError[node.name]
-
-              return (
-                <div
-                  key={node.name}
-                  style={{ border: '1px solid var(--border)', marginBottom: 12, padding: 12 }}
-                >
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: 'var(--text)',
-                      marginBottom: 8,
-                      fontWeight: 'bold',
-                    }}
-                  >
-                    {node.name}
-                  </div>
-                  {units.length === 0 && (
-                    <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>
-                      No units configured.
-                    </div>
-                  )}
-                  {units.map(unit => (
-                    <div
-                      key={unit}
-                      style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}
-                    >
-                      <span style={{ fontSize: 12, color: 'var(--text)', flex: 1 }}>{unit}</span>
-                      <button
-                        onClick={() => {
-                          const next = units.filter(u => u !== unit)
-                          setSystemdSettings(prev => ({ ...prev, [node.name]: next }))
-                        }}
-                        style={{
-                          background: 'transparent',
-                          border: 'none',
-                          color: 'var(--muted)',
-                          cursor: 'pointer',
-                          fontSize: 14,
-                          padding: '0 4px',
-                        }}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
-                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                    <input
-                      type="text"
-                      placeholder="e.g. nginx.service"
-                      value={inputVal}
-                      onChange={e =>
-                        setSystemdInputs(prev => ({ ...prev, [node.name]: e.target.value }))
-                      }
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') {
-                          handleAddUnit(node.name)
-                        }
-                      }}
-                      style={{
-                        flex: 1,
-                        background: 'var(--surface)',
-                        border: '1px solid var(--border)',
-                        color: 'var(--text)',
-                        fontFamily: 'inherit',
-                        fontSize: 12,
-                        padding: '4px 8px',
-                      }}
-                    />
-                    <button
-                      onClick={() => handleAddUnit(node.name)}
-                      style={{
-                        background: 'transparent',
-                        border: '1px solid var(--border)',
-                        color: 'var(--muted)',
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                        fontSize: 12,
-                        padding: '4px 10px',
-                      }}
-                    >
-                      Add
-                    </button>
-                  </div>
-                  {saveError && (
-                    <div style={{ color: 'var(--danger)', fontSize: 11, marginTop: 8 }}>
-                      Failed to save {node.name}: {saveError}
-                    </div>
-                  )}
-                  <button
-                    disabled={saving}
-                    onClick={async () => {
-                      setSystemdSaveError(prev => ({ ...prev, [node.name]: null }))
-                      setSystemdSaving(prev => ({ ...prev, [node.name]: true }))
-                      try {
-                        await updateSystemdSettings(node.name, systemdSettings[node.name] ?? [])
-                      } catch (err) {
-                        setSystemdSaveError(prev => ({
-                          ...prev,
-                          [node.name]:
-                            err instanceof Error ? err.message : `Failed to update systemd settings for ${node.name}`,
-                        }))
-                      } finally {
-                        setSystemdSaving(prev => ({ ...prev, [node.name]: false }))
-                      }
-                    }}
-                    style={{
-                      marginTop: 8,
-                      background: 'transparent',
-                      border: '1px solid var(--border)',
-                      color: saving ? 'var(--muted)' : 'var(--text)',
-                      cursor: saving ? 'not-allowed' : 'pointer',
-                      fontFamily: 'inherit',
-                      fontSize: 12,
-                      padding: '4px 12px',
-                    }}
-                  >
-                    {saving ? 'Saving…' : 'Save'}
-                  </button>
-                </div>
-              )
-            })}
-          </div>
-        )}
         {tab === 'notifications' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <section style={panelStyle}>
@@ -970,6 +769,8 @@ export default function AdminPage() {
         )}
         {tab === 'github' && <GitHubTab />}
           </div>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -1821,97 +1622,6 @@ function AgentsTab() {
           ))}
         </tbody>
       </table>
-    </div>
-  )
-}
-
-function ExcludedTargetsTab() {
-  const [targets, setTargets] = useState<ExcludedTarget[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [containerInput, setContainerInput] = useState('')
-  const [stackInput, setStackInput] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [saveError, setSaveError] = useState<string | null>(null)
-
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      setTargets(await listExcludedTargets())
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load excluded targets')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => { void load() }, [load])
-
-  async function handleAdd(type: ExcludedTarget['type']) {
-    const name = (type === 'container' ? containerInput : stackInput).trim()
-    if (!name || saving) return
-    setSaving(true)
-    setSaveError(null)
-    try {
-      await createExcludedTarget(type, name)
-      if (type === 'container') setContainerInput('')
-      else setStackInput('')
-      await load()
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Failed to add exclusion')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function handleDelete(id: string) {
-    setSaveError(null)
-    try {
-      await deleteExcludedTarget(id)
-      await load()
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Failed to delete exclusion')
-    }
-  }
-
-  function renderPanel(label: string, items: ExcludedTarget[], input: string, setInput: (value: string) => void, type: ExcludedTarget['type']) {
-    return (
-      <section style={panelStyle}>
-        <div style={panelHeaderStyle}>
-          <span style={panelLabelStyle}>{label}</span>
-        </div>
-        {items.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>No exclusions configured.</div>}
-        {items.map(item => (
-          <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-            <span style={{ fontSize: 12, color: 'var(--text)', flex: 1 }}>{item.name}</span>
-            <span style={{ fontSize: 11, color: 'var(--muted)' }}>{formatLocalDate(new Date(item.created_at))}</span>
-            <button type="button" onClick={() => void handleDelete(item.id)} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}>x</button>
-          </div>
-        ))}
-        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-          <input
-            type="text"
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') void handleAdd(type) }}
-            placeholder={type === 'container' ? 'e.g. health-sidecar' : 'e.g. ci-runners'}
-            style={{ flex: 1, ...inputStyle }}
-          />
-          <button type="button" onClick={() => void handleAdd(type)} disabled={saving || !input.trim()} style={actionBtnStyle}>ADD</button>
-        </div>
-      </section>
-    )
-  }
-
-  if (loading) return <div style={{ fontSize: 12, color: 'var(--muted)' }}>loading...</div>
-  if (error) return <div style={{ fontSize: 12, color: 'var(--danger)' }}>{error}</div>
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {saveError && <div style={{ color: 'var(--danger)', fontSize: 11 }}>{saveError}</div>}
-      {renderPanel('CONTAINER EXCLUDES', targets.filter(t => t.type === 'container'), containerInput, setContainerInput, 'container')}
-      {renderPanel('STACK EXCLUDES', targets.filter(t => t.type === 'stack'), stackInput, setStackInput, 'stack')}
     </div>
   )
 }

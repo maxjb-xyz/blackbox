@@ -81,7 +81,7 @@ func main() {
 
 	webhookSecret := os.Getenv("WEBHOOK_SECRET")
 	if webhookSecret == "" {
-		log.Fatal("WEBHOOK_SECRET environment variable is required")
+		log.Printf("WEBHOOK_SECRET not set; webhook sources must be configured in Admin > Data Sources before webhook auth will succeed")
 	}
 
 	dbPath := getEnv("DB_PATH", defaultDBPath)
@@ -90,6 +90,11 @@ func main() {
 		log.Fatalf("database init failed: %v", err)
 	}
 	log.Printf("database initialized at %s", dbPath)
+	if err := handlers.MigrateDataSources(database, webhookSecret); err != nil {
+		log.Fatalf("data source migration failed: %v", err)
+	}
+	handlers.PrimeWebhookSecretCache(database, "webhook_uptime_kuma", webhookSecret)
+	handlers.PrimeWebhookSecretCache(database, "webhook_watchtower", webhookSecret)
 	mcpMgr := bbmcp.NewMCPManager(database)
 	defer func() {
 		if err := mcpMgr.Shutdown(context.Background()); err != nil {
@@ -260,6 +265,11 @@ func main() {
 		r.Delete("/api/admin/excluded-targets/{id}", handlers.DeleteExcludedTarget(database))
 		r.Get("/api/admin/audit-logs", handlers.ListAuditLogs(database))
 		r.Get("/api/admin/webhook-deliveries", handlers.ListWebhookDeliveries(database))
+		r.Get("/api/admin/sources", handlers.ListSources(database))
+		r.Get("/api/admin/sources/types", handlers.ListSourceTypes())
+		r.Post("/api/admin/sources", handlers.CreateSource(database))
+		r.Put("/api/admin/sources/{id}", handlers.UpdateSource(database))
+		r.Delete("/api/admin/sources/{id}", handlers.DeleteSource(database))
 	})
 
 	r.Group(func(r chi.Router) {
@@ -269,11 +279,19 @@ func main() {
 		r.Post("/api/agent/push/batch", handlers.AgentPushBatch(database, eventHub, incidentCh, managerCtx.Done()))
 	})
 
-	r.Group(func(r chi.Router) {
-		r.Use(middleware.WebhookAuth(webhookSecret))
-		r.Post("/api/webhooks/uptime", handlers.WebhookUptime(database, eventHub, incidentCh, managerCtx.Done()))
-		r.Post("/api/webhooks/watchtower", handlers.WebhookWatchtower(database, eventHub, incidentCh, managerCtx.Done()))
-	})
+	r.With(
+		middleware.RateLimit(time.Minute, 60),
+		middleware.WebhookAuthFunc(func() string {
+			return handlers.GetCachedWebhookSecret(database, "webhook_uptime_kuma", webhookSecret)
+		}),
+	).Post("/api/webhooks/uptime", handlers.WebhookUptime(database, eventHub, incidentCh, managerCtx.Done()))
+
+	r.With(
+		middleware.RateLimit(time.Minute, 60),
+		middleware.WebhookAuthFunc(func() string {
+			return handlers.GetCachedWebhookSecret(database, "webhook_watchtower", webhookSecret)
+		}),
+	).Post("/api/webhooks/watchtower", handlers.WebhookWatchtower(database, eventHub, incidentCh, managerCtx.Done()))
 
 	spaHandler := static.Handler(staticFiles)
 	r.NotFound(func(w http.ResponseWriter, req *http.Request) {

@@ -3,11 +3,13 @@ package models
 import "time"
 
 type Node struct {
-	ID           string    `gorm:"primaryKey" json:"id"`
+	ID string `gorm:"primaryKey" json:"id"`
+	// Name is immutable and used as a stable agent identifier.
 	Name         string    `gorm:"uniqueIndex" json:"name"`
 	LastSeen     time.Time `gorm:"index" json:"last_seen"`
 	Status       string    `gorm:"index" json:"status"`
 	AgentVersion string    `json:"agent_version"`
 	IPAddress    string    `json:"ip_address"`
 	OsInfo       string    `json:"os_info"`
+	Capabilities string    `gorm:"not null;default:'[]'" json:"capabilities"` // JSON []string
 }

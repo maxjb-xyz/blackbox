@@ -586,6 +586,15 @@ export function normalizeIncident(value: unknown): Incident {
   }
 }
 
+export function parseSourceConfig<T>(inst: Pick<DataSourceInstance, 'id' | 'type' | 'config'>): T | null {
+  try {
+    return JSON.parse(inst.config) as T
+  } catch (error) {
+    console.warn(`parseSourceConfig: failed to parse ${inst.type} config for source ${inst.id}`, error)
+    return null
+  }
+}
+
 function normalizeIncidentEntryLink(value: unknown): IncidentEntryLink | null {
   if (!value || typeof value !== 'object') return null
   const data = value as Record<string, unknown>
@@ -791,11 +800,11 @@ export async function listExcludedTargets(): Promise<ExcludedTarget[]> {
   return res.json() as Promise<ExcludedTarget[]>
 }
 
-export async function createExcludedTarget(type: ExcludedTarget['type'], name: string): Promise<ExcludedTarget> {
+export async function createExcludedTarget(input: { type: ExcludedTarget['type']; name: string }): Promise<ExcludedTarget> {
   const res = await apiFetch('/api/admin/excluded-targets', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type, name }),
+    body: JSON.stringify(input),
   })
   if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to create excluded target'))
   return res.json() as Promise<ExcludedTarget>
@@ -870,4 +879,92 @@ export async function listWebhookDeliveries(
   const res = await apiFetch(url.toString())
   if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to list webhook deliveries'))
   return res.json()
+}
+
+export interface DataSourceInstance {
+  id: string
+  type: string
+  scope: 'server' | 'agent'
+  node_id?: string
+  name: string
+  config: string  // JSON string — parse per type
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface SourceTypeDef {
+  type: string
+  scope: 'server' | 'agent'
+  singleton: boolean
+  name: string
+  description: string
+  mechanism: string
+}
+
+export interface NodeSources {
+  capabilities: string[]
+  agent_version: string
+  status: string
+  sources: DataSourceInstance[]
+}
+
+export interface SourcesResponse {
+  server: DataSourceInstance[]
+  nodes: Record<string, NodeSources>
+  orphans: DataSourceInstance[]
+}
+
+export interface CreateSourceInput {
+  type: string
+  scope: 'server' | 'agent'
+  node_id?: string
+  name: string
+  config: Record<string, unknown>
+  enabled: boolean
+}
+
+export interface UpdateSourceInput {
+  name?: string
+  config?: Record<string, unknown>
+  enabled?: boolean
+}
+
+export async function fetchSources(): Promise<SourcesResponse> {
+  const res = await apiFetch('/api/admin/sources')
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to fetch sources'))
+  return res.json()
+}
+
+export async function fetchSourceTypes(): Promise<SourceTypeDef[]> {
+  const res = await apiFetch('/api/admin/sources/types')
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to fetch source types'))
+  return res.json()
+}
+
+export async function createSource(input: CreateSourceInput): Promise<DataSourceInstance> {
+  const res = await apiFetch('/api/admin/sources', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to create source'))
+  return res.json()
+}
+
+export async function updateSource(id: string, input: UpdateSourceInput): Promise<DataSourceInstance> {
+  const res = await apiFetch(`/api/admin/sources/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to update source'))
+  return res.json()
+}
+
+export async function deleteSource(id: string): Promise<void> {
+  const res = await apiFetch(`/api/admin/sources/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to delete source'))
 }

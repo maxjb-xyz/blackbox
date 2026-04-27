@@ -5,11 +5,13 @@ import (
 	"io"
 	"net/http"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"blackbox/agent/internal/client"
+	"blackbox/agent/internal/files"
 	"blackbox/agent/internal/systemd"
 )
 
@@ -30,6 +32,9 @@ func TestLoadSystemdUnits(t *testing.T) {
 			if got := r.Header.Get("X-Blackbox-Node-Name"); got != "node-1" {
 				t.Fatalf("X-Blackbox-Node-Name = %q, want %q", got, "node-1")
 			}
+			if got := r.Header.Get("X-Blackbox-Agent-Capabilities"); got != "docker,systemd" {
+				t.Fatalf("X-Blackbox-Agent-Capabilities = %q, want %q", got, "docker,systemd")
+			}
 			return jsonResponse(http.StatusOK, `{"systemd_units":["nginx.service","postgres.service"]}`), nil
 		}),
 	})
@@ -37,7 +42,7 @@ func TestLoadSystemdUnits(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	units, err := loadSystemdUnits(ctx, c)
+	units, err := loadSystemdUnits(ctx, c, []string{"docker", "systemd"})
 	if err != nil {
 		t.Fatalf("loadSystemdUnits() error = %v", err)
 	}
@@ -65,6 +70,9 @@ func TestRefreshSystemdSettingsKeepsExistingUnitsOnFetchFailure(t *testing.T) {
 			if got := r.Header.Get("X-Blackbox-Node-Name"); got != "node-1" {
 				t.Errorf("X-Blackbox-Node-Name = %q, want %q", got, "node-1")
 			}
+			if got := r.Header.Get("X-Blackbox-Agent-Capabilities"); got != "" {
+				t.Errorf("X-Blackbox-Agent-Capabilities = %q, want empty", got)
+			}
 			return jsonResponse(http.StatusBadGateway, `boom`), nil
 		}),
 	})
@@ -79,7 +87,7 @@ func TestRefreshSystemdSettingsKeepsExistingUnitsOnFetchFailure(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		refreshSystemdSettingsWithTicker(ctx, c, settings, ticks)
+		refreshSystemdSettingsWithTicker(ctx, c, []string{}, settings, ticks)
 	}()
 
 	ticks <- time.Now()
@@ -109,6 +117,9 @@ func TestRefreshSystemdSettingsUpdatesUnitsOnSuccess(t *testing.T) {
 			if got := r.Header.Get("X-Blackbox-Node-Name"); got != "node-1" {
 				t.Errorf("X-Blackbox-Node-Name = %q, want %q", got, "node-1")
 			}
+			if got := r.Header.Get("X-Blackbox-Agent-Capabilities"); got != "docker,systemd" {
+				t.Errorf("X-Blackbox-Agent-Capabilities = %q, want %q", got, "docker,systemd")
+			}
 			return jsonResponse(http.StatusOK, `{"systemd_units":["redis.service"]}`), nil
 		}),
 	})
@@ -123,7 +134,7 @@ func TestRefreshSystemdSettingsUpdatesUnitsOnSuccess(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		refreshSystemdSettingsWithTicker(ctx, c, settings, ticks)
+		refreshSystemdSettingsWithTicker(ctx, c, []string{"docker", "systemd"}, settings, ticks)
 	}()
 
 	ticks <- time.Now()
@@ -133,6 +144,65 @@ func TestRefreshSystemdSettingsUpdatesUnitsOnSuccess(t *testing.T) {
 	want := []string{"redis.service"}
 	if got := settings.Units(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("settings.Units() = %v, want %v", got, want)
+	}
+}
+
+func TestRefreshFileWatcherSettingsKeepsExistingSettingsOnFetchFailure(t *testing.T) {
+	t.Parallel()
+
+	c := client.NewWithHTTPClient("http://blackbox.test", "token", "node-1", &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if r.Method != http.MethodGet {
+				t.Errorf("method = %q, want GET", r.Method)
+			}
+			if r.URL.Path != "/api/agent/config" {
+				t.Errorf("path = %q, want /api/agent/config", r.URL.Path)
+			}
+			return jsonResponse(http.StatusBadGateway, `boom`), nil
+		}),
+	})
+	settings := files.NewSettings(false)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ticks := make(chan time.Time)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		refreshFileWatcherSettingsWithTicker(ctx, c, []string{"docker", "filewatcher"}, settings, ticks)
+	}()
+
+	ticks <- time.Now()
+	cancel()
+	<-done
+
+	if !settings.Enabled() {
+		t.Fatalf("settings.Enabled() = false, want true")
+	}
+	if settings.RedactSecrets() {
+		t.Fatalf("settings.RedactSecrets() = true, want false")
+	}
+}
+
+func TestBuildCapabilities_OnlyAdvertisesSystemdWhenSupportedAndEnabled(t *testing.T) {
+	t.Setenv("WATCH_SYSTEMD", "true")
+
+	caps := buildCapabilities([]string{"/etc"})
+
+	if !slices.Contains(caps, "docker") {
+		t.Fatalf("buildCapabilities() = %v, missing docker", caps)
+	}
+	if !slices.Contains(caps, "filewatcher") {
+		t.Fatalf("buildCapabilities() = %v, missing filewatcher", caps)
+	}
+
+	hasSystemd := slices.Contains(caps, "systemd")
+	if systemd.Supported() && !hasSystemd {
+		t.Fatalf("buildCapabilities() = %v, missing systemd when supported", caps)
+	}
+	if !systemd.Supported() && hasSystemd {
+		t.Fatalf("buildCapabilities() = %v, unexpectedly includes systemd when unsupported", caps)
 	}
 }
 

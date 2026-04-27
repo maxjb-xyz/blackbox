@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -27,12 +28,16 @@ func Init(path string) (*gorm.DB, error) {
 	} else if err := ensureWritablePath(path); err != nil {
 		return nil, err
 	}
+	dsn = appendSQLitePragma(dsn, "_pragma=foreign_keys(1)")
 	database, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
 		Logger:         logger.Default.LogMode(logger.Silent),
 		TranslateError: true,
 	})
 	if err != nil {
 		return nil, err
+	}
+	if err := database.Exec("PRAGMA foreign_keys=ON").Error; err != nil {
+		return nil, fmt.Errorf("enable foreign keys: %w", err)
 	}
 	sqlDB, err := database.DB()
 	if err != nil {
@@ -65,6 +70,7 @@ func Init(path string) (*gorm.DB, error) {
 		&models.ExcludedTarget{},
 		&models.AuditLog{},
 		&models.WebhookDelivery{},
+		&models.DataSourceInstance{},
 	); err != nil {
 		return nil, err
 	}
@@ -72,6 +78,12 @@ func Init(path string) (*gorm.DB, error) {
 		return nil, err
 	}
 	if err := ensureExcludedTargetIndexes(database); err != nil {
+		return nil, err
+	}
+	if err := ensureDataSourceConstraints(database); err != nil {
+		return nil, err
+	}
+	if err := ensureDataSourceCleanupTriggers(database); err != nil {
 		return nil, err
 	}
 	if err := EnsureEntriesFTS(database); err != nil {
@@ -98,6 +110,63 @@ func ensureExcludedTargetIndexes(database *gorm.DB) error {
 	return database.Exec(`
 CREATE UNIQUE INDEX IF NOT EXISTS idx_excluded_targets_type_lower_name
 ON excluded_targets(type, lower(name));
+`).Error
+}
+
+// Keep these singleton allowlists in sync with handlers.knownSourceTypes and
+// the singleton enforcement in handlers.CreateSource.
+func ensureDataSourceConstraints(database *gorm.DB) error {
+	agentSingletons := quoteSQLStrings(models.GetAgentScopedSingletonSourceTypes())
+	serverSingletons := quoteSQLStrings(models.GetServerScopedSingletonSourceTypes())
+	if len(agentSingletons) > 0 {
+		if err := database.Exec(fmt.Sprintf(`
+CREATE UNIQUE INDEX IF NOT EXISTS idx_data_source_singleton_agent
+ON data_source_instances(type, node_id)
+WHERE scope = 'agent' AND type IN (%s)
+`, strings.Join(agentSingletons, ", "))).Error; err != nil {
+			return err
+		}
+	}
+	if len(serverSingletons) == 0 {
+		return nil
+	}
+	return database.Exec(fmt.Sprintf(`
+CREATE UNIQUE INDEX IF NOT EXISTS idx_data_source_singleton_server
+ON data_source_instances(type)
+WHERE scope = 'server' AND type IN (%s)
+`, strings.Join(serverSingletons, ", "))).Error
+}
+
+func appendSQLitePragma(dsn, pragma string) string {
+	separator := "?"
+	if strings.Contains(dsn, "?") {
+		separator = "&"
+	}
+	return dsn + separator + pragma
+}
+
+func quoteSQLStrings(values []string) []string {
+	quoted := make([]string, 0, len(values))
+	for _, value := range values {
+		escaped := strings.ReplaceAll(value, "'", "''")
+		quoted = append(quoted, fmt.Sprintf("'%s'", escaped))
+	}
+	return quoted
+}
+
+func ensureDataSourceCleanupTriggers(database *gorm.DB) error {
+	// TODO: This raw SQLite trigger must be translated explicitly when porting DB init to
+	// Postgres/MySQL. Coverage lives in TestInit_EnforcesSingletonDataSourceUniqueness and
+	// TestInit_CascadesAgentScopedDataSourcesWhenNodeDeleted, which expect agent-scoped rows
+	// to be removed on node delete while server-scoped rows are retained.
+	return database.Exec(`
+CREATE TRIGGER IF NOT EXISTS trg_data_source_instances_delete_node
+AFTER DELETE ON nodes
+FOR EACH ROW
+BEGIN
+  DELETE FROM data_source_instances
+  WHERE scope = 'agent' AND node_id = OLD.name;
+END
 `).Error
 }
 

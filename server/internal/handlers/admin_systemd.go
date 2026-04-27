@@ -2,31 +2,45 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
+	"time"
 
 	"blackbox/server/internal/models"
 	"github.com/go-chi/chi/v5"
+	"github.com/oklog/ulid/v2"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
+
+var validUnitName = regexp.MustCompile(`^[A-Za-z0-9:_.\-@\\]+\.(service|socket|target|timer|mount|automount|path|scope|slice|swap|device)$`)
 
 func GetSystemdSettings(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var configs []models.SystemdUnitConfig
-		if err := db.Find(&configs).Error; err != nil {
+		var instances []models.DataSourceInstance
+		if err := db.Where("type = ?", "systemd").Find(&instances).Error; err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to load systemd settings")
 			return
 		}
 
-		result := make(map[string][]string, len(configs))
-		for _, c := range configs {
-			var units []string
-			if err := json.Unmarshal([]byte(c.Units), &units); err != nil {
-				units = []string{}
+		result := make(map[string][]string)
+		for _, inst := range instances {
+			if inst.NodeID == nil {
+				continue
 			}
-			result[c.NodeName] = units
+			var cfg struct {
+				Units []string `json:"units"`
+			}
+			if err := json.Unmarshal([]byte(inst.Config), &cfg); err != nil {
+				log.Printf("GetSystemdSettings: failed to parse config for source %s: %v", inst.ID, err)
+				cfg.Units = []string{}
+			}
+			if cfg.Units == nil {
+				cfg.Units = []string{}
+			}
+			result[*inst.NodeID] = cfg.Units
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -71,20 +85,52 @@ func UpdateSystemdSettings(db *gorm.DB) http.HandlerFunc {
 			clean = append(clean, t)
 		}
 
-		unitsJSON, err := json.Marshal(clean)
+		for _, unit := range clean {
+			if !validUnitName.MatchString(unit) {
+				writeError(w, http.StatusBadRequest, "invalid unit name: "+unit)
+				return
+			}
+		}
+
+		cfgJSON, err := json.Marshal(map[string]any{"units": clean})
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to encode units")
+			writeError(w, http.StatusInternalServerError, "failed to serialize units")
 			return
 		}
 
-		config := models.SystemdUnitConfig{
-			NodeName: nodeName,
-			Units:    string(unitsJSON),
+		var nodeExists int64
+		if err := db.Model(&models.Node{}).Where("name = ?", nodeName).Count(&nodeExists).Error; err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to verify node")
+			return
 		}
-		if err := db.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "node_name"}},
-			DoUpdates: clause.AssignmentColumns([]string{"units"}),
-		}).Create(&config).Error; err != nil {
+
+		err = db.Transaction(func(tx *gorm.DB) error {
+			var existing models.DataSourceInstance
+			findErr := tx.Where("type = ? AND node_id = ?", "systemd", nodeName).First(&existing).Error
+			now := time.Now().UTC()
+			if findErr == nil {
+				existing.Config = string(cfgJSON)
+				existing.UpdatedAt = now
+				return tx.Save(&existing).Error
+			}
+			if !errors.Is(findErr, gorm.ErrRecordNotFound) {
+				return findErr
+			}
+			if nodeExists == 0 {
+				return gorm.ErrRecordNotFound
+			}
+			inst := models.DataSourceInstance{
+				ID: ulid.Make().String(), Type: "systemd", Scope: "agent",
+				NodeID: &nodeName, Name: "Systemd", Config: string(cfgJSON),
+				Enabled: true, CreatedAt: now, UpdatedAt: now,
+			}
+			return tx.Create(&inst).Error
+		})
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				writeError(w, http.StatusNotFound, "node not found")
+				return
+			}
 			writeError(w, http.StatusInternalServerError, "failed to save systemd settings")
 			return
 		}

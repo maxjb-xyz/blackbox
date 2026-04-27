@@ -1,4 +1,4 @@
-export type AdminGroup = 'access' | 'integrations' | 'system'
+export type AdminGroup = 'access' | 'sources' | 'integrations' | 'system'
 export type Tab =
   | 'invites'
   | 'users'
@@ -7,19 +7,17 @@ export type Tab =
   | 'notifications'
   | 'webhooks'
   | 'agents'
-  | 'excludes'
   | 'github'
   | 'ai'
-  | 'systemd'
-  | 'filewatcher'
 
 export const ADMIN_GROUPS: Record<AdminGroup, { label: string; tabs: Tab[] }> = {
   access: { label: 'ACCESS', tabs: ['users', 'invites', 'oidc', 'audit'] },
-  integrations: { label: 'INTEGRATIONS', tabs: ['notifications', 'webhooks', 'agents', 'excludes'] },
-  system: { label: 'SYSTEM', tabs: ['ai', 'systemd', 'filewatcher', 'github'] },
+  sources: { label: 'DATA SOURCES', tabs: [] }, // dynamic sidebar
+  integrations: { label: 'INTEGRATIONS', tabs: ['notifications', 'webhooks', 'agents'] },
+  system: { label: 'SYSTEM', tabs: ['ai', 'github'] },
 }
 
-export const ALL_ADMIN_GROUPS: AdminGroup[] = ['access', 'integrations', 'system']
+export const ALL_ADMIN_GROUPS: AdminGroup[] = ['access', 'sources', 'integrations', 'system']
 export const ADMIN_SIDEBAR_BREAKPOINT = 961
 export const ADMIN_SIDEBAR_BREAKPOINT_QUERY = `(min-width: ${ADMIN_SIDEBAR_BREAKPOINT}px)`
 

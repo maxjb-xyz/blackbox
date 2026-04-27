@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -101,6 +103,30 @@ func TestSendBatch_FourXXReturnsPermanentError(t *testing.T) {
 	}
 }
 
+func TestSendBatch_TimeoutAndRateLimitRemainRetryable(t *testing.T) {
+	for _, status := range []int{http.StatusRequestTimeout, http.StatusTooManyRequests, http.StatusGone} {
+		status := status
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				http.Error(w, "retry later", status)
+			}))
+			defer srv.Close()
+
+			c := client.New(srv.URL, "test-token", "node-1")
+			_, _, err := c.SendBatch(context.Background(), []types.Entry{
+				{ID: ulid.Make().String(), Source: "docker", Event: "start"},
+			})
+			if err == nil {
+				t.Fatalf("expected error for %d, got nil", status)
+			}
+			var permErr *client.PermanentError
+			if errors.As(err, &permErr) {
+				t.Fatalf("expected retryable error for %d, got permanent error: %v", status, err)
+			}
+		})
+	}
+}
+
 func TestSendBatch_PartialFailure(t *testing.T) {
 	goodID := ulid.Make().String()
 	badID := ulid.Make().String()
@@ -131,5 +157,88 @@ func TestSendBatch_PartialFailure(t *testing.T) {
 	}
 	if !failed[0].Permanent {
 		t.Errorf("expected failed[0].Permanent=true")
+	}
+}
+
+func TestGetAgentConfig_SanitizesCapabilitiesHeader(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-Blackbox-Agent-Capabilities"); got != "docker,systemd" {
+			t.Fatalf("X-Blackbox-Agent-Capabilities = %q, want %q", got, "docker,systemd")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"file_watcher_redact_secrets":true,"systemd_units":[]}`)
+	}))
+	defer srv.Close()
+
+	c := client.New(srv.URL, "test-token", "node-1")
+	_, err := c.GetAgentConfig(context.Background(), []string{" docker ", "", "systemd", "   "})
+	if err != nil {
+		t.Fatalf("GetAgentConfig: %v", err)
+	}
+}
+
+func TestGetAgentConfig_RejectsCapabilitiesWithCommas(t *testing.T) {
+	c := client.New("http://example.invalid", "test-token", "node-1")
+	_, err := c.GetAgentConfig(context.Background(), []string{"docker", "bad,cap"})
+	if err == nil {
+		t.Fatal("expected error for capability containing comma, got nil")
+	}
+	if !strings.Contains(err.Error(), "capability") {
+		t.Fatalf("error = %q, want capability validation message", err)
+	}
+}
+
+func TestGetAgentConfig_RejectsCapabilitiesWithControlCharacters(t *testing.T) {
+	c := client.New("http://example.invalid", "test-token", "node-1")
+	_, err := c.GetAgentConfig(context.Background(), []string{"docker", "bad\ncap"})
+	if err == nil {
+		t.Fatal("expected error for capability containing control character, got nil")
+	}
+	if !strings.Contains(err.Error(), "control characters") {
+		t.Fatalf("error = %q, want control-character validation message", err)
+	}
+}
+
+func TestGetAgentConfig_FourXXReturnsPermanentError(t *testing.T) {
+	for _, status := range []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden} {
+		status := status
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				http.Error(w, "rejected", status)
+			}))
+			defer srv.Close()
+
+			c := client.New(srv.URL, "test-token", "node-1")
+			_, err := c.GetAgentConfig(context.Background(), []string{"docker"})
+			if err == nil {
+				t.Fatalf("expected error for %d, got nil", status)
+			}
+			var permErr *client.PermanentError
+			if !errors.As(err, &permErr) {
+				t.Errorf("expected *client.PermanentError, got %T: %v", err, err)
+			}
+		})
+	}
+}
+
+func TestGetAgentConfig_TimeoutAndRateLimitRemainRetryable(t *testing.T) {
+	for _, status := range []int{http.StatusRequestTimeout, http.StatusTooManyRequests, http.StatusGone} {
+		status := status
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				http.Error(w, "retry later", status)
+			}))
+			defer srv.Close()
+
+			c := client.New(srv.URL, "test-token", "node-1")
+			_, err := c.GetAgentConfig(context.Background(), []string{"docker"})
+			if err == nil {
+				t.Fatalf("expected error for %d, got nil", status)
+			}
+			var permErr *client.PermanentError
+			if errors.As(err, &permErr) {
+				t.Fatalf("expected retryable error for %d, got permanent error: %v", status, err)
+			}
+		})
 	}
 }

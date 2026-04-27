@@ -106,7 +106,10 @@ docker compose up -d
 
 **3. Open `http://your-server:8080` and complete the setup wizard.**
 
-**4. Optional: open Admin > System to configure file-diff redaction and Ollama-based incident analysis. Open Admin > System > Systemd to choose which units each node should watch when `WATCH_SYSTEMD=true` is enabled on that agent.**
+**4. Optional:**
+
+- Open `Admin > Data Sources` to manage per-node and server-wide data sources and set up capability-aware systemd, file watcher, webhook, and Docker exclusions.
+- Open `Admin > System` to configure file-diff redaction and Ollama-based incident analysis.
 
 ---
 
@@ -123,7 +126,11 @@ docker compose up -d
 - **Uptime Kuma webhooks** — Ingest Down/Up state changes. Down events open confirmed incidents and score likely causes from recent Docker, file, and webhook activity.
 - **Watchtower webhooks** — Ingest container image update events with version metadata and use them as incident evidence when a restart follows shortly after.
 - **Custom entries** — Post arbitrary events via the API.
-- **Container & stack exclusions** — Exclude specific Docker containers or Compose stacks from event ingestion entirely. Configured in Admin > Integrations > Excludes. Excluded events are silently dropped server-side — agents do not need reconfiguring.
+- **Container & stack exclusions** — Exclude specific Docker containers or Compose stacks from event ingestion entirely. Configured in Admin > Data Sources. Excluded events are silently dropped server-side — agents do not need reconfiguring.
+
+### Sources
+
+- **Source catalog** - Manage supported event sources from Admin > Data Sources. The catalog is capability-aware per node, supports both server-scoped and agent-scoped sources, and preserves stored secrets when you edit an existing source.
 
 ### Notifications
 - **Webhook notification support** — Send outbound notifications to Discord, Slack, ntfy, and other targets when Blackbox events occur. Configure destinations in Admin > Integrations > Notifications.
@@ -148,6 +155,7 @@ docker compose up -d
 ### Node Management
 - Nodes auto-register on first agent heartbeat
 - Per-node metadata: agent version, IP address, OS, last-seen timestamp
+- Agent capability reporting powers source setup defaults and node-specific source availability in the admin UI
 - Live node pulse indicator in the sidebar
 
 ### Authentication
@@ -266,7 +274,7 @@ Notes:
 
 - Systemd monitoring is Linux-only. On non-Linux hosts the watcher is a no-op.
 - Set `WATCH_SYSTEMD=true` on the agent to enable journal monitoring.
-- Configure the watched units from **Admin > System > Systemd**. Settings are stored per node and the agent refreshes them from the server every minute.
+- Configure watched systemd sources from **Admin > Data Sources**. Per-node systemd units are stored with each node's source config and the agent refreshes them from the server every minute.
 - The watcher emits `started`, `stopped`, `restart`, and `failed` events for configured units, plus `oom_kill` events from the kernel journal.
 - Failed unit entries include a recent journal snippet in entry metadata, which Blackbox also uses as a correlation scoring bonus.
 - A watched unit `failed` or `oom_kill` opens a suspected incident immediately. Repeated watched `restart`/`failed` events within 5 minutes also open a suspected incident, while a lone `restart` does not.
@@ -579,7 +587,7 @@ Blackbox is split into two components designed to run across multiple nodes.
 | Component | Role |
 |-----------|------|
 | **Server** | Central brain. Hosts the UI, stores the database, receives events from agents, handles webhook ingestion, and runs the incident/correlation engine. |
-| **Agent** | Lightweight binary deployed on each node. Watches Docker, config files, and optional systemd journals, then pushes events to the server. |
+| **Agent** | Lightweight binary deployed on each node. Watches Docker, config files, and optional systemd journals, reports its capabilities to the server, and pushes events to the server. |
 
 ---
 
@@ -627,7 +635,7 @@ TZ=America/New_York JWT_SECRET=dev AGENT_TOKENS="local=devtoken" WEBHOOK_SECRET=
 TZ=America/New_York SERVER_URL=http://localhost:8080 AGENT_TOKEN=devtoken NODE_NAME=local ./agent/blackbox-agent
 ```
 
-To test systemd monitoring locally on Linux, add `WATCH_SYSTEMD=true` and make sure the agent can read the host journal. Then configure units from **Admin > System > Systemd** after the node registers.
+To test systemd monitoring locally on Linux, add `WATCH_SYSTEMD=true` and make sure the agent can read the host journal. Then configure the node's systemd source from **Admin > Data Sources** after the node registers.
 
 **Build Docker images:**
 
@@ -679,17 +687,15 @@ The database is automatically migrated on startup — no manual schema managemen
 - [x] Mobile-friendly view
 - [x] Support OpenAI/Other AI Providers
 - [x] Webhook notification support
-<<<<<<< feature/mcp-server
 - [x] MCP server for AI assistant integration
-=======
 - [x] GitHub tab in admin (release notes, feature requests, bug reports)
->>>>>>> main
 - [x] AI review notifications — notify subscribed destinations when Ollama completes incident analysis
 - [x] Container and stack exclusion list
 - [x] FTS5 full-text timeline search
 - [x] Admin audit log
 - [x] Webhook delivery log
 - [x] Resolved incident PDF report export
+- [x] Data source catalog and revamped UI
 - [ ] Timeline UI polish and interaction improvements
 - [ ] Grafana data source plugin
 - [ ] Bi-directional agent analysis
