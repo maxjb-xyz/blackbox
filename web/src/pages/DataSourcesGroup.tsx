@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { CheckCircle, Circle, Copy } from 'lucide-react'
+import { CheckCircle, Circle, Copy, ExternalLink } from 'lucide-react'
 import type {
   DataSourceInstance,
   SourceTypeDef,
@@ -33,6 +33,14 @@ type Selection =
 const WEBHOOK_ENDPOINTS: Record<string, string> = {
   webhook_uptime_kuma: '/api/webhooks/uptime',
   webhook_watchtower: '/api/webhooks/watchtower',
+}
+
+const DOCS_URLS: Record<string, string> = {
+  docker: 'https://docs.blackboxd.dev/docs/data-sources/docker',
+  systemd: 'https://docs.blackboxd.dev/docs/data-sources/systemd',
+  filewatcher: 'https://docs.blackboxd.dev/docs/data-sources/file-watcher',
+  webhook_uptime_kuma: 'https://docs.blackboxd.dev/docs/data-sources/uptime-kuma',
+  webhook_watchtower: 'https://docs.blackboxd.dev/docs/data-sources/watchtower',
 }
 
 function isSourceVisible(inst: DataSourceInstance): boolean {
@@ -484,6 +492,8 @@ function SourceConfigPanel({ creating = false, instance, typeDef, saving, saveEr
         </div>
       </div>
 
+      <DocsBanner type={instance.type} />
+
       <div style={{ border: '1px solid var(--border)' }}>
         <ConfigRow label="Enabled">
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
@@ -690,6 +700,34 @@ function draftInstanceFromInput(input: CreateSourceInput): DataSourceInstance {
   }
 }
 
+function DocsBanner({ type }: { type: string }) {
+  const url = DOCS_URLS[type]
+  if (!url) return null
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noreferrer"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '7px 16px',
+        marginBottom: 16,
+        border: '1px solid var(--border)',
+        borderLeft: '2px solid var(--muted)',
+        fontSize: 11,
+        color: 'var(--muted)',
+        textDecoration: 'none',
+        letterSpacing: '0.06em',
+      }}
+    >
+      <ExternalLink size={11} />
+      Setup guide and configuration reference
+    </a>
+  )
+}
+
 function ConfigRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div style={{ display: 'flex', alignItems: 'flex-start', padding: '12px 16px', borderBottom: '1px solid var(--border)', gap: 16 }}>
@@ -729,6 +767,8 @@ function DockerPanel({ excludes, excludeInput, excludeType, excludeError, adding
         </div>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>Container lifecycle events — runs on every agent automatically.</div>
       </div>
+
+      <DocsBanner type="docker" />
 
       <div style={{ border: '1px solid var(--border)' }}>
         <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', fontSize: 11, color: 'var(--muted)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>

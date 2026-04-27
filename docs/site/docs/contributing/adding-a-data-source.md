@@ -56,6 +56,7 @@ Every source type touches at least six locations across the codebase. Use this a
 | `web/src/components/sourceIcons.ts` | Add the type to `SourceVisualType`, `SourceIconName`, `SOURCE_CARD_COLORS`, and `SOURCE_ICON_SPECS` |
 | `web/src/components/SourceIcon.tsx` | Add a render branch for the new icon name; brand icons need a custom SVG component, generic icons need a Lucide mapping |
 | `web/src/pages/SourceCatalog.tsx` | Add a `buildDefaultConfig` case so the catalog pre-fills config when the user clicks Add |
+| `web/src/pages/DataSourcesGroup.tsx` | Add an entry to `DOCS_URLS` so the edit panel shows a link to the setup guide; without this the banner renders nothing |
 
 ## Three Flows In Detail
 
@@ -161,6 +162,10 @@ In `web/src/components/SourceIcon.tsx`:
 In `web/src/pages/SourceCatalog.tsx`:
 
 - Add a `buildDefaultConfig` case returning the pre-filled config shape for your type
+
+In `web/src/pages/DataSourcesGroup.tsx`:
+
+- Add an entry to `DOCS_URLS` mapping your type string to the full URL of its docs page. The edit panel banner renders nothing if the entry is missing — no error, just no link.
 
 ### 9. Handle Startup Seeding And Migration
 
