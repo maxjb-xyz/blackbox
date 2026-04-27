@@ -36,12 +36,7 @@ const WEBHOOK_ENDPOINTS: Record<string, string> = {
 }
 
 function isSourceVisible(inst: DataSourceInstance): boolean {
-  if (!inst.enabled) return false
-  if (inst.type.startsWith('webhook_')) {
-    const cfg = parseSourceConfig<{ secret?: string }>(inst)
-    return Boolean(cfg?.secret)
-  }
-  return true
+  return inst.enabled
 }
 
 export default function DataSourcesGroup() {
