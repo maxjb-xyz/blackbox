@@ -16,9 +16,15 @@ type cachedSecret struct {
 	expiresAt time.Time
 }
 
+type cachedSecretMap struct {
+	secrets   map[string]string
+	expiresAt time.Time
+}
+
 var (
-	webhookSecretCache     sync.Map
-	webhookSecretRefreshes singleflight.Group
+	webhookSecretCache      sync.Map
+	webhookSecretRefreshes  singleflight.Group
+	webhookSecretsRefreshes singleflight.Group
 )
 
 func PrimeWebhookSecretCache(db *gorm.DB, sourceType, envFallback string) string {
@@ -45,6 +51,26 @@ func GetCachedWebhookSecret(db *gorm.DB, sourceType, envFallback string) string 
 	return refreshWebhookSecretCache(db, sourceType, envFallback)
 }
 
+// GetCachedWebhookSecrets returns a map of sourceID → secret for all enabled
+// instances of sourceType. Uses the same TTL and invalidation logic as the
+// singleton cache. Returns an empty map (never nil) if no instances are found.
+func GetCachedWebhookSecrets(db *gorm.DB, sourceType string) map[string]string {
+	key := sourceType + ":multi"
+	if v, ok := webhookSecretCache.Load(key); ok {
+		if entry, ok := v.(cachedSecretMap); ok && time.Now().Before(entry.expiresAt) {
+			return entry.secrets
+		}
+		webhookSecretCache.Delete(key)
+	}
+	return refreshWebhookSecretsCache(db, sourceType)
+}
+
+// PrimeWebhookSecretsCache eagerly loads the multi-instance secret cache for
+// sourceType at startup so the first inbound request does not hit the DB.
+func PrimeWebhookSecretsCache(db *gorm.DB, sourceType string) map[string]string {
+	return refreshWebhookSecretsCache(db, sourceType)
+}
+
 func refreshWebhookSecretCache(db *gorm.DB, sourceType, envFallback string) string {
 	resolved, _, _ := webhookSecretRefreshes.Do(sourceType, func() (interface{}, error) {
 		secret := GetWebhookSecret(db, sourceType)
@@ -63,16 +89,35 @@ func refreshWebhookSecretCache(db *gorm.DB, sourceType, envFallback string) stri
 	return envFallback
 }
 
+func refreshWebhookSecretsCache(db *gorm.DB, sourceType string) map[string]string {
+	key := sourceType + ":multi"
+	resolved, _, _ := webhookSecretsRefreshes.Do(sourceType, func() (interface{}, error) {
+		secrets := GetAllWebhookSecrets(db, sourceType)
+		webhookSecretCache.Store(key, cachedSecretMap{
+			secrets:   secrets,
+			expiresAt: time.Now().Add(webhookSecretCacheTTL),
+		})
+		return secrets, nil
+	})
+	if secrets, ok := resolved.(map[string]string); ok {
+		return secrets
+	}
+	return map[string]string{}
+}
+
 func refreshWebhookSecretCacheIfNeeded(db *gorm.DB, sourceType string) {
 	if sourceType == "" || db == nil || !strings.HasPrefix(sourceType, "webhook_") {
 		return
 	}
 	webhookSecretCache.Delete(sourceType)
+	webhookSecretCache.Delete(sourceType + ":multi")
 	refreshWebhookSecretCache(db, sourceType, "")
+	refreshWebhookSecretsCache(db, sourceType)
 }
 
 func ResetWebhookSecretCacheForTesting(sourceTypes ...string) {
 	for _, sourceType := range sourceTypes {
 		webhookSecretCache.Delete(sourceType)
+		webhookSecretCache.Delete(sourceType + ":multi")
 	}
 }

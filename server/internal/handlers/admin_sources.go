@@ -389,6 +389,26 @@ func GetWebhookSecret(db *gorm.DB, sourceType string) string {
 	return cfg.Secret
 }
 
+// GetAllWebhookSecrets returns a map of source ID → secret for all enabled instances of sourceType.
+func GetAllWebhookSecrets(db *gorm.DB, sourceType string) map[string]string {
+	var instances []models.DataSourceInstance
+	if err := db.Where("type = ? AND enabled = ?", sourceType, true).Find(&instances).Error; err != nil {
+		log.Printf("GetAllWebhookSecrets: sourceType=%s lookup failed: %v", sourceType, err)
+		return map[string]string{}
+	}
+	result := make(map[string]string, len(instances))
+	for _, inst := range instances {
+		var cfg struct {
+			Secret string `json:"secret"`
+		}
+		if err := json.Unmarshal([]byte(inst.Config), &cfg); err != nil || cfg.Secret == "" {
+			continue
+		}
+		result[inst.ID] = cfg.Secret
+	}
+	return result
+}
+
 func sensitiveKeysFor(sourceType string) []string {
 	switch {
 	case strings.HasPrefix(sourceType, "webhook_"):
