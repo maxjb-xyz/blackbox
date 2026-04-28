@@ -135,9 +135,9 @@ func loadKomodoConfig(db *gorm.DB, sourceID string) (komodoConfig, bool, error) 
 }
 
 func isAllowedKomodoType(allowed []string, eventType string) bool {
-	lower := strings.ToLower(eventType)
+	norm := strings.ToLower(strings.TrimSpace(eventType))
 	for _, t := range allowed {
-		if t == lower {
+		if strings.ToLower(strings.TrimSpace(t)) == norm {
 			return true
 		}
 	}

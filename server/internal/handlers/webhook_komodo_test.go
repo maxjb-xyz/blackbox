@@ -40,7 +40,8 @@ func createKomodoSource(t *testing.T, db *gorm.DB, allowedTypes []string, nodeMa
 		}
 		cfg["node_map"] = normMap
 	}
-	cfgBytes, _ := json.Marshal(cfg)
+	cfgBytes, err := json.Marshal(cfg)
+	require.NoError(t, err, "marshal cfg")
 	now := time.Now().UTC()
 	inst := models.DataSourceInstance{
 		ID: id, Type: "webhook_komodo", Scope: "server",

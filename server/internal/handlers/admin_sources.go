@@ -542,6 +542,9 @@ func validateSourceConfig(sourceType string, config map[string]any) error {
 				if k == "" {
 					return errors.New("node_map keys must be non-empty strings")
 				}
+				if _, exists := normMap[k]; exists {
+					return errors.New("node_map contains duplicate keys after normalization")
+				}
 				s, ok := v.(string)
 				if !ok {
 					return errors.New("node_map values must be non-empty strings")

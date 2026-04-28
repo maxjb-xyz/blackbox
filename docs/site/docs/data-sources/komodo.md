@@ -92,7 +92,7 @@ If your Komodo server names differ from the node names your agents registered un
 
 Example: if Komodo calls a server `prod-komodo` but your Blackbox agent registered as `prod-1`, add the mapping:
 
-```
+```text
 prod-komodo → prod-1
 ```
 
