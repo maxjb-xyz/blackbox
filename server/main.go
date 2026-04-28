@@ -95,6 +95,7 @@ func main() {
 	}
 	handlers.PrimeWebhookSecretCache(database, "webhook_uptime_kuma", webhookSecret)
 	handlers.PrimeWebhookSecretCache(database, "webhook_watchtower", webhookSecret)
+	handlers.PrimeWebhookSecretsCache(database, "webhook_komodo")
 	mcpMgr := bbmcp.NewMCPManager(database)
 	defer func() {
 		if err := mcpMgr.Shutdown(context.Background()); err != nil {
@@ -292,6 +293,13 @@ func main() {
 			return handlers.GetCachedWebhookSecret(database, "webhook_watchtower", webhookSecret)
 		}),
 	).Post("/api/webhooks/watchtower", handlers.WebhookWatchtower(database, eventHub, incidentCh, managerCtx.Done()))
+
+	r.With(
+		middleware.RateLimit(time.Minute, 60),
+		middleware.WebhookAuthFuncMulti(func() map[string]string {
+			return handlers.GetCachedWebhookSecrets(database, "webhook_komodo")
+		}),
+	).Post("/api/webhooks/komodo", handlers.WebhookKomodo(database, eventHub, incidentCh, managerCtx.Done()))
 
 	spaHandler := static.Handler(staticFiles)
 	r.NotFound(func(w http.ResponseWriter, req *http.Request) {

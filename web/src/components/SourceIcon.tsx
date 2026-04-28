@@ -17,6 +17,7 @@ export default function SourceIcon({ type, size = 16, strokeWidth = 1.8, style }
     if (spec.name === 'docker') return <DockerMark size={size} style={style} />
     if (spec.name === 'uptime-kuma') return <UptimeKumaMark size={size} style={style} />
     if (spec.name === 'watchtower') return <WatchtowerMark size={size} style={style} />
+    if (spec.name === 'komodo') return <KomodoMark size={size} style={style} />
     return <CircleHelp size={size} strokeWidth={strokeWidth} style={style} />
   }
 
@@ -82,6 +83,22 @@ function WatchtowerMark({ size, style }: { size: number; style?: CSSProperties }
         strokeWidth="1.4"
         strokeLinecap="round"
         opacity="0.75"
+      />
+    </svg>
+  )
+}
+
+function KomodoMark({ size, style }: { size: number; style?: CSSProperties }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true" style={style}>
+      <rect x="3" y="3" width="18" height="18" rx="1" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <path
+        d="M8.5 7.5v9M8.5 12l3.5-4.5M8.5 12l4 4.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </svg>
   )

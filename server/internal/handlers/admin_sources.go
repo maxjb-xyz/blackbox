@@ -31,6 +31,7 @@ var knownSourceTypes = []SourceTypeDef{
 	{Type: "filewatcher", Scope: "agent", Singleton: true, Name: "File Watcher", Description: "inotify events on watched config paths", Mechanism: "agent · inotify"},
 	{Type: "webhook_uptime_kuma", Scope: "server", Singleton: true, Name: "Uptime Kuma", Description: "Inbound webhook for Uptime Kuma monitor events", Mechanism: "server · http"},
 	{Type: "webhook_watchtower", Scope: "server", Singleton: true, Name: "Watchtower", Description: "Inbound webhook for Watchtower container update events", Mechanism: "server · http"},
+	{Type: "webhook_komodo", Scope: "server", Singleton: false, Name: "Komodo", Description: "Inbound webhook for Komodo deployment and automation events", Mechanism: "server · http"},
 }
 
 var knownTypes = func() map[string]SourceTypeDef {
@@ -389,6 +390,26 @@ func GetWebhookSecret(db *gorm.DB, sourceType string) string {
 	return cfg.Secret
 }
 
+// GetAllWebhookSecrets returns a map of source ID → secret for all enabled instances of sourceType.
+func GetAllWebhookSecrets(db *gorm.DB, sourceType string) map[string]string {
+	var instances []models.DataSourceInstance
+	if err := db.Where("type = ? AND enabled = ?", sourceType, true).Find(&instances).Error; err != nil {
+		log.Printf("GetAllWebhookSecrets: sourceType=%s lookup failed: %v", sourceType, err)
+		return map[string]string{}
+	}
+	result := make(map[string]string, len(instances))
+	for _, inst := range instances {
+		var cfg struct {
+			Secret string `json:"secret"`
+		}
+		if err := json.Unmarshal([]byte(inst.Config), &cfg); err != nil || cfg.Secret == "" {
+			continue
+		}
+		result[inst.ID] = cfg.Secret
+	}
+	return result
+}
+
 func sensitiveKeysFor(sourceType string) []string {
 	switch {
 	case strings.HasPrefix(sourceType, "webhook_"):
@@ -483,6 +504,58 @@ func validateSourceConfig(sourceType string, config map[string]any) error {
 		}
 		if _, ok := rawValue.(bool); !ok {
 			return errors.New("redact_secrets must be a boolean")
+		}
+	}
+	if sourceType == "webhook_komodo" {
+		rawAllowed, ok := config["allowed_types"]
+		if !ok {
+			return errors.New("allowed_types is required")
+		}
+		allowedSlice, ok := rawAllowed.([]any)
+		if !ok {
+			return errors.New("allowed_types must be an array of strings")
+		}
+		if len(allowedSlice) == 0 {
+			return errors.New("allowed_types must not be empty")
+		}
+		normalized := make([]any, 0, len(allowedSlice))
+		for _, v := range allowedSlice {
+			s, ok := v.(string)
+			if !ok {
+				return errors.New("allowed_types must contain non-empty strings")
+			}
+			s = strings.ToLower(strings.TrimSpace(s))
+			if s == "" {
+				return errors.New("allowed_types must contain non-empty strings")
+			}
+			normalized = append(normalized, s)
+		}
+		config["allowed_types"] = normalized
+		if rawMap, ok := config["node_map"]; ok && rawMap != nil {
+			nodeMap, ok := rawMap.(map[string]any)
+			if !ok {
+				return errors.New("node_map must be an object")
+			}
+			normMap := make(map[string]any, len(nodeMap))
+			for k, v := range nodeMap {
+				k = strings.ToLower(strings.TrimSpace(k))
+				if k == "" {
+					return errors.New("node_map keys must be non-empty strings")
+				}
+				if _, exists := normMap[k]; exists {
+					return errors.New("node_map contains duplicate keys after normalization")
+				}
+				s, ok := v.(string)
+				if !ok {
+					return errors.New("node_map values must be non-empty strings")
+				}
+				s = strings.ToLower(strings.TrimSpace(s))
+				if s == "" {
+					return errors.New("node_map values must be non-empty strings")
+				}
+				normMap[k] = s
+			}
+			config["node_map"] = normMap
 		}
 	}
 	return nil

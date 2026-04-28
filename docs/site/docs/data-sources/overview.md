@@ -22,10 +22,11 @@ Blackbox currently has two scopes:
 | `filewatcher` | Agent | Watches config paths and emits file change events. |
 | `webhook_uptime_kuma` | Server | Accepts Uptime Kuma monitor events. |
 | `webhook_watchtower` | Server | Accepts Watchtower update events. |
+| `webhook_komodo` | Server | Accepts Komodo deployment and automation events. Non-singleton — one entry per Komodo instance. |
 
 ## Singleton Behavior
 
-All current built-in source types are singletons for their target:
+Most built-in source types are singletons for their target:
 
 - One `systemd` source per node.
 - One `filewatcher` source per node.
@@ -34,6 +35,8 @@ All current built-in source types are singletons for their target:
 
 `docker` is special: it is a virtual built-in source and cannot be created as a
 normal source row from the admin API.
+
+**Non-singleton sources** allow multiple instances of the same type. `webhook_komodo` is non-singleton — you can create one entry per Komodo instance (e.g. prod and staging), each with its own secret and event filter.
 
 ## Capability Awareness
 

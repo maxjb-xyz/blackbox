@@ -11,18 +11,20 @@ export type SourceVisualType =
   | 'filewatcher'
   | 'webhook_uptime_kuma'
   | 'webhook_watchtower'
+  | 'webhook_komodo'
   | 'fallback'
 
 export type SourceIconName =
   | 'docker'
   | 'uptime-kuma'
   | 'watchtower'
+  | 'komodo'
   | 'systemd'
   | 'filewatcher'
   | 'fallback'
 
 export type SourceIconSpec =
-  | { kind: 'brand'; name: Extract<SourceIconName, 'docker' | 'uptime-kuma' | 'watchtower'> }
+  | { kind: 'brand'; name: Extract<SourceIconName, 'docker' | 'uptime-kuma' | 'watchtower' | 'komodo'> }
   | { kind: 'generic'; name: Extract<SourceIconName, 'systemd' | 'filewatcher' | 'fallback'> }
 
 export const COLORS = {
@@ -32,6 +34,7 @@ export const COLORS = {
   filewatcher: { border: '#5a3a1a', bg: '#281a0d', text: '#bd7a3a', accent: '#7a4a1a' },
   uptimeKuma: { border: '#1a5a3a', bg: '#0d2818', text: '#3abd7a', accent: '#1a7a4a' },
   watchtower: { border: '#24516a', bg: '#0d1f2b', text: '#57b8d9', accent: '#2f7398' },
+  komodo: { border: '#1a4a2e', bg: '#0a1f14', text: '#2dbd72', accent: '#1a7a45' },
 } as const
 
 const FALLBACK_COLORS: SourceCardColors = {
@@ -72,6 +75,12 @@ const SOURCE_CARD_COLORS: Record<SourceVisualType, SourceCardColors> = {
     text: COLORS.watchtower.text,
     topBar: `linear-gradient(90deg,${COLORS.watchtower.accent},transparent 60%)`,
   },
+  webhook_komodo: {
+    border: COLORS.komodo.border,
+    bg: COLORS.komodo.bg,
+    text: COLORS.komodo.text,
+    topBar: `linear-gradient(90deg,${COLORS.komodo.accent},transparent 60%)`,
+  },
   fallback: FALLBACK_COLORS,
 }
 
@@ -81,6 +90,7 @@ const SOURCE_ICON_SPECS: Record<SourceVisualType, SourceIconSpec> = {
   filewatcher: { kind: 'generic', name: 'filewatcher' },
   webhook_uptime_kuma: { kind: 'brand', name: 'uptime-kuma' },
   webhook_watchtower: { kind: 'brand', name: 'watchtower' },
+  webhook_komodo: { kind: 'brand', name: 'komodo' },
   fallback: { kind: 'generic', name: 'fallback' },
 }
 
