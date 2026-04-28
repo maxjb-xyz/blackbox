@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { Bug, ChevronDown, ChevronUp, ExternalLink, Lightbulb } from 'lucide-react'
+import { Bug, ChevronDown, ChevronUp, Coffee, ExternalLink, Lightbulb } from 'lucide-react'
 import { Navigate } from 'react-router-dom'
 import {
   createAdminOIDCProvider,
@@ -2403,24 +2403,35 @@ function GitHubTab() {
         <div style={panelHeaderStyle}>
           <span style={panelLabelStyle}>COMMUNITY</span>
         </div>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <a
+              href={`https://github.com/${GITHUB_REPO_SLUG}/issues/new?template=feature_request.md&labels=enhancement`}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={githubActionBtnStyle}
+            >
+              <Lightbulb size={14} />
+              SUGGEST A FEATURE
+            </a>
+            <a
+              href={`https://github.com/${GITHUB_REPO_SLUG}/issues/new?template=bug_report.md&labels=bug`}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={githubActionBtnStyle}
+            >
+              <Bug size={14} />
+              REPORT A BUG
+            </a>
+          </div>
           <a
-            href={`https://github.com/${GITHUB_REPO_SLUG}/issues/new?template=feature_request.md&labels=enhancement`}
+            href="https://buymeacoffee.com/maxjb"
             target="_blank"
             rel="noopener noreferrer"
-            style={githubActionBtnStyle}
+            style={buyMeACoffeeBtnStyle}
           >
-            <Lightbulb size={14} />
-            SUGGEST A FEATURE
-          </a>
-          <a
-            href={`https://github.com/${GITHUB_REPO_SLUG}/issues/new?template=bug_report.md&labels=bug`}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={githubActionBtnStyle}
-          >
-            <Bug size={14} />
-            REPORT A BUG
+            <Coffee size={14} />
+            BUY ME A COFFEE
           </a>
         </div>
       </section>
@@ -2605,6 +2616,14 @@ const githubActionBtnStyle: CSSProperties = {
   fontFamily: 'inherit',
   cursor: 'pointer',
   textDecoration: 'none',
+}
+
+const buyMeACoffeeBtnStyle: CSSProperties = {
+  ...githubActionBtnStyle,
+  background: '#ffdd00',
+  border: '1px solid #ffdd00',
+  color: '#0b0b0b',
+  fontWeight: 700,
 }
 
 const adminTableHeaderStyle: CSSProperties = {
