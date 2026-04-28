@@ -21,8 +21,9 @@ Current built-ins include:
 - `docker` — virtual agent source (no DB row, always present)
 - `systemd` — agent-scoped, requires `WATCH_SYSTEMD=true` on the agent
 - `filewatcher` — agent-scoped, requires `WATCH_PATHS` configured on the agent
-- `webhook_uptime_kuma` — server-scoped webhook source
-- `webhook_watchtower` — server-scoped webhook source
+- `webhook_uptime_kuma` — server-scoped webhook source (singleton)
+- `webhook_watchtower` — server-scoped webhook source (singleton)
+- `webhook_komodo` — server-scoped webhook source (non-singleton; one instance per Komodo deployment)
 
 ## Design Questions To Answer
 
@@ -47,7 +48,7 @@ Every source type touches at least six locations across the codebase. Use this a
 | `server/internal/handlers/admin_sources.go` | Add entry to `knownSourceTypes`; add config validation case in `validateSourceConfig`; add redaction key in `sensitiveKeysFor` if storing secrets |
 | `server/internal/models/data_source.go` | Add the type string to `agentScopedSingletonSourceTypes` or `serverScopedSingletonSourceTypes` |
 | `server/internal/handlers/datasource_migration.go` | Add startup seeding logic if the source should be auto-created on first run or migrated from legacy config |
-| `server/main.go` | For webhook sources: add a `PrimeWebhookSecretCache` call at startup and a route using `middleware.WebhookAuthFunc` |
+| `server/main.go` | For singleton webhook sources: add a `PrimeWebhookSecretCache` call and a route using `middleware.WebhookAuthFunc`. For non-singleton webhook sources: add a `PrimeWebhookSecretsCache` call and a route using `middleware.WebhookAuthFuncMulti` |
 
 ### Frontend
 
@@ -77,20 +78,39 @@ Agent-scoped sources are collected by the agent process and pushed to the server
 
 **Startup seeding.** If the source should be auto-created for every capable node on first startup (like `filewatcher`), add logic in `datasource_migration.go`. The migration runs inside a transaction on every startup and is gated by the `data_sources_migrated` app setting key so it only seeds once.
 
-### Flow 2: Server-Side Webhook Source (e.g. `webhook_uptime_kuma`, `webhook_watchtower`)
+### Flow 2: Server-Side Webhook Source
 
-Webhook sources receive events over HTTP rather than from an agent. They require a secret for authentication.
+Webhook sources receive events over HTTP rather than from an agent. They require a secret for authentication. There are two sub-flows depending on whether the source is singleton or non-singleton.
 
 **Config and validation.** Types with the `webhook_` prefix automatically get secret validation (non-empty string required) and redaction (zeroed before the config is returned to the UI) because `validateSourceConfig` and `sensitiveKeysFor` both key off that prefix. New webhook types get both behaviors for free if they follow the naming convention.
-
-**Route wiring in `server/main.go`.** Two things must happen:
-
-1. A `PrimeWebhookSecretCache` call at startup (alongside the existing calls around line 96) so the secret is hot before the first inbound request.
-2. A route using `middleware.WebhookAuthFunc` wrapping `handlers.GetCachedWebhookSecret` for your source type (see the pattern around lines 282–294). The cache invalidates automatically when the source is created, updated, or deleted via the admin API.
 
 **Handler.** Add a handler function (e.g. `WebhookMyService`) that parses the inbound payload and emits normalized timeline entries via `eventHub`.
 
 **Startup seeding.** Webhook sources are only auto-seeded when `WEBHOOK_SECRET` was set at startup (legacy behavior). New installs create them explicitly via the catalog. Add a seeding block in `datasource_migration.go` only if you need parity with the existing webhook sources.
+
+#### Flow 2a: Singleton Webhook (e.g. `webhook_uptime_kuma`, `webhook_watchtower`)
+
+One instance per server. The secret lives in a single `DataSourceInstance` row.
+
+**Route wiring in `server/main.go`:**
+
+1. A `PrimeWebhookSecretCache` call at startup so the secret is hot before the first inbound request.
+2. A route using `middleware.WebhookAuthFunc` wrapping `handlers.GetCachedWebhookSecret` for your source type. The cache invalidates automatically when the source is created, updated, or deleted via the admin API.
+
+**Singleton slice.** Add the type to `serverScopedSingletonSourceTypes` in `server/internal/models/data_source.go`.
+
+#### Flow 2b: Non-Singleton Webhook (e.g. `webhook_komodo`)
+
+Multiple instances of the same type can coexist — each with its own secret, and optionally its own per-instance config (e.g. event filters, node mappings). Instances are distinguished by their secret at the auth layer.
+
+**Route wiring in `server/main.go`:**
+
+1. A `PrimeWebhookSecretsCache` call at startup (note: `SecretsCache`, plural) to load all instance secrets into the multi-instance cache.
+2. A route using `middleware.WebhookAuthFuncMulti` wrapping `handlers.GetCachedWebhookSecrets` (plural). The middleware checks the incoming `X-Webhook-Secret` header against all enabled instance secrets and injects the matched source ID into the request context.
+
+**Handler.** Call `middleware.WebhookSourceIDFromContext(r.Context())` to retrieve the matched source ID, then load that instance's config from the DB to read per-instance settings.
+
+**Do not add the type to `serverScopedSingletonSourceTypes`.** Non-singleton sources are intentionally absent from that slice — the singleton enforcement in `CreateSource` is skipped for them.
 
 ### Flow 3: Virtual Source (e.g. `docker`)
 
@@ -130,7 +150,7 @@ Choose the correct side:
 - Agent-side watcher or collector for node-local sources; push via `/api/agent/push`
 - Server-side webhook handler for central sources; wire the route in `server/main.go`
 
-For webhook sources, wire `PrimeWebhookSecretCache` at startup and add a route with `middleware.WebhookAuthFunc` as described in Flow 2.
+For singleton webhook sources, wire `PrimeWebhookSecretCache` at startup and add a route with `middleware.WebhookAuthFunc` as described in Flow 2a. For non-singleton webhook sources, use `PrimeWebhookSecretsCache` and `middleware.WebhookAuthFuncMulti` as described in Flow 2b.
 
 ### 6. Add Capability Advertising (Agent-Scoped Only)
 
