@@ -54,11 +54,12 @@ func GetCachedWebhookSecret(db *gorm.DB, sourceType, envFallback string) string 
 // GetCachedWebhookSecrets returns a map of sourceID → secret for all enabled
 // instances of sourceType. Uses the same TTL and invalidation logic as the
 // singleton cache. Returns an empty map (never nil) if no instances are found.
+// The returned map is a copy; callers may not mutate the cache through it.
 func GetCachedWebhookSecrets(db *gorm.DB, sourceType string) map[string]string {
 	key := sourceType + ":multi"
 	if v, ok := webhookSecretCache.Load(key); ok {
 		if entry, ok := v.(cachedSecretMap); ok && time.Now().Before(entry.expiresAt) {
-			return entry.secrets
+			return cloneStringMap(entry.secrets)
 		}
 		webhookSecretCache.Delete(key)
 	}
@@ -94,15 +95,23 @@ func refreshWebhookSecretsCache(db *gorm.DB, sourceType string) map[string]strin
 	resolved, _, _ := webhookSecretsRefreshes.Do(sourceType, func() (interface{}, error) {
 		secrets := GetAllWebhookSecrets(db, sourceType)
 		webhookSecretCache.Store(key, cachedSecretMap{
-			secrets:   secrets,
+			secrets:   cloneStringMap(secrets),
 			expiresAt: time.Now().Add(webhookSecretCacheTTL),
 		})
 		return secrets, nil
 	})
 	if secrets, ok := resolved.(map[string]string); ok {
-		return secrets
+		return cloneStringMap(secrets)
 	}
 	return map[string]string{}
+}
+
+func cloneStringMap(m map[string]string) map[string]string {
+	c := make(map[string]string, len(m))
+	for k, v := range m {
+		c[k] = v
+	}
+	return c
 }
 
 func refreshWebhookSecretCacheIfNeeded(db *gorm.DB, sourceType string) {

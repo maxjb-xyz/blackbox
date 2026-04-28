@@ -518,26 +518,41 @@ func validateSourceConfig(sourceType string, config map[string]any) error {
 		if len(allowedSlice) == 0 {
 			return errors.New("allowed_types must not be empty")
 		}
+		normalized := make([]any, 0, len(allowedSlice))
 		for _, v := range allowedSlice {
 			s, ok := v.(string)
-			if !ok || strings.TrimSpace(s) == "" {
+			if !ok {
 				return errors.New("allowed_types must contain non-empty strings")
 			}
+			s = strings.ToLower(strings.TrimSpace(s))
+			if s == "" {
+				return errors.New("allowed_types must contain non-empty strings")
+			}
+			normalized = append(normalized, s)
 		}
+		config["allowed_types"] = normalized
 		if rawMap, ok := config["node_map"]; ok && rawMap != nil {
 			nodeMap, ok := rawMap.(map[string]any)
 			if !ok {
 				return errors.New("node_map must be an object")
 			}
+			normMap := make(map[string]any, len(nodeMap))
 			for k, v := range nodeMap {
-				if strings.TrimSpace(k) == "" {
+				k = strings.ToLower(strings.TrimSpace(k))
+				if k == "" {
 					return errors.New("node_map keys must be non-empty strings")
 				}
 				s, ok := v.(string)
-				if !ok || strings.TrimSpace(s) == "" {
+				if !ok {
 					return errors.New("node_map values must be non-empty strings")
 				}
+				s = strings.ToLower(strings.TrimSpace(s))
+				if s == "" {
+					return errors.New("node_map values must be non-empty strings")
+				}
+				normMap[k] = s
 			}
+			config["node_map"] = normMap
 		}
 	}
 	return nil

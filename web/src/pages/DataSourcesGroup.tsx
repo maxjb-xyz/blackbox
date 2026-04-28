@@ -559,6 +559,8 @@ function SourceConfigPanel({ creating = false, instance, typeDef, saving, saveEr
               <SystemdUnitEditor
                 units={Array.isArray(localCfg.allowed_types) ? (localCfg.allowed_types as unknown[]).map(String) : []}
                 onChange={allowed_types => setLocalCfg(c => ({ ...c, allowed_types }))}
+                placeholder="BuildFailed"
+                emptyLabel="No event types configured."
               />
             </ConfigRow>
             <ConfigRow label="Node Map">
@@ -652,7 +654,17 @@ function WebhookURLRow({ path }: { path: string }) {
   )
 }
 
-function SystemdUnitEditor({ units, onChange }: { units: string[]; onChange: (units: string[]) => void }) {
+function SystemdUnitEditor({
+  units,
+  onChange,
+  placeholder = 'nginx.service',
+  emptyLabel = 'No units configured.',
+}: {
+  units: string[]
+  onChange: (units: string[]) => void
+  placeholder?: string
+  emptyLabel?: string
+}) {
   const [newUnit, setNewUnit] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -671,7 +683,7 @@ function SystemdUnitEditor({ units, onChange }: { units: string[]; onChange: (un
   return (
     <div>
       {units.length === 0 && (
-        <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>No units configured.</div>
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>{emptyLabel}</div>
       )}
       {units.map((unit, i) => (
         <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid var(--border)' }}>
@@ -690,7 +702,7 @@ function SystemdUnitEditor({ units, onChange }: { units: string[]; onChange: (un
           ref={inputRef}
           value={newUnit}
           onChange={e => setNewUnit(e.target.value)}
-          placeholder="nginx.service"
+          placeholder={placeholder}
           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addUnit() } }}
           style={{ ...inputStyle, flex: 1 }}
         />

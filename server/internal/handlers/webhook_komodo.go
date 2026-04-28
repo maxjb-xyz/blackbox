@@ -52,11 +52,21 @@ func WebhookKomodo(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry,
 			return
 		}
 
-		sourceID, _ := middleware.WebhookSourceIDFromContext(r.Context())
-		cfg, err := loadKomodoConfig(database, sourceID)
+		sourceID, ok := middleware.WebhookSourceIDFromContext(r.Context())
+		if !ok {
+			RecordWebhookDelivery(database, "komodo", snippet, "", "error", "invalid or missing source")
+			writeError(w, http.StatusUnauthorized, "invalid or missing source")
+			return
+		}
+		cfg, found, err := loadKomodoConfig(database, sourceID)
 		if err != nil {
 			RecordWebhookDelivery(database, "komodo", snippet, "", "error", "failed to load source config")
 			writeError(w, http.StatusInternalServerError, "failed to load source config")
+			return
+		}
+		if !found {
+			RecordWebhookDelivery(database, "komodo", snippet, "", "error", "invalid or missing source")
+			writeError(w, http.StatusUnauthorized, "invalid or missing source")
 			return
 		}
 
@@ -106,27 +116,28 @@ func WebhookKomodo(database *gorm.DB, h *hub.Hub, incidentCh chan<- types.Entry,
 	}
 }
 
-func loadKomodoConfig(db *gorm.DB, sourceID string) (komodoConfig, error) {
+func loadKomodoConfig(db *gorm.DB, sourceID string) (komodoConfig, bool, error) {
 	if sourceID == "" {
-		return komodoConfig{}, nil
+		return komodoConfig{}, false, nil
 	}
 	var inst models.DataSourceInstance
-	if err := db.First(&inst, "id = ?", sourceID).Error; err != nil {
+	if err := db.First(&inst, "id = ? AND type = ? AND enabled = ?", sourceID, "webhook_komodo", true).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return komodoConfig{}, nil
+			return komodoConfig{}, false, nil
 		}
-		return komodoConfig{}, err
+		return komodoConfig{}, false, err
 	}
 	var cfg komodoConfig
 	if err := json.Unmarshal([]byte(inst.Config), &cfg); err != nil {
-		return komodoConfig{}, err
+		return komodoConfig{}, false, err
 	}
-	return cfg, nil
+	return cfg, true, nil
 }
 
 func isAllowedKomodoType(allowed []string, eventType string) bool {
+	lower := strings.ToLower(eventType)
 	for _, t := range allowed {
-		if t == eventType {
+		if t == lower {
 			return true
 		}
 	}
@@ -150,7 +161,7 @@ func resolveKomodoNodeName(data map[string]any, nodeMap map[string]string) strin
 	if raw == "" {
 		return "komodo"
 	}
-	if mapped, ok := nodeMap[raw]; ok {
+	if mapped, ok := nodeMap[strings.ToLower(raw)]; ok {
 		return mapped
 	}
 	return raw

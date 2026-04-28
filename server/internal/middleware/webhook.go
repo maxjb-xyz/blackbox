@@ -60,14 +60,21 @@ func WebhookAuthFuncMulti(getSecrets func() map[string]string) func(http.Handler
 				return
 			}
 			incoming := []byte(r.Header.Get("X-Webhook-Secret"))
+			var matched []string
 			for sourceID, secret := range secrets {
+				if secret == "" {
+					continue
+				}
 				if subtle.ConstantTimeCompare(incoming, []byte(secret)) == 1 {
-					ctx := context.WithValue(r.Context(), webhookSourceIDKey, sourceID)
-					next.ServeHTTP(w, r.WithContext(ctx))
-					return
+					matched = append(matched, sourceID)
 				}
 			}
-			writeJSONError(w, http.StatusUnauthorized, "invalid webhook secret")
+			if len(matched) != 1 {
+				writeJSONError(w, http.StatusUnauthorized, "invalid webhook secret")
+				return
+			}
+			ctx := context.WithValue(r.Context(), webhookSourceIDKey, matched[0])
+			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,12 +23,22 @@ import (
 func createKomodoSource(t *testing.T, db *gorm.DB, allowedTypes []string, nodeMap map[string]string) string {
 	t.Helper()
 	id := ulid.Make().String()
+	// Normalize allowed_types to lowercase to match what validateSourceConfig produces.
+	normalized := make([]string, len(allowedTypes))
+	for i, v := range allowedTypes {
+		normalized[i] = strings.ToLower(strings.TrimSpace(v))
+	}
 	cfg := map[string]any{
 		"secret":        "komodo-secret",
-		"allowed_types": allowedTypes,
+		"allowed_types": normalized,
 	}
+	// Normalize node_map keys and values to match what validateSourceConfig produces.
 	if nodeMap != nil {
-		cfg["node_map"] = nodeMap
+		normMap := make(map[string]string, len(nodeMap))
+		for k, v := range nodeMap {
+			normMap[strings.ToLower(strings.TrimSpace(k))] = strings.ToLower(strings.TrimSpace(v))
+		}
+		cfg["node_map"] = normMap
 	}
 	cfgBytes, _ := json.Marshal(cfg)
 	now := time.Now().UTC()
