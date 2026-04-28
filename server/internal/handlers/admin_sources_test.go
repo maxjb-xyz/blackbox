@@ -547,6 +547,90 @@ func TestCreateSource_WebhookRequiresNonEmptySecret(t *testing.T) {
 	require.Contains(t, w.Body.String(), "secret must be a non-empty string")
 }
 
+func TestCreateSource_KomodoValid(t *testing.T) {
+	db := newSourcesTestDB(t)
+	body, _ := json.Marshal(map[string]any{
+		"type":  "webhook_komodo",
+		"scope": "server",
+		"name":  "Komodo Prod",
+		"config": map[string]any{
+			"secret":        "mysecret",
+			"allowed_types": []string{"BuildFailed", "ProcedureCompleted"},
+			"node_map":      map[string]any{"prod-komodo": "prod-1"},
+		},
+		"enabled": true,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/sources", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	handlers.CreateSource(db)(w, req)
+	require.Equal(t, http.StatusCreated, w.Code)
+}
+
+func TestCreateSource_KomodoMissingAllowedTypes(t *testing.T) {
+	db := newSourcesTestDB(t)
+	body, _ := json.Marshal(map[string]any{
+		"type": "webhook_komodo", "scope": "server", "name": "k",
+		"config": map[string]any{"secret": "s"},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/sources", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	handlers.CreateSource(db)(w, req)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestCreateSource_KomodoEmptyAllowedTypes(t *testing.T) {
+	db := newSourcesTestDB(t)
+	body, _ := json.Marshal(map[string]any{
+		"type": "webhook_komodo", "scope": "server", "name": "k",
+		"config": map[string]any{"secret": "s", "allowed_types": []string{}},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/sources", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	handlers.CreateSource(db)(w, req)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestCreateSource_KomodoInvalidNodeMap(t *testing.T) {
+	db := newSourcesTestDB(t)
+	body, _ := json.Marshal(map[string]any{
+		"type": "webhook_komodo", "scope": "server", "name": "k",
+		"config": map[string]any{
+			"secret":        "s",
+			"allowed_types": []string{"BuildFailed"},
+			"node_map":      map[string]any{"prod": ""},
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/sources", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	handlers.CreateSource(db)(w, req)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestCreateSource_KomodoNonSingleton(t *testing.T) {
+	db := newSourcesTestDB(t)
+	cfg := map[string]any{
+		"secret":        "s",
+		"allowed_types": []string{"BuildFailed"},
+	}
+	for i, name := range []string{"Komodo Prod", "Komodo Staging"} {
+		body, _ := json.Marshal(map[string]any{
+			"type": "webhook_komodo", "scope": "server", "name": name, "config": cfg, "enabled": true,
+		})
+		req := httptest.NewRequest(http.MethodPost, "/api/admin/sources", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		handlers.CreateSource(db)(w, req)
+		require.Equalf(t, http.StatusCreated, w.Code, "instance %d should be created", i+1)
+	}
+	var count int64
+	require.NoError(t, db.Model(&models.DataSourceInstance{}).Where("type = ?", "webhook_komodo").Count(&count).Error)
+	require.Equal(t, int64(2), count)
+}
+
 func TestUpdateSource_FileWatcherEmptyPartialConfigPreservesRedactSecrets(t *testing.T) {
 	db := newSourcesTestDB(t)
 	nodeName := "homelab-01"

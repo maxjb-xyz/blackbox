@@ -31,6 +31,7 @@ var knownSourceTypes = []SourceTypeDef{
 	{Type: "filewatcher", Scope: "agent", Singleton: true, Name: "File Watcher", Description: "inotify events on watched config paths", Mechanism: "agent · inotify"},
 	{Type: "webhook_uptime_kuma", Scope: "server", Singleton: true, Name: "Uptime Kuma", Description: "Inbound webhook for Uptime Kuma monitor events", Mechanism: "server · http"},
 	{Type: "webhook_watchtower", Scope: "server", Singleton: true, Name: "Watchtower", Description: "Inbound webhook for Watchtower container update events", Mechanism: "server · http"},
+	{Type: "webhook_komodo", Scope: "server", Singleton: false, Name: "Komodo", Description: "Inbound webhook for Komodo deployment and automation events", Mechanism: "server · http"},
 }
 
 var knownTypes = func() map[string]SourceTypeDef {
@@ -503,6 +504,40 @@ func validateSourceConfig(sourceType string, config map[string]any) error {
 		}
 		if _, ok := rawValue.(bool); !ok {
 			return errors.New("redact_secrets must be a boolean")
+		}
+	}
+	if sourceType == "webhook_komodo" {
+		rawAllowed, ok := config["allowed_types"]
+		if !ok {
+			return errors.New("allowed_types is required")
+		}
+		allowedSlice, ok := rawAllowed.([]any)
+		if !ok {
+			return errors.New("allowed_types must be an array of strings")
+		}
+		if len(allowedSlice) == 0 {
+			return errors.New("allowed_types must not be empty")
+		}
+		for _, v := range allowedSlice {
+			s, ok := v.(string)
+			if !ok || strings.TrimSpace(s) == "" {
+				return errors.New("allowed_types must contain non-empty strings")
+			}
+		}
+		if rawMap, ok := config["node_map"]; ok && rawMap != nil {
+			nodeMap, ok := rawMap.(map[string]any)
+			if !ok {
+				return errors.New("node_map must be an object")
+			}
+			for k, v := range nodeMap {
+				if strings.TrimSpace(k) == "" {
+					return errors.New("node_map keys must be non-empty strings")
+				}
+				s, ok := v.(string)
+				if !ok || strings.TrimSpace(s) == "" {
+					return errors.New("node_map values must be non-empty strings")
+				}
+			}
 		}
 	}
 	return nil
