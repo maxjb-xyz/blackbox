@@ -33,6 +33,7 @@ type Selection =
 const WEBHOOK_ENDPOINTS: Record<string, string> = {
   webhook_uptime_kuma: '/api/webhooks/uptime',
   webhook_watchtower: '/api/webhooks/watchtower',
+  webhook_komodo: '/api/webhooks/komodo',
 }
 
 const DOCS_URLS: Record<string, string> = {
@@ -41,6 +42,7 @@ const DOCS_URLS: Record<string, string> = {
   filewatcher: 'https://docs.blackboxd.dev/docs/data-sources/file-watcher',
   webhook_uptime_kuma: 'https://docs.blackboxd.dev/docs/data-sources/uptime-kuma',
   webhook_watchtower: 'https://docs.blackboxd.dev/docs/data-sources/watchtower',
+  webhook_komodo: 'https://docs.blackboxd.dev/docs/data-sources/komodo',
 }
 
 function isSourceVisible(inst: DataSourceInstance): boolean {
@@ -551,6 +553,25 @@ function SourceConfigPanel({ creating = false, instance, typeDef, saving, saveEr
           </ConfigRow>
         )}
 
+        {instance.type === 'webhook_komodo' && (
+          <>
+            <ConfigRow label="Allowed Types">
+              <SystemdUnitEditor
+                units={Array.isArray(localCfg.allowed_types) ? (localCfg.allowed_types as unknown[]).map(String) : []}
+                onChange={allowed_types => setLocalCfg(c => ({ ...c, allowed_types }))}
+              />
+            </ConfigRow>
+            <ConfigRow label="Node Map">
+              <NodeMapEditor
+                nodeMap={typeof localCfg.node_map === 'object' && localCfg.node_map !== null && !Array.isArray(localCfg.node_map)
+                  ? (localCfg.node_map as Record<string, string>)
+                  : {}}
+                onChange={node_map => setLocalCfg(c => ({ ...c, node_map }))}
+              />
+            </ConfigRow>
+          </>
+        )}
+
         {instance.type === 'filewatcher' && (
           <ConfigRow label="Redact Secrets">
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
@@ -678,6 +699,83 @@ function SystemdUnitEditor({ units, onChange }: { units: string[]; onChange: (un
           onClick={addUnit}
           disabled={!newUnit.trim()}
           style={{ fontSize: 11, border: '1px solid var(--border)', padding: '5px 12px', background: 'transparent', color: newUnit.trim() ? 'var(--text)' : 'var(--muted)', cursor: newUnit.trim() ? 'pointer' : 'default', fontFamily: 'inherit', flexShrink: 0 }}
+        >
+          Add
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function NodeMapEditor({
+  nodeMap,
+  onChange,
+}: {
+  nodeMap: Record<string, string>
+  onChange: (nodeMap: Record<string, string>) => void
+}) {
+  const [newKey, setNewKey] = useState('')
+  const [newVal, setNewVal] = useState('')
+  const keyInputRef = useRef<HTMLInputElement>(null)
+
+  const entries = Object.entries(nodeMap)
+
+  function addEntry() {
+    const k = newKey.trim()
+    const v = newVal.trim()
+    if (!k || !v) return
+    onChange({ ...nodeMap, [k]: v })
+    setNewKey('')
+    setNewVal('')
+    keyInputRef.current?.focus()
+  }
+
+  function removeEntry(key: string) {
+    const next = { ...nodeMap }
+    delete next[key]
+    onChange(next)
+  }
+
+  return (
+    <div>
+      {entries.length === 0 && (
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>No mappings configured.</div>
+      )}
+      {entries.map(([k, v]) => (
+        <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderBottom: '1px solid var(--border)' }}>
+          <span style={{ fontSize: 12, color: 'var(--text)', flex: 1 }}>{k}</span>
+          <span style={{ fontSize: 12, color: 'var(--muted)' }}>→</span>
+          <span style={{ fontSize: 12, color: 'var(--text)', flex: 1 }}>{v}</span>
+          <button
+            type="button"
+            onClick={() => removeEntry(k)}
+            style={{ fontSize: 11, color: 'var(--muted)', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: '0 4px', flexShrink: 0 }}
+          >
+            Remove
+          </button>
+        </div>
+      ))}
+      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+        <input
+          ref={keyInputRef}
+          value={newKey}
+          onChange={e => setNewKey(e.target.value)}
+          placeholder="Komodo name"
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addEntry() } }}
+          style={{ ...inputStyle, flex: 1 }}
+        />
+        <input
+          value={newVal}
+          onChange={e => setNewVal(e.target.value)}
+          placeholder="Blackbox node"
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addEntry() } }}
+          style={{ ...inputStyle, flex: 1 }}
+        />
+        <button
+          type="button"
+          onClick={addEntry}
+          disabled={!newKey.trim() || !newVal.trim()}
+          style={{ fontSize: 11, border: '1px solid var(--border)', padding: '5px 12px', background: 'transparent', color: (newKey.trim() && newVal.trim()) ? 'var(--text)' : 'var(--muted)', cursor: (newKey.trim() && newVal.trim()) ? 'pointer' : 'default', fontFamily: 'inherit', flexShrink: 0 }}
         >
           Add
         </button>
