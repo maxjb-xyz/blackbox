@@ -133,6 +133,7 @@ docker compose up -d
 - **OOM kill detection** - Kernel OOM events are ingested as `systemd` entries, and failed units include a recent journal log snippet for faster triage.
 - **Uptime Kuma webhooks** - Ingest Down/Up state changes. Down events open confirmed incidents and score likely causes from recent Docker, file, and webhook activity.
 - **Watchtower webhooks** - Ingest container image update events with version metadata and use them as incident evidence when a restart follows shortly after.
+- **Komodo webhooks** - Ingest events from Komodo via wekbook.
 - **Custom entries** - Post arbitrary events via the API.
 - **Container & stack exclusions** - Exclude specific Docker containers or Compose stacks from event ingestion entirely. Configured in Admin > Data Sources. Excluded events are silently dropped server-side - agents do not need reconfiguring.
 
