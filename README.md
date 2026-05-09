@@ -41,6 +41,7 @@ Full documentation: [docs.blackboxd.dev](https://docs.blackboxd.dev)
 
 > This gets a single-node setup running in minutes. For multi-node, see the [deployment docs](https://docs.blackboxd.dev/docs/deployment/multi-node).
 > Both images run as non-root. The server uses UID 65532 (fixed). The agent defaults to UID/GID 65532 but can be overridden with `PUID`/`PGID` to match the owner of your watched host paths. The agent entrypoint auto-detects the GIDs of any mounted resources (Docker socket, systemd journal) at startup - no manual group configuration needed.
+> The project is available for both `amd64` and `arm64` architectures.
 
 **1. Create a `docker-compose.yml`:**
 

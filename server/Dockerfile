@@ -14,8 +14,8 @@ WORKDIR /app
 
 ARG VERSION=dev
 ARG COMMIT=unknown
-ARG TARGETOS=linux
-ARG TARGETARCH=amd64
+ARG TARGETOS
+ARG TARGETARCH
 
 COPY go.work go.work.sum ./
 COPY agent/go.mod agent/go.sum ./agent/

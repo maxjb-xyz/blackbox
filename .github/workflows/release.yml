@@ -10,12 +10,71 @@ permissions:
   packages: write
 
 jobs:
-  build-server:
-    name: Build & Push Server
+  build-server-amd64:
+    name: Build & Push Server AMD64
     runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@v4
 
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        id: build
+        with:
+          context: .
+          file: server/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/blackbox-server:build-${{ github.sha }}-amd64
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            COMMIT=${{ github.sha }}
+          platforms: linux/amd64
+          cache-from: type=gha,scope=server-amd64
+          cache-to: type=gha,scope=server-amd64,mode=max
+
+  build-server-arm64:
+    name: Build & Push Server ARM64
+    runs-on: ubuntu-24.04-arm
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        id: build
+        with:
+          context: .
+          file: server/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/blackbox-server:build-${{ github.sha }}-arm64
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            COMMIT=${{ github.sha }}
+          platforms: linux/arm64
+          cache-from: type=gha,scope=server-arm64
+          cache-to: type=gha,scope=server-arm64,mode=max
+
+  push-server-manifest:
+    name: Push Server Manifest
+    needs: [build-server-amd64, build-server-arm64]
+    runs-on: ubuntu-latest
+    steps:
       - uses: docker/setup-buildx-action@v3
 
       - uses: docker/login-action@v3
@@ -34,19 +93,15 @@ jobs:
             type=semver,pattern={{major}}
             type=raw,value=latest,enable=${{ !contains(github.ref_name, '-alpha') }}
 
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: server/Dockerfile
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            VERSION=${{ github.ref_name }}
-            COMMIT=${{ github.sha }}
-          platforms: linux/amd64,linux/arm64
-          cache-from: type=gha,scope=server
-          cache-to: type=gha,scope=server,mode=max
+      - run: |
+          tags=()
+          while IFS= read -r tag; do
+            tags+=("-t" "$tag")
+          done <<< "${{ steps.meta.outputs.tags }}"
+          docker buildx imagetools create \
+            "${tags[@]}" \
+            ghcr.io/${{ github.repository_owner }}/blackbox-server@${{ needs.build-server-amd64.outputs.digest }} \
+            ghcr.io/${{ github.repository_owner }}/blackbox-server@${{ needs.build-server-arm64.outputs.digest }}
 
   build-agent-amd64:
     name: Build & Push Agent AMD64
