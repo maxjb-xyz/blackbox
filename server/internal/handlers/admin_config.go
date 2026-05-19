@@ -150,7 +150,7 @@ func UpdateMCPSettings(db *gorm.DB, mcpMgr *mcppkg.MCPManager) http.HandlerFunc 
 		// Apply live — DB is already consistent; a failure here is a soft error.
 		// The next Blackbox restart will self-correct from DB.
 		if mcpMgr != nil {
-			if err := mcpMgr.ApplySettings(req.Enabled, 0, token); err != nil {
+			if err := mcpMgr.ApplySettings(req.Enabled, token); err != nil {
 				log.Printf("mcp: ApplySettings failed after DB write: %v", err)
 				writeError(w, http.StatusInternalServerError,
 					"settings saved but failed to apply: "+err.Error()+" — restart Blackbox to apply")
@@ -179,7 +179,7 @@ func RegenerateMCPToken(db *gorm.DB, mcpMgr *mcppkg.MCPManager) http.HandlerFunc
 			return
 		}
 		if mcpCfg.enabled && mcpMgr != nil {
-			if err := mcpMgr.ApplySettings(true, 0, newToken); err != nil {
+			if err := mcpMgr.ApplySettings(true, newToken); err != nil {
 				writeError(w, http.StatusInternalServerError, "failed to restart mcp server with new token")
 				return
 			}

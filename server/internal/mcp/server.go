@@ -30,7 +30,7 @@ func (m *MCPManager) IsRunning() bool {
 	return m.enabled
 }
 
-func (m *MCPManager) ApplySettings(enabled bool, _ int, token string) error {
+func (m *MCPManager) ApplySettings(enabled bool, token string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

@@ -14,7 +14,7 @@ func TestMCPManagerMountedHandlerReturns503WhenDisabled(t *testing.T) {
 	t.Parallel()
 
 	manager := NewMCPManager(nil)
-	require.NoError(t, manager.ApplySettings(false, 3001, ""))
+	require.NoError(t, manager.ApplySettings(false, ""))
 
 	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -30,7 +30,7 @@ func TestMCPManagerMountedHandlerRequiresBearerToken(t *testing.T) {
 	t.Parallel()
 
 	manager := NewMCPManager(nil)
-	require.NoError(t, manager.ApplySettings(true, 3001, "secret"))
+	require.NoError(t, manager.ApplySettings(true, "secret"))
 
 	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`))
 	req.Header.Set("Content-Type", "application/json")

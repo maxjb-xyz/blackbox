@@ -359,7 +359,7 @@ func restoreMCPState(database *gorm.DB, mcpMgr *bbmcp.MCPManager) {
 	if m["mcp_enabled"] != "true" || m["mcp_auth_token"] == "" {
 		return
 	}
-	if err := mcpMgr.ApplySettings(true, 0, m["mcp_auth_token"]); err != nil {
+	if err := mcpMgr.ApplySettings(true, m["mcp_auth_token"]); err != nil {
 		log.Printf("mcp: failed to restore state on startup: %v", err)
 	}
 }
