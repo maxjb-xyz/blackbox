@@ -8,7 +8,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
@@ -25,9 +24,7 @@ const aiAPIKeyKey = "ai_api_key"
 const aiModeKey = "ai_mode"
 const baseURLKey = "base_url"
 const mcpEnabledKey = "mcp_enabled"
-const mcpPortKey = "mcp_port"
 const mcpAuthTokenKey = "mcp_auth_token"
-const defaultMCPPort = 3001
 
 // Legacy keys — read-only fallback for existing installs
 const legacyOllamaURLKey = "ollama_url"
@@ -92,7 +89,6 @@ func AdminConfig(db *gorm.DB, webhookSecret string, mcpMgr *mcppkg.MCPManager) h
 			"ai_mode":                     ai.mode,
 			"base_url":                    baseURL,
 			"mcp_enabled":                 mcpSettings.enabled,
-			"mcp_port":                    mcpSettings.port,
 			"mcp_auth_token_set":          mcpSettings.tokenSet,
 			"mcp_auth_token_suffix":       mcpSettings.tokenSuffix,
 			"mcp_running":                 mcpRunning,
@@ -104,21 +100,12 @@ func AdminConfig(db *gorm.DB, webhookSecret string, mcpMgr *mcppkg.MCPManager) h
 
 type mcpSettingsRequest struct {
 	Enabled bool `json:"mcp_enabled"`
-	Port    int  `json:"mcp_port"`
 }
 
 func UpdateMCPSettings(db *gorm.DB, mcpMgr *mcppkg.MCPManager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req mcpSettingsRequest
 		if !decodeJSONBody(w, r, 1<<20, &req) {
-			return
-		}
-		port := req.Port
-		if port == 0 {
-			port = defaultMCPPort
-		}
-		if port < 1024 || port > 65535 {
-			writeError(w, http.StatusBadRequest, "mcp_port must be between 1024 and 65535")
 			return
 		}
 
@@ -143,8 +130,7 @@ func UpdateMCPSettings(db *gorm.DB, mcpMgr *mcppkg.MCPManager) http.HandlerFunc 
 		// DB is the source of truth: write first, apply second.
 		now := time.Now()
 		settings := []models.AppSetting{
-			{Key: mcpEnabledKey, Value: strconv.FormatBool(req.Enabled), UpdatedAt: now},
-			{Key: mcpPortKey, Value: strconv.Itoa(port), UpdatedAt: now},
+			{Key: mcpEnabledKey, Value: boolToString(req.Enabled), UpdatedAt: now},
 		}
 		if token != "" {
 			settings = append(settings, models.AppSetting{Key: mcpAuthTokenKey, Value: token, UpdatedAt: now})
@@ -164,7 +150,7 @@ func UpdateMCPSettings(db *gorm.DB, mcpMgr *mcppkg.MCPManager) http.HandlerFunc 
 		// Apply live — DB is already consistent; a failure here is a soft error.
 		// The next Blackbox restart will self-correct from DB.
 		if mcpMgr != nil {
-			if err := mcpMgr.ApplySettings(req.Enabled, port, token); err != nil {
+			if err := mcpMgr.ApplySettings(req.Enabled, 0, token); err != nil {
 				log.Printf("mcp: ApplySettings failed after DB write: %v", err)
 				writeError(w, http.StatusInternalServerError,
 					"settings saved but failed to apply: "+err.Error()+" — restart Blackbox to apply")
@@ -193,7 +179,7 @@ func RegenerateMCPToken(db *gorm.DB, mcpMgr *mcppkg.MCPManager) http.HandlerFunc
 			return
 		}
 		if mcpCfg.enabled && mcpMgr != nil {
-			if err := mcpMgr.ApplySettings(true, mcpCfg.port, newToken); err != nil {
+			if err := mcpMgr.ApplySettings(true, 0, newToken); err != nil {
 				writeError(w, http.StatusInternalServerError, "failed to restart mcp server with new token")
 				return
 			}
@@ -407,14 +393,13 @@ type aiSettingsResult struct {
 
 type mcpSettingsResult struct {
 	enabled     bool
-	port        int
 	tokenSet    bool
 	tokenSuffix string
 	token       string
 }
 
 func getMCPSettings(db *gorm.DB) (mcpSettingsResult, error) {
-	keys := []string{mcpEnabledKey, mcpPortKey, mcpAuthTokenKey}
+	keys := []string{mcpEnabledKey, mcpAuthTokenKey}
 	var settings []models.AppSetting
 	if err := db.Where("key IN ?", keys).Find(&settings).Error; err != nil {
 		return mcpSettingsResult{}, err
@@ -426,17 +411,18 @@ func getMCPSettings(db *gorm.DB) (mcpSettingsResult, error) {
 
 	result := mcpSettingsResult{
 		enabled: m[mcpEnabledKey] == "true",
-		port:    defaultMCPPort,
 		token:   m[mcpAuthTokenKey],
-	}
-	if portStr := m[mcpPortKey]; portStr != "" {
-		if p, err := strconv.Atoi(portStr); err == nil && p >= 1024 && p <= 65535 {
-			result.port = p
-		}
 	}
 	result.tokenSet = result.token != ""
 	result.tokenSuffix = tokenSuffix(result.token)
 	return result, nil
+}
+
+func boolToString(v bool) string {
+	if v {
+		return "true"
+	}
+	return "false"
 }
 
 func generateMCPToken() (string, error) {
