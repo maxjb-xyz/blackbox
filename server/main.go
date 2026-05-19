@@ -301,6 +301,8 @@ func main() {
 		}),
 	).Post("/api/webhooks/komodo", handlers.WebhookKomodo(database, eventHub, incidentCh, managerCtx.Done()))
 
+	r.Handle("/mcp", mcpMgr.Handler())
+
 	spaHandler := static.Handler(staticFiles)
 	r.NotFound(func(w http.ResponseWriter, req *http.Request) {
 		if strings.HasPrefix(req.URL.Path, "/api/") {

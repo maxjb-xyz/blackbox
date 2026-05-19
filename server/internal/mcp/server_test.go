@@ -1,109 +1,42 @@
 package mcp
 
 import (
-	"context"
-	"fmt"
-	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
-	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestMCPManagerStartStop(t *testing.T) {
-	port := freePort(t)
+func TestMCPManagerMountedHandlerReturns503WhenDisabled(t *testing.T) {
+	t.Parallel()
+
 	manager := NewMCPManager(nil)
+	require.NoError(t, manager.ApplySettings(false, 3001, ""))
 
-	if err := manager.ApplySettings(true, port, "secret"); err != nil {
-		t.Fatalf("ApplySettings start: %v", err)
-	}
-	if !manager.IsRunning() {
-		t.Fatal("expected manager to be running")
-	}
-	if err := manager.ApplySettings(false, port, "secret"); err != nil {
-		t.Fatalf("ApplySettings stop: %v", err)
-	}
-	if manager.IsRunning() {
-		t.Fatal("expected manager to be stopped")
-	}
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	manager.Handler().ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusServiceUnavailable, rr.Code)
+	assert.JSONEq(t, `{"error":"mcp is disabled"}`, rr.Body.String())
 }
 
-func TestMCPManagerRestart(t *testing.T) {
+func TestMCPManagerMountedHandlerRequiresBearerToken(t *testing.T) {
+	t.Parallel()
+
 	manager := NewMCPManager(nil)
-	port := freePort(t)
+	require.NoError(t, manager.ApplySettings(true, 3001, "secret"))
 
-	if err := manager.ApplySettings(true, port, "secret"); err != nil {
-		t.Fatalf("start: %v", err)
-	}
-	nextPort := freePort(t)
-	if err := manager.ApplySettings(true, nextPort, "new-secret"); err != nil {
-		t.Fatalf("restart: %v", err)
-	}
-	if !manager.IsRunning() {
-		t.Fatal("expected manager to be running after restart")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	if err := manager.Shutdown(ctx); err != nil {
-		t.Fatalf("shutdown: %v", err)
-	}
-}
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
 
-func TestMCPManagerSamePortRestart(t *testing.T) {
-	port := freePort(t)
-	mgr := NewMCPManager(nil)
+	manager.Handler().ServeHTTP(rr, req)
 
-	// Start on port
-	if err := mgr.ApplySettings(true, port, "token1"); err != nil {
-		t.Fatalf("initial start: %v", err)
-	}
-	if !mgr.IsRunning() {
-		t.Fatal("expected running after start")
-	}
-
-	// Same-port restart with new token (simulates token rotation)
-	if err := mgr.ApplySettings(true, port, "token2"); err != nil {
-		t.Fatalf("same-port restart: %v", err)
-	}
-	if !mgr.IsRunning() {
-		t.Fatal("expected still running after same-port restart")
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	if err := mgr.Shutdown(ctx); err != nil {
-		t.Fatalf("shutdown: %v", err)
-	}
-}
-
-func TestMCPManagerRepeatedSamePortRestart(t *testing.T) {
-	port := freePort(t)
-	mgr := NewMCPManager(nil)
-
-	if err := mgr.ApplySettings(true, port, "token0"); err != nil {
-		t.Fatalf("initial start: %v", err)
-	}
-
-	for i := 1; i <= 20; i++ {
-		if err := mgr.ApplySettings(true, port, fmt.Sprintf("token%d", i)); err != nil {
-			t.Fatalf("same-port restart %d: %v", i, err)
-		}
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	if err := mgr.Shutdown(ctx); err != nil {
-		t.Fatalf("shutdown: %v", err)
-	}
-}
-
-func freePort(t *testing.T) int {
-	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-	port := ln.Addr().(*net.TCPAddr).Port
-	if err := ln.Close(); err != nil {
-		t.Fatalf("close: %v", err)
-	}
-	return port
+	assert.Equal(t, http.StatusUnauthorized, rr.Code)
 }
