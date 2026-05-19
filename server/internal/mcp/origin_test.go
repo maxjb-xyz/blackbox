@@ -21,6 +21,23 @@ func TestValidateOriginAllowsMissingOriginAndMatchingOrigin(t *testing.T) {
 	require.NoError(t, ValidateOrigin(req, ""))
 }
 
+func TestValidateOriginAllowsDefaultPortEquivalence(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequest(http.MethodPost, "https://blackbox.example.com/mcp", nil)
+	req.Host = "blackbox.example.com:443"
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.Header.Set("X-Forwarded-Host", "blackbox.example.com:443")
+	req.Header.Set("Origin", "https://blackbox.example.com")
+
+	require.NoError(t, ValidateOrigin(req, ""))
+
+	req.Header.Set("Origin", "http://blackbox.example.com")
+	req.Header.Set("X-Forwarded-Proto", "http")
+	req.Header.Set("X-Forwarded-Host", "blackbox.example.com:80")
+	require.NoError(t, ValidateOrigin(req, ""))
+}
+
 func TestValidateOriginRejectsMismatchedOrigin(t *testing.T) {
 	t.Parallel()
 

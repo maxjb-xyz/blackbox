@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -65,5 +66,33 @@ func normalizeOrigin(raw string) (string, error) {
 	if parsed.Scheme == "" || parsed.Host == "" {
 		return "", fmt.Errorf("origin must include scheme and host")
 	}
-	return strings.ToLower(parsed.Scheme) + "://" + strings.ToLower(parsed.Host), nil
+
+	scheme := strings.ToLower(parsed.Scheme)
+	host := strings.ToLower(parsed.Hostname())
+	if host == "" {
+		return "", fmt.Errorf("origin must include scheme and host")
+	}
+
+	port := parsed.Port()
+	if port == defaultPortForScheme(scheme) {
+		port = ""
+	}
+	if port != "" {
+		return scheme + "://" + net.JoinHostPort(host, port), nil
+	}
+	if strings.Contains(host, ":") {
+		return scheme + "://[" + host + "]", nil
+	}
+	return scheme + "://" + host, nil
+}
+
+func defaultPortForScheme(scheme string) string {
+	switch scheme {
+	case "http":
+		return "80"
+	case "https":
+		return "443"
+	default:
+		return ""
+	}
 }
