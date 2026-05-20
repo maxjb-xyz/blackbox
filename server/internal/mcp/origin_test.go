@@ -55,6 +55,19 @@ func TestValidateOriginIgnoresForwardedHeadersFromUntrustedClients(t *testing.T)
 	assert.Contains(t, err.Error(), "origin")
 }
 
+func TestValidateOriginUsesFirstForwardedValueFromTrustedProxy(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:8080/mcp", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	req.Host = "127.0.0.1:8080"
+	req.Header.Set("X-Forwarded-Proto", "https, http")
+	req.Header.Set("X-Forwarded-Host", "blackbox.example.com:443, proxy.internal")
+	req.Header.Set("Origin", "https://blackbox.example.com")
+
+	require.NoError(t, ValidateOrigin(req, ""))
+}
+
 func TestValidateOriginRejectsMismatchedOrigin(t *testing.T) {
 	t.Parallel()
 

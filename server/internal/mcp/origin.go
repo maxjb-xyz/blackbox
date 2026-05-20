@@ -57,10 +57,10 @@ func inferRequestOrigin(r *http.Request) string {
 	}
 
 	if isTrustedProxy(r.RemoteAddr) {
-		if forwardedProto := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")); forwardedProto != "" {
+		if forwardedProto := firstHeaderToken(r.Header.Get("X-Forwarded-Proto")); forwardedProto != "" {
 			scheme = forwardedProto
 		}
-		if forwardedHost := strings.TrimSpace(r.Header.Get("X-Forwarded-Host")); forwardedHost != "" {
+		if forwardedHost := firstHeaderToken(r.Header.Get("X-Forwarded-Host")); forwardedHost != "" {
 			host = forwardedHost
 		}
 	}
@@ -81,6 +81,15 @@ func isTrustedProxy(remoteAddr string) bool {
 		return false
 	}
 	return parsed.IsLoopback()
+}
+
+func firstHeaderToken(value string) string {
+	for _, part := range strings.Split(value, ",") {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 func normalizeOrigin(raw string) (string, error) {
