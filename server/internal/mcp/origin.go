@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 )
 
@@ -35,11 +36,14 @@ func ValidateOrigin(r *http.Request, expectedOrigin string) error {
 }
 
 func inferRequestOrigin(r *http.Request) string {
-	scheme := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto"))
+	scheme := ""
+	host := ""
+
+	if r.URL != nil && r.URL.Scheme != "" {
+		scheme = strings.TrimSpace(r.URL.Scheme)
+	}
 	if scheme == "" {
 		switch {
-		case r.URL != nil && r.URL.Scheme != "":
-			scheme = r.URL.Scheme
 		case r.TLS != nil:
 			scheme = "https"
 		default:
@@ -47,15 +51,36 @@ func inferRequestOrigin(r *http.Request) string {
 		}
 	}
 
-	host := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
-	if host == "" {
-		host = strings.TrimSpace(r.Host)
-	}
+	host = strings.TrimSpace(r.Host)
 	if host == "" && r.URL != nil {
 		host = strings.TrimSpace(r.URL.Host)
 	}
 
+	if isTrustedProxy(r.RemoteAddr) {
+		if forwardedProto := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")); forwardedProto != "" {
+			scheme = forwardedProto
+		}
+		if forwardedHost := strings.TrimSpace(r.Header.Get("X-Forwarded-Host")); forwardedHost != "" {
+			host = forwardedHost
+		}
+	}
+
 	return scheme + "://" + host
+}
+
+func isTrustedProxy(remoteAddr string) bool {
+	host := strings.TrimSpace(remoteAddr)
+	if parsedHost, _, err := net.SplitHostPort(host); err == nil {
+		host = parsedHost
+	}
+	if trusted := os.Getenv("TRUSTED_PROXY_IP"); trusted != "" && host == trusted {
+		return true
+	}
+	parsed := net.ParseIP(host)
+	if parsed == nil {
+		return false
+	}
+	return parsed.IsLoopback()
 }
 
 func normalizeOrigin(raw string) (string, error) {

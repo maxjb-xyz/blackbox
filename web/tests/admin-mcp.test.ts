@@ -4,15 +4,12 @@ import test from 'node:test'
 
 import { createDemoData } from '../../demo/worker/src/seed-data.ts'
 
-const adminMcpHelperPath = new URL('../src/pages/adminMcp.ts', import.meta.url)
 const adminPagePath = new URL('../src/pages/AdminPage.tsx', import.meta.url)
 const apiClientPath = new URL('../src/api/client.ts', import.meta.url)
 const demoTypesPath = new URL('../../demo/worker/src/types.ts', import.meta.url)
 
 test('resolveMcpEndpointUrl prefers the backend value and falls back to origin', async () => {
-  const helperModule = await import('../src/pages/adminMcp.ts').catch(() => null)
-
-  assert.ok(helperModule, `Expected helper module at ${adminMcpHelperPath.pathname}`)
+  const helperModule = await import('../src/pages/adminMcp.ts')
   assert.equal(
     helperModule.resolveMcpEndpointUrl('https://admin.example.test/custom-mcp', 'https://app.example.test'),
     'https://admin.example.test/custom-mcp',
