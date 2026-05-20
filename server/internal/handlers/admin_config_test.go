@@ -123,6 +123,129 @@ func TestAdminConfig_DoesNotExposeMCPPort(t *testing.T) {
 	assert.Equal(t, true, resp["mcp_auth_token_set"])
 }
 
+func TestAdminConfig_ReturnsMCPEndpointURL(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/config", nil)
+	req = req.WithContext(context.WithValue(req.Context(), auth.ClaimsKey, &auth.Claims{
+		UserID:  "admin1",
+		IsAdmin: true,
+	}))
+	w := httptest.NewRecorder()
+
+	database := newTestDB(t)
+	require.NoError(t, database.Create(&models.AppSetting{Key: "base_url", Value: "https://blackbox.example.com"}).Error)
+
+	handlers.AdminConfig(database, "", nil)(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp map[string]any
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	assert.Equal(t, "https://blackbox.example.com/mcp", resp["mcp_endpoint_url"])
+	_, exists := resp["mcp_port"]
+	assert.False(t, exists, "admin config should not expose mcp_port")
+}
+
+func TestAdminConfig_ReturnsEmptyMCPEndpointURLWithoutBaseURL(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/config", nil)
+	req = req.WithContext(context.WithValue(req.Context(), auth.ClaimsKey, &auth.Claims{
+		UserID:  "admin1",
+		IsAdmin: true,
+	}))
+	w := httptest.NewRecorder()
+
+	handlers.AdminConfig(newTestDB(t), "", nil)(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp map[string]any
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	assert.Equal(t, "", resp["mcp_endpoint_url"])
+}
+
+func TestAdminConfig_NormalizesTrailingSlashInMCPEndpointURL(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/config", nil)
+	req = req.WithContext(context.WithValue(req.Context(), auth.ClaimsKey, &auth.Claims{
+		UserID:  "admin1",
+		IsAdmin: true,
+	}))
+	w := httptest.NewRecorder()
+
+	database := newTestDB(t)
+	require.NoError(t, database.Create(&models.AppSetting{Key: "base_url", Value: "https://blackbox.example.com/"}).Error)
+
+	handlers.AdminConfig(database, "", nil)(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp map[string]any
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	assert.Equal(t, "https://blackbox.example.com/mcp", resp["mcp_endpoint_url"])
+}
+
+func TestAdminConfig_ReturnsEmptyMCPEndpointURLForLegacyInvalidBaseURL(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/config", nil)
+	req = req.WithContext(context.WithValue(req.Context(), auth.ClaimsKey, &auth.Claims{
+		UserID:  "admin1",
+		IsAdmin: true,
+	}))
+	w := httptest.NewRecorder()
+
+	database := newTestDB(t)
+	require.NoError(t, database.Create(&models.AppSetting{Key: "base_url", Value: "https://blackbox.example.com?foo=bar"}).Error)
+
+	handlers.AdminConfig(database, "", nil)(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp map[string]any
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	assert.Equal(t, "", resp["mcp_endpoint_url"])
+	assert.Equal(t, "https://blackbox.example.com?foo=bar", resp["base_url"])
+}
+
+func TestAdminConfig_ReturnsMCPMigrationWarningWhenLegacyPortExists(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/config", nil)
+	req = req.WithContext(context.WithValue(req.Context(), auth.ClaimsKey, &auth.Claims{
+		UserID:  "admin1",
+		IsAdmin: true,
+	}))
+	w := httptest.NewRecorder()
+
+	database := newTestDB(t)
+	require.NoError(t, database.Create(&models.AppSetting{Key: "mcp_port", Value: "13001"}).Error)
+
+	handlers.AdminConfig(database, "", nil)(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp map[string]any
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	assert.Equal(t, true, resp["mcp_migration_warning"])
+}
+
+func TestAdminConfig_DoesNotReturnMCPMigrationWarningWithoutLegacyPort(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/config", nil)
+	req = req.WithContext(context.WithValue(req.Context(), auth.ClaimsKey, &auth.Claims{
+		UserID:  "admin1",
+		IsAdmin: true,
+	}))
+	w := httptest.NewRecorder()
+
+	handlers.AdminConfig(newTestDB(t), "", nil)(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp map[string]any
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	assert.Equal(t, false, resp["mcp_migration_warning"])
+}
+
 func TestUpdateAISettings_RejectsInvalidURL(t *testing.T) {
 	t.Parallel()
 
@@ -250,6 +373,27 @@ func TestUpdateBaseURLSetting_RejectsUnsupportedScheme(t *testing.T) {
 	assert.Zero(t, count)
 }
 
+func TestUpdateBaseURLSetting_RejectsQueryOrFragment(t *testing.T) {
+	t.Parallel()
+
+	for _, body := range []string{
+		`{"base_url":"https://blackbox.example.com?foo=bar"}`,
+		`{"base_url":"https://blackbox.example.com#frag"}`,
+	} {
+		database := newTestDB(t)
+		req := httptest.NewRequest(http.MethodPut, "/api/admin/settings/base-url", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		handlers.UpdateBaseURLSetting(database)(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+		var count int64
+		require.NoError(t, database.Model(&models.AppSetting{}).Where("key = ?", "base_url").Count(&count).Error)
+		assert.Zero(t, count)
+	}
+}
+
 func TestUpdateBaseURLSetting_EmptyStringClears(t *testing.T) {
 	t.Parallel()
 
@@ -351,6 +495,29 @@ func TestUpdateMCPSettings_EnableGeneratesToken(t *testing.T) {
 	assert.Zero(t, portCount)
 }
 
+func TestUpdateMCPSettings_RejectsMissingEnabledWithoutAck(t *testing.T) {
+	t.Parallel()
+
+	for _, body := range []string{
+		`{}`,
+		`{"foo":"bar"}`,
+		`{"acknowledge_mcp_migration_warning":false}`,
+	} {
+		database := newTestDB(t)
+		req := httptest.NewRequest(http.MethodPut, "/api/admin/settings/mcp", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		handlers.UpdateMCPSettings(database, nil)(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+
+		var settingsCount int64
+		require.NoError(t, database.Model(&models.AppSetting{}).Count(&settingsCount).Error)
+		assert.Zero(t, settingsCount)
+	}
+}
+
 func TestUpdateMCPSettings_DisablePersists(t *testing.T) {
 	t.Parallel()
 
@@ -405,6 +572,70 @@ func TestUpdateMCPSettings_PreservesExistingToken(t *testing.T) {
 	var tokenSetting models.AppSetting
 	require.NoError(t, database.First(&tokenSetting, "key = ?", "mcp_auth_token").Error)
 	assert.Equal(t, "existing-token-value-abcdef1234", tokenSetting.Value)
+}
+
+func TestUpdateMCPSettings_AcknowledgeMigrationWarning(t *testing.T) {
+	t.Parallel()
+
+	database := newTestDB(t)
+	require.NoError(t, database.Create(&models.AppSetting{Key: "mcp_port", Value: "13001"}).Error)
+	require.NoError(t, database.Create(&models.AppSetting{Key: "mcp_enabled", Value: "true"}).Error)
+	require.NoError(t, database.Create(&models.AppSetting{Key: "mcp_auth_token", Value: "existing-token-value-abcdef1234"}).Error)
+
+	body := `{"acknowledge_mcp_migration_warning":true}`
+	req := httptest.NewRequest(http.MethodPut, "/api/admin/settings/mcp", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handlers.UpdateMCPSettings(database, nil)(w, req)
+
+	assert.Equal(t, http.StatusNoContent, w.Code)
+
+	var enabledSetting models.AppSetting
+	require.NoError(t, database.First(&enabledSetting, "key = ?", "mcp_enabled").Error)
+	assert.Equal(t, "true", enabledSetting.Value)
+
+	var configResp map[string]any
+	configReq := httptest.NewRequest(http.MethodGet, "/api/admin/config", nil)
+	configReq = configReq.WithContext(context.WithValue(configReq.Context(), auth.ClaimsKey, &auth.Claims{
+		UserID:  "admin1",
+		IsAdmin: true,
+	}))
+	configW := httptest.NewRecorder()
+
+	handlers.AdminConfig(database, "", nil)(configW, configReq)
+
+	assert.Equal(t, http.StatusOK, configW.Code)
+	require.NoError(t, json.NewDecoder(configW.Body).Decode(&configResp))
+	assert.Equal(t, false, configResp["mcp_migration_warning"])
+}
+
+func TestUpdateMCPSettings_AcknowledgeMigrationWarningWithoutMCPStateDoesNotCreateSettings(t *testing.T) {
+	t.Parallel()
+
+	database := newTestDB(t)
+	require.NoError(t, database.Create(&models.AppSetting{Key: "mcp_port", Value: "13001"}).Error)
+
+	body := `{"acknowledge_mcp_migration_warning":true}`
+	req := httptest.NewRequest(http.MethodPut, "/api/admin/settings/mcp", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handlers.UpdateMCPSettings(database, nil)(w, req)
+
+	assert.Equal(t, http.StatusNoContent, w.Code)
+
+	var enabledCount int64
+	require.NoError(t, database.Model(&models.AppSetting{}).Where("key = ?", "mcp_enabled").Count(&enabledCount).Error)
+	assert.Zero(t, enabledCount)
+
+	var tokenCount int64
+	require.NoError(t, database.Model(&models.AppSetting{}).Where("key = ?", "mcp_auth_token").Count(&tokenCount).Error)
+	assert.Zero(t, tokenCount)
+
+	var ackSetting models.AppSetting
+	require.NoError(t, database.First(&ackSetting, "key = ?", "mcp_migration_warning_acknowledged").Error)
+	assert.Equal(t, "true", ackSetting.Value)
 }
 
 func TestRegenerateMCPToken_ReturnsNewSuffix(t *testing.T) {

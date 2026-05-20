@@ -38,7 +38,16 @@ Blackbox trusts `X-Forwarded-For` only from loopback by default. If your proxy
 is on another machine, set `TRUSTED_PROXY_IP` on the server container so audit
 logs record the real client IP.
 
-## MCP Port
+## MCP Endpoint
 
-If you enable the MCP server, remember that it runs on a separate port from the
-main UI and API. Proxy it separately if your AI client needs external access.
+If you enable the MCP server, it is mounted at `/mcp` on the main Blackbox
+server.
+
+- No separate MCP listener or port needs to be exposed through your reverse
+  proxy.
+- Proxy `/mcp` the same way you proxy the rest of the UI and API.
+- MCP still requires the server-wide bearer token from **Admin > System > MCP
+  Server**.
+
+This is a breaking change for older deployments that previously routed MCP to a
+dedicated port or `/sse` path.

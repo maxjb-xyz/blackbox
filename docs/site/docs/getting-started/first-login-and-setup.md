@@ -30,7 +30,9 @@ Use **Admin > System** to:
 
 - Configure file diff secret redaction behavior.
 - Enable and configure optional Ollama-backed incident analysis.
-- Enable the MCP server if you want AI assistants to query Blackbox data.
+- Enable or disable the mounted MCP endpoint if you want AI assistants to query
+  Blackbox data.
+- Copy or regenerate the server-wide MCP bearer token.
 
 ### Integrations
 

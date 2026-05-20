@@ -169,7 +169,7 @@ docker compose up -d
 - Invite-code-based user registration
 
 ### MCP Server (optional)
-- **Model Context Protocol server** - Expose your Blackbox data to AI assistants (Claude Desktop, claude.ai, and any MCP-compatible client). Toggle on/off from Admin > System > MCP Server. When enabled, serves an HTTP/SSE MCP endpoint with five tools: `list_incidents`, `get_incident`, `list_entries`, `search_entries`, and `list_nodes`.
+- **Model Context Protocol server** - Expose your Blackbox data to AI assistants (Claude Desktop, claude.ai, and any MCP-compatible client). Toggle it on or off from Admin > System > MCP Server. When enabled, Blackbox mounts MCP at `/mcp` on the main server and protects it with a server-wide bearer token that you can regenerate from Admin. Older MCP clients configured for a separate port or `/sse` endpoint must be updated. Available tools: `list_incidents`, `get_incident`, `list_entries`, `search_entries`, and `list_nodes`.
 
 ### Admin & Observability
 - **Audit log** - Every admin action (user management, invite creation, OIDC provider changes, notification destination changes) is recorded with actor identity, IP address, and timestamp. Viewable in Admin > Access > Audit Log. Last 10,000 entries retained.

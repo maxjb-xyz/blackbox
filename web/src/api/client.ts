@@ -311,7 +311,8 @@ export interface AdminConfig {
   ai_api_key_set: boolean
   ai_mode: 'analysis' | 'enhanced'
   mcp_enabled: boolean
-  mcp_port: number
+  mcp_endpoint_url: string
+  mcp_migration_warning: boolean
   mcp_auth_token_set: boolean
   mcp_auth_token_suffix: string
   mcp_running: boolean
@@ -333,8 +334,8 @@ export interface AITestResult {
 }
 
 export interface MCPSettingsInput {
-  mcp_enabled: boolean
-  mcp_port: number
+  mcp_enabled?: boolean
+  acknowledge_mcp_migration_warning?: true
 }
 
 export async function fetchAdminConfig(): Promise<AdminConfig> {
