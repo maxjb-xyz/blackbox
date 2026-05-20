@@ -3,149 +3,74 @@ package mcp
 import (
 	"context"
 	"errors"
-	"fmt"
-	"log"
-	"net"
 	"net/http"
 	"sync"
-	"time"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 	"gorm.io/gorm"
 )
 
-// MCPManager manages the lifecycle of the embedded MCP HTTP/SSE server.
+// MCPManager manages mounted MCP runtime state for the main HTTP server.
 type MCPManager struct {
-	mu      sync.Mutex
-	running *http.Server
-	cancel  context.CancelFunc
-	port    int // currently bound port, 0 if not running
-	db      *gorm.DB
+	mu      sync.RWMutex
+	enabled bool
+	token   string
+	handler http.Handler
 }
 
 func NewMCPManager(db *gorm.DB) *MCPManager {
-	return &MCPManager{db: db}
+	srv := buildServer(db)
+	return &MCPManager{handler: mcpserver.NewStreamableHTTPServer(srv)}
 }
 
 func (m *MCPManager) IsRunning() bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.running != nil
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.enabled
 }
 
-func (m *MCPManager) ApplySettings(enabled bool, port int, token string) error {
+func (m *MCPManager) ApplySettings(enabled bool, token string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if !enabled {
-		_ = m.stopLocked()
-		m.port = 0
-		return nil
-	}
-	if token == "" {
+	if enabled && token == "" {
 		return errors.New("mcp auth token is required")
 	}
-	if port < 1024 || port > 65535 {
-		return errors.New("mcp port must be between 1024 and 65535")
+
+	m.enabled = enabled
+	if enabled {
+		m.token = token
+		return nil
 	}
 
-	addr := fmt.Sprintf(":%d", port)
-
-	var ln net.Listener
-	if m.running != nil && m.port == port {
-		// Same port: stop first, then retry bind briefly while the OS releases the socket.
-		_ = m.stopLocked()
-		var err error
-		ln, err = listenWithRetry(addr, 25, 10*time.Millisecond)
-		if err != nil {
-			m.port = 0
-			return fmt.Errorf("mcp: bind %s: %w", addr, err)
-		}
-	} else {
-		// Different port (or not running): bind first to prove it works before stopping old server.
-		var err error
-		ln, err = net.Listen("tcp", addr)
-		if err != nil {
-			return fmt.Errorf("mcp: bind %s: %w", addr, err)
-		}
-		_ = m.stopLocked()
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	server := buildServer(m.db)
-	sseServer := mcpserver.NewSSEServer(server)
-	httpServer := &http.Server{
-		Addr:              addr,
-		Handler:           BearerTokenMiddleware(token, sseServer),
-		ReadHeaderTimeout: 10 * time.Second,
-		BaseContext: func(net.Listener) context.Context {
-			return ctx
-		},
-	}
-
-	m.running = httpServer
-	m.cancel = cancel
-	m.port = port
-	go func() {
-		if serveErr := httpServer.Serve(ln); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
-			log.Printf("mcp: server error: %v", serveErr)
-			m.mu.Lock()
-			if m.running == httpServer {
-				m.running = nil
-				m.cancel = nil
-				m.port = 0
-			}
-			m.mu.Unlock()
-		}
-	}()
-	log.Printf("mcp: server listening on %s", httpServer.Addr)
+	m.token = ""
 	return nil
 }
 
-func (m *MCPManager) Shutdown(ctx context.Context) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.stopLockedWithContext(ctx)
-}
-
-func (m *MCPManager) stopLocked() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	return m.stopLockedWithContext(ctx)
-}
-
-func (m *MCPManager) stopLockedWithContext(ctx context.Context) error {
-	if m.running == nil {
-		return nil
-	}
-	if m.cancel != nil {
-		m.cancel()
-	}
-	err := m.running.Shutdown(ctx)
-	m.running = nil
-	m.cancel = nil
-	m.port = 0
-	log.Printf("mcp: server stopped")
-	if errors.Is(err, http.ErrServerClosed) {
-		return nil
-	}
-	return err
-}
-
-func listenWithRetry(addr string, attempts int, delay time.Duration) (net.Listener, error) {
-	var lastErr error
-	for i := 0; i < attempts; i++ {
-		ln, err := net.Listen("tcp", addr)
-		if err == nil {
-			return ln, nil
+func (m *MCPManager) Handler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		enabled, token, handler := m.snapshot()
+		if !enabled {
+			writeUnavailable(w)
+			return
 		}
-		lastErr = err
-		if i < attempts-1 {
-			time.Sleep(delay)
+		if err := ValidateOrigin(r, ""); err != nil {
+			writeForbiddenOrigin(w)
+			return
 		}
-	}
-	return nil, lastErr
+		BearerTokenMiddleware(token, handler).ServeHTTP(w, r)
+	})
+}
+
+func (m *MCPManager) Shutdown(context.Context) error {
+	return nil
+}
+
+func (m *MCPManager) snapshot() (bool, string, http.Handler) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.enabled, m.token, m.handler
 }
 
 func buildServer(db *gorm.DB) *mcpserver.MCPServer {

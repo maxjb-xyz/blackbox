@@ -70,7 +70,7 @@ type entryCountRow struct {
 
 func handleListIncidents(db *gorm.DB) func(context.Context, mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	return func(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-		args := req.Params.Arguments
+		args := req.GetArguments()
 		status := argString(args, "status")
 		confidence := argString(args, "confidence")
 		limit := argInt(args, "limit", 20, 100)
@@ -128,7 +128,7 @@ type incidentDetailEntry struct {
 
 func handleGetIncident(db *gorm.DB) func(context.Context, mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	return func(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-		id := argString(req.Params.Arguments, "id")
+		id := argString(req.GetArguments(), "id")
 		if id == "" {
 			return mcplib.NewToolResultError("id is required"), nil
 		}
@@ -154,7 +154,7 @@ func handleGetIncident(db *gorm.DB) func(context.Context, mcplib.CallToolRequest
 
 func handleListEntries(db *gorm.DB) func(context.Context, mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	return func(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-		args := req.Params.Arguments
+		args := req.GetArguments()
 		nodeID := argString(args, "node_id")
 		source := argString(args, "source")
 		event := argString(args, "event")
@@ -218,7 +218,7 @@ func handleListEntries(db *gorm.DB) func(context.Context, mcplib.CallToolRequest
 
 func handleSearchEntries(db *gorm.DB) func(context.Context, mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	return func(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-		args := req.Params.Arguments
+		args := req.GetArguments()
 		query := argString(args, "query")
 		if query == "" {
 			return mcplib.NewToolResultError("query is required"), nil
@@ -283,7 +283,7 @@ func searchLike(ctx context.Context, db *gorm.DB, query string, since *time.Time
 
 func handleListNodes(db *gorm.DB) func(context.Context, mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	return func(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
-		status := argString(req.Params.Arguments, "status")
+		status := argString(req.GetArguments(), "status")
 		tx := db.WithContext(ctx).Model(&models.Node{}).Order("last_seen DESC")
 		if status != "" {
 			tx = tx.Where("status = ?", status)

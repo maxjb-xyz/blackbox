@@ -35,6 +35,7 @@ import { readErrorMessage } from '../api/errorUtils'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useSession } from '../session'
 import PageHeader from '../components/PageHeader'
+import { resolveMcpEndpointUrl } from './adminMcp'
 import {
   ADMIN_GROUPS,
   ADMIN_SIDEBAR_BREAKPOINT_QUERY,
@@ -1854,7 +1855,8 @@ function SettingsTab({ section }: { section: 'ai' | 'filewatcher' }) {
   const [aiTestResult, setAITestResult] = useState<{ ok: boolean; response?: string; error?: string } | null>(null)
   const [initialLoaded, setInitialLoaded] = useState(false)
   const [mcpEnabled, setMcpEnabled] = useState(false)
-  const [mcpPort, setMcpPort] = useState(3001)
+  const [mcpEndpointURL, setMcpEndpointURL] = useState('')
+  const [mcpMigrationWarning, setMcpMigrationWarning] = useState(false)
   const [mcpTokenSuffix, setMcpTokenSuffix] = useState('')
   const [mcpTokenSet, setMcpTokenSet] = useState(false)
   const [mcpRunning, setMcpRunning] = useState(false)
@@ -1875,7 +1877,8 @@ function SettingsTab({ section }: { section: 'ai' | 'filewatcher' }) {
       setAIAPIKeySet(config.ai_api_key_set ?? false)
       setAIMode(config.ai_mode ?? 'analysis')
       setMcpEnabled(config.mcp_enabled ?? false)
-      setMcpPort(config.mcp_port ?? 3001)
+      setMcpEndpointURL(resolveMcpEndpointUrl(config.mcp_endpoint_url, window.location.origin, config.base_url))
+      setMcpMigrationWarning(config.mcp_migration_warning ?? false)
       setMcpTokenSuffix(config.mcp_auth_token_suffix ?? '')
       setMcpTokenSet(config.mcp_auth_token_set ?? false)
       setMcpRunning(config.mcp_running ?? false)
@@ -1974,7 +1977,6 @@ function SettingsTab({ section }: { section: 'ai' | 'filewatcher' }) {
     if (!initialLoaded) return
     const input: MCPSettingsInput = {
       mcp_enabled: mcpEnabled,
-      mcp_port: mcpPort,
     }
     setMcpSaving(true)
     setMcpError(null)
@@ -1982,12 +1984,27 @@ function SettingsTab({ section }: { section: 'ai' | 'filewatcher' }) {
       await updateMCPSettings(input)
       const config = await fetchAdminConfig()
       setMcpEnabled(config.mcp_enabled ?? false)
-      setMcpPort(config.mcp_port ?? 3001)
+      setMcpEndpointURL(resolveMcpEndpointUrl(config.mcp_endpoint_url, window.location.origin, config.base_url))
+      setMcpMigrationWarning(config.mcp_migration_warning ?? false)
       setMcpTokenSuffix(config.mcp_auth_token_suffix ?? '')
       setMcpTokenSet(config.mcp_auth_token_set ?? false)
       setMcpRunning(config.mcp_running ?? false)
     } catch (err) {
       setMcpError(err instanceof Error ? err.message : 'Failed to save MCP settings')
+    } finally {
+      setMcpSaving(false)
+    }
+  }
+
+  async function handleDismissMCPMigrationWarning() {
+    if (!initialLoaded) return
+    setMcpSaving(true)
+    setMcpError(null)
+    try {
+      await updateMCPSettings({ acknowledge_mcp_migration_warning: true })
+      setMcpMigrationWarning(false)
+    } catch (err) {
+      setMcpError(err instanceof Error ? err.message : 'Failed to dismiss MCP migration warning')
     } finally {
       setMcpSaving(false)
     }
@@ -2302,18 +2319,50 @@ function SettingsTab({ section }: { section: 'ai' | 'filewatcher' }) {
               />
               <span style={{ color: 'var(--text)', fontSize: 12 }}>ENABLE MCP SERVER</span>
             </label>
-            <label style={{ color: 'var(--muted)', fontSize: 11, display: 'block' }}>
-              PORT
-              <input
-                type="number"
-                min={1024}
-                max={65535}
-                value={mcpPort}
-                onChange={e => setMcpPort(Number(e.target.value))}
-                disabled={mcpSaving || mcpRegenerating}
-                style={{ display: 'block', width: 160, marginTop: 4, ...FILTER_CONTROL_STYLE }}
-              />
-            </label>
+            {mcpMigrationWarning ? (
+              <div
+                style={{
+                  border: '1px solid var(--warning)',
+                  color: 'var(--warning)',
+                  padding: '10px 12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 12,
+                  flexWrap: 'wrap',
+                }}
+              >
+                <span style={{ fontSize: 12 }}>
+                  MCP now uses a fixed endpoint path. Update any legacy clients still configured with a port before dismissing this warning.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void handleDismissMCPMigrationWarning()}
+                  disabled={mcpSaving || mcpRegenerating}
+                  style={{
+                    background: 'transparent',
+                    border: '1px solid currentColor',
+                    color: 'inherit',
+                    fontSize: 11,
+                    padding: '4px 12px',
+                    cursor: mcpSaving || mcpRegenerating ? 'not-allowed' : 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  DISMISS
+                </button>
+              </div>
+            ) : null}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <span style={{ color: 'var(--muted)', fontSize: 11 }}>ENDPOINT URL</span>
+              {mcpEndpointURL ? (
+                <code style={{ color: 'var(--text)', fontSize: 12, wordBreak: 'break-all' }}>{mcpEndpointURL}</code>
+              ) : (
+                <span style={{ color: 'var(--warning)', fontSize: 12 }}>
+                  Set a valid instance base URL or clear it to use the current browser origin for MCP.
+                </span>
+              )}
+            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <span style={{ color: 'var(--muted)', fontSize: 11 }}>TOKEN</span>
               <span style={{ color: 'var(--text)', fontSize: 12 }}>
@@ -2339,7 +2388,7 @@ function SettingsTab({ section }: { section: 'ai' | 'filewatcher' }) {
             <button
               type="button"
               onClick={() => void handleSaveMCP()}
-              disabled={mcpSaving || mcpRegenerating || mcpPort < 1024 || mcpPort > 65535}
+              disabled={mcpSaving || mcpRegenerating}
               style={{
                 alignSelf: 'flex-start',
                 background: 'transparent',

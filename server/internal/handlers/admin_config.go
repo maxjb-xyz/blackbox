@@ -8,7 +8,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
@@ -25,9 +24,9 @@ const aiAPIKeyKey = "ai_api_key"
 const aiModeKey = "ai_mode"
 const baseURLKey = "base_url"
 const mcpEnabledKey = "mcp_enabled"
-const mcpPortKey = "mcp_port"
 const mcpAuthTokenKey = "mcp_auth_token"
-const defaultMCPPort = 3001
+const mcpMigrationWarningAcknowledgedKey = "mcp_migration_warning_acknowledged"
+const legacyMCPPortKey = "mcp_port"
 
 // Legacy keys — read-only fallback for existing installs
 const legacyOllamaURLKey = "ollama_url"
@@ -73,6 +72,11 @@ func AdminConfig(db *gorm.DB, webhookSecret string, mcpMgr *mcppkg.MCPManager) h
 			writeError(w, http.StatusInternalServerError, "failed to load admin config")
 			return
 		}
+		mcpMigrationWarning, err := shouldShowMCPMigrationWarning(db)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to load admin config")
+			return
+		}
 		mcpRunning := false
 		if mcpMgr != nil {
 			mcpRunning = mcpMgr.IsRunning()
@@ -92,10 +96,11 @@ func AdminConfig(db *gorm.DB, webhookSecret string, mcpMgr *mcppkg.MCPManager) h
 			"ai_mode":                     ai.mode,
 			"base_url":                    baseURL,
 			"mcp_enabled":                 mcpSettings.enabled,
-			"mcp_port":                    mcpSettings.port,
 			"mcp_auth_token_set":          mcpSettings.tokenSet,
 			"mcp_auth_token_suffix":       mcpSettings.tokenSuffix,
 			"mcp_running":                 mcpRunning,
+			"mcp_endpoint_url":            mcpEndpointURL(baseURL),
+			"mcp_migration_warning":       mcpMigrationWarning,
 		}); err != nil {
 			log.Printf("AdminConfig encode: %v", err)
 		}
@@ -103,8 +108,8 @@ func AdminConfig(db *gorm.DB, webhookSecret string, mcpMgr *mcppkg.MCPManager) h
 }
 
 type mcpSettingsRequest struct {
-	Enabled bool `json:"mcp_enabled"`
-	Port    int  `json:"mcp_port"`
+	Enabled                        *bool `json:"mcp_enabled"`
+	AcknowledgeMCPMigrationWarning bool  `json:"acknowledge_mcp_migration_warning"`
 }
 
 func UpdateMCPSettings(db *gorm.DB, mcpMgr *mcppkg.MCPManager) http.HandlerFunc {
@@ -113,12 +118,21 @@ func UpdateMCPSettings(db *gorm.DB, mcpMgr *mcppkg.MCPManager) http.HandlerFunc 
 		if !decodeJSONBody(w, r, 1<<20, &req) {
 			return
 		}
-		port := req.Port
-		if port == 0 {
-			port = defaultMCPPort
+
+		if req.Enabled == nil && req.AcknowledgeMCPMigrationWarning {
+			if err := db.Save(&models.AppSetting{
+				Key:       mcpMigrationWarningAcknowledgedKey,
+				Value:     "true",
+				UpdatedAt: time.Now(),
+			}).Error; err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to save mcp settings")
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
 		}
-		if port < 1024 || port > 65535 {
-			writeError(w, http.StatusBadRequest, "mcp_port must be between 1024 and 65535")
+		if req.Enabled == nil {
+			writeError(w, http.StatusBadRequest, "mcp_enabled is required unless acknowledging the migration warning")
 			return
 		}
 
@@ -127,15 +141,16 @@ func UpdateMCPSettings(db *gorm.DB, mcpMgr *mcppkg.MCPManager) http.HandlerFunc 
 			writeError(w, http.StatusInternalServerError, "failed to load mcp settings")
 			return
 		}
+		enabled := *req.Enabled
 		token := existing.token
-		if req.Enabled && token == "" {
+		if enabled && token == "" {
 			token, err = generateMCPToken()
 			if err != nil {
 				writeError(w, http.StatusInternalServerError, "failed to generate token")
 				return
 			}
 		}
-		if req.Enabled && token == "" {
+		if enabled && token == "" {
 			writeError(w, http.StatusBadRequest, "mcp_auth_token is required")
 			return
 		}
@@ -143,11 +158,17 @@ func UpdateMCPSettings(db *gorm.DB, mcpMgr *mcppkg.MCPManager) http.HandlerFunc 
 		// DB is the source of truth: write first, apply second.
 		now := time.Now()
 		settings := []models.AppSetting{
-			{Key: mcpEnabledKey, Value: strconv.FormatBool(req.Enabled), UpdatedAt: now},
-			{Key: mcpPortKey, Value: strconv.Itoa(port), UpdatedAt: now},
+			{Key: mcpEnabledKey, Value: boolToString(enabled), UpdatedAt: now},
 		}
 		if token != "" {
 			settings = append(settings, models.AppSetting{Key: mcpAuthTokenKey, Value: token, UpdatedAt: now})
+		}
+		if req.AcknowledgeMCPMigrationWarning {
+			settings = append(settings, models.AppSetting{
+				Key:       mcpMigrationWarningAcknowledgedKey,
+				Value:     "true",
+				UpdatedAt: now,
+			})
 		}
 		if err := db.Transaction(func(tx *gorm.DB) error {
 			for _, s := range settings {
@@ -164,7 +185,7 @@ func UpdateMCPSettings(db *gorm.DB, mcpMgr *mcppkg.MCPManager) http.HandlerFunc 
 		// Apply live — DB is already consistent; a failure here is a soft error.
 		// The next Blackbox restart will self-correct from DB.
 		if mcpMgr != nil {
-			if err := mcpMgr.ApplySettings(req.Enabled, port, token); err != nil {
+			if err := mcpMgr.ApplySettings(enabled, token); err != nil {
 				log.Printf("mcp: ApplySettings failed after DB write: %v", err)
 				writeError(w, http.StatusInternalServerError,
 					"settings saved but failed to apply: "+err.Error()+" — restart Blackbox to apply")
@@ -193,7 +214,7 @@ func RegenerateMCPToken(db *gorm.DB, mcpMgr *mcppkg.MCPManager) http.HandlerFunc
 			return
 		}
 		if mcpCfg.enabled && mcpMgr != nil {
-			if err := mcpMgr.ApplySettings(true, mcpCfg.port, newToken); err != nil {
+			if err := mcpMgr.ApplySettings(true, newToken); err != nil {
 				writeError(w, http.StatusInternalServerError, "failed to restart mcp server with new token")
 				return
 			}
@@ -215,14 +236,10 @@ func UpdateBaseURLSetting(db *gorm.DB) http.HandlerFunc {
 			return
 		}
 
-		value := strings.TrimSpace(req.BaseURL)
-		if value != "" {
-			parsed, err := url.ParseRequestURI(value)
-			if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-				writeError(w, http.StatusBadRequest, "base_url must be a valid absolute URL or empty")
-				return
-			}
-			value = strings.TrimRight(value, "/")
+		value := normalizeBaseURL(req.BaseURL)
+		if strings.TrimSpace(req.BaseURL) != "" && value == "" {
+			writeError(w, http.StatusBadRequest, "base_url must be a valid absolute URL or empty")
+			return
 		}
 
 		setting := models.AppSetting{Key: baseURLKey, Value: value, UpdatedAt: time.Now()}
@@ -407,14 +424,13 @@ type aiSettingsResult struct {
 
 type mcpSettingsResult struct {
 	enabled     bool
-	port        int
 	tokenSet    bool
 	tokenSuffix string
 	token       string
 }
 
 func getMCPSettings(db *gorm.DB) (mcpSettingsResult, error) {
-	keys := []string{mcpEnabledKey, mcpPortKey, mcpAuthTokenKey}
+	keys := []string{mcpEnabledKey, mcpAuthTokenKey}
 	var settings []models.AppSetting
 	if err := db.Where("key IN ?", keys).Find(&settings).Error; err != nil {
 		return mcpSettingsResult{}, err
@@ -426,17 +442,60 @@ func getMCPSettings(db *gorm.DB) (mcpSettingsResult, error) {
 
 	result := mcpSettingsResult{
 		enabled: m[mcpEnabledKey] == "true",
-		port:    defaultMCPPort,
 		token:   m[mcpAuthTokenKey],
-	}
-	if portStr := m[mcpPortKey]; portStr != "" {
-		if p, err := strconv.Atoi(portStr); err == nil && p >= 1024 && p <= 65535 {
-			result.port = p
-		}
 	}
 	result.tokenSet = result.token != ""
 	result.tokenSuffix = tokenSuffix(result.token)
 	return result, nil
+}
+
+func shouldShowMCPMigrationWarning(db *gorm.DB) (bool, error) {
+	var legacyPortCount int64
+	if err := db.Model(&models.AppSetting{}).Where("key = ?", legacyMCPPortKey).Count(&legacyPortCount).Error; err != nil {
+		return false, err
+	}
+	if legacyPortCount == 0 {
+		return false, nil
+	}
+
+	var ackSetting models.AppSetting
+	if err := db.First(&ackSetting, "key = ?", mcpMigrationWarningAcknowledgedKey).Error; err == nil {
+		return strings.TrimSpace(ackSetting.Value) != "true", nil
+	} else if errors.Is(err, gorm.ErrRecordNotFound) {
+		return true, nil
+	} else {
+		return false, err
+	}
+}
+
+func mcpEndpointURL(baseURL string) string {
+	baseURL = normalizeBaseURL(baseURL)
+	if baseURL == "" {
+		return ""
+	}
+	return baseURL + "/mcp"
+}
+
+func normalizeBaseURL(baseURL string) string {
+	baseURL = strings.TrimSpace(baseURL)
+	if baseURL == "" {
+		return ""
+	}
+
+	parsed, err := url.ParseRequestURI(baseURL)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") ||
+		parsed.RawQuery != "" || parsed.Fragment != "" {
+		return ""
+	}
+
+	return strings.TrimRight(baseURL, "/")
+}
+
+func boolToString(v bool) string {
+	if v {
+		return "true"
+	}
+	return "false"
 }
 
 func generateMCPToken() (string, error) {

@@ -24,7 +24,19 @@ func BearerTokenMiddleware(token string, next http.Handler) http.Handler {
 }
 
 func writeUnauthorized(w http.ResponseWriter) {
+	writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+}
+
+func writeUnavailable(w http.ResponseWriter) {
+	writeJSONError(w, http.StatusServiceUnavailable, "mcp is disabled")
+}
+
+func writeForbiddenOrigin(w http.ResponseWriter) {
+	writeJSONError(w, http.StatusForbidden, "origin not allowed")
+}
+
+func writeJSONError(w http.ResponseWriter, statusCode int, message string) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusUnauthorized)
-	_ = json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
+	w.WriteHeader(statusCode)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": message})
 }

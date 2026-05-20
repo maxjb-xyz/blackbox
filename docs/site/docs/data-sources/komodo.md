@@ -4,6 +4,12 @@ title: Komodo
 
 # Komodo
 
+:::danger
+
+This data source is currently nonfunctional. It is reliant on a [PR](https://github.com/moghtech/komodo/pull/1399) I submitted to the Komodo repo. When that is merged, it will function as intended.
+
+:::
+
 Blackbox supports [Komodo](https://komo.do/) as a server-scoped webhook source. Komodo manages deployments, builds, automations, and server resources across multiple hosts. Events from Komodo appear on the timeline alongside Docker, file, and systemd events from your agents.
 
 Unlike Watchtower and Uptime Kuma, Komodo is **non-singleton**: you can create one source per Komodo instance, so prod and staging environments can each have their own entry with separate secrets and filtering rules.

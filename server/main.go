@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -301,6 +300,8 @@ func main() {
 		}),
 	).Post("/api/webhooks/komodo", handlers.WebhookKomodo(database, eventHub, incidentCh, managerCtx.Done()))
 
+	r.Handle("/mcp", mcpMgr.Handler())
+
 	spaHandler := static.Handler(staticFiles)
 	r.NotFound(func(w http.ResponseWriter, req *http.Request) {
 		if strings.HasPrefix(req.URL.Path, "/api/") {
@@ -346,7 +347,7 @@ func getEnv(key, fallback string) string {
 
 func restoreMCPState(database *gorm.DB, mcpMgr *bbmcp.MCPManager) {
 	var settings []models.AppSetting
-	if err := database.Where("key IN ?", []string{"mcp_enabled", "mcp_port", "mcp_auth_token"}).Find(&settings).Error; err != nil {
+	if err := database.Where("key IN ?", []string{"mcp_enabled", "mcp_auth_token"}).Find(&settings).Error; err != nil {
 		log.Printf("mcp: failed to load startup settings: %v", err)
 		return
 	}
@@ -357,11 +358,7 @@ func restoreMCPState(database *gorm.DB, mcpMgr *bbmcp.MCPManager) {
 	if m["mcp_enabled"] != "true" || m["mcp_auth_token"] == "" {
 		return
 	}
-	port := 3001
-	if p, err := strconv.Atoi(m["mcp_port"]); err == nil && p >= 1024 && p <= 65535 {
-		port = p
-	}
-	if err := mcpMgr.ApplySettings(true, port, m["mcp_auth_token"]); err != nil {
+	if err := mcpMgr.ApplySettings(true, m["mcp_auth_token"]); err != nil {
 		log.Printf("mcp: failed to restore state on startup: %v", err)
 	}
 }
