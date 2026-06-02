@@ -40,12 +40,13 @@ var (
 
 // Dispatcher fans out incident events to enabled notification destinations.
 type Dispatcher struct {
-	db *gorm.DB
+	db  *gorm.DB
+	now func() time.Time
 }
 
 // NewDispatcher creates a Dispatcher backed by the given database.
 func NewDispatcher(db *gorm.DB) *Dispatcher {
-	return &Dispatcher{db: db}
+	return &Dispatcher{db: db, now: time.Now}
 }
 
 // Send loads enabled destinations, filters them by event subscription, and
