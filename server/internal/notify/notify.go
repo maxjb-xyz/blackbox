@@ -75,13 +75,39 @@ func (d *Dispatcher) Send(ctx context.Context, event string, inc models.Incident
 			sendSem <- struct{}{}
 			defer func() { <-sendSem }()
 
-			sendCtx, cancel := context.WithTimeout(context.Background(), notifyTimeout)
-			defer cancel()
-
-			if err := sendTo(sendCtx, dest, inc, event, incURL, "", false); err != nil {
-				log.Printf("notify: send to %q (%s): %v", dest.Name, dest.Type, err)
-			}
+			d.evaluateAndSend(dest, inc, event, incURL)
 		}()
+	}
+}
+
+// evaluateAndSend gates a single destination, records the decision, and sends
+// when allowed. Errors are logged, never returned (fire-and-forget).
+func (d *Dispatcher) evaluateAndSend(dest models.NotificationDest, inc models.Incident, event, incURL string) {
+	decision, note, err := d.decide(d.db, dest)
+	if err != nil {
+		log.Printf("notify: decide for %q: %v", dest.Name, err)
+		return
+	}
+
+	if decision != decisionSent {
+		if err := d.logDecision(d.db, dest.ID, inc.ID, event, decision, "", d.now()); err != nil {
+			log.Printf("notify: log %s for %q: %v", decision, dest.Name, err)
+		}
+		return
+	}
+
+	sendCtx, cancel := context.WithTimeout(context.Background(), notifyTimeout)
+	defer cancel()
+
+	if err := sendTo(sendCtx, dest, inc, event, incURL, note, false); err != nil {
+		log.Printf("notify: send to %q (%s): %v", dest.Name, dest.Type, err)
+		if logErr := d.logDecision(d.db, dest.ID, inc.ID, event, decisionFailed, err.Error(), d.now()); logErr != nil {
+			log.Printf("notify: log failed for %q: %v", dest.Name, logErr)
+		}
+		return
+	}
+	if err := d.logDecision(d.db, dest.ID, inc.ID, event, decisionSent, note, d.now()); err != nil {
+		log.Printf("notify: log sent for %q: %v", dest.Name, err)
 	}
 }
 
