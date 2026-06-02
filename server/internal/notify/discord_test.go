@@ -125,6 +125,35 @@ func TestSendDiscord_PostsPayload(t *testing.T) {
 	assert.Len(t, embeds, 1)
 }
 
+func TestSendDiscord_AppendsSuppressedNote(t *testing.T) {
+	var body []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var err error
+		body, err = io.ReadAll(r.Body)
+		require.NoError(t, err)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	inc := models.Incident{
+		ID:         "i5",
+		Status:     "open",
+		Confidence: "confirmed",
+		Title:      "test incident",
+		Services:   `["svc"]`,
+		NodeNames:  `["node"]`,
+		OpenedAt:   time.Now(),
+		Metadata:   "{}",
+	}
+
+	note := "(+2 suppressed in the last hour)"
+	err := ExportedSendDiscord(context.Background(), srv.URL, inc, EventIncidentOpenedConfirmed, "", note, false)
+	require.NoError(t, err)
+
+	assert.Contains(t, string(body), "Suppressed")
+	assert.Contains(t, string(body), note)
+}
+
 func TestSendDiscord_ReturnsErrorOnNon2xx(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)

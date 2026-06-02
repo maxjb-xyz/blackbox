@@ -29,8 +29,12 @@ func TestFlushDeferredDigest(t *testing.T) {
 	// Two held rows recorded overnight, plus the incidents they reference.
 	d.db.Create(&models.Incident{ID: "i1", Title: "DB down", Services: "[]", NodeNames: "[]", Metadata: "{}", Confidence: "confirmed"})
 	d.db.Create(&models.Incident{ID: "i2", Title: "Proxy flap", Services: "[]", NodeNames: "[]", Metadata: "{}", Confidence: "suspected"})
-	d.logDecision(d.db, "d1", "i1", "incident_opened_confirmed", decisionHeld, "", now.Add(-3*time.Hour))
-	d.logDecision(d.db, "d1", "i2", "incident_opened_suspected", decisionHeld, "", now.Add(-2*time.Hour))
+	if err := d.logDecision(d.db, "d1", "i1", "incident_opened_confirmed", decisionHeld, "", now.Add(-3*time.Hour)); err != nil {
+		t.Fatalf("logDecision i1: %v", err)
+	}
+	if err := d.logDecision(d.db, "d1", "i2", "incident_opened_suspected", decisionHeld, "", now.Add(-2*time.Hour)); err != nil {
+		t.Fatalf("logDecision i2: %v", err)
+	}
 
 	f := NewFlusher(d.db)
 	f.now = func() time.Time { return now }
@@ -57,7 +61,9 @@ func TestFlushSkipsInsideWindow(t *testing.T) {
 		QuietHoursEnabled: true, QuietHoursStart: "22:00", QuietHoursEnd: "07:00", QuietHoursMode: "defer"}
 	d.db.Create(&dest)
 	d.db.Create(&models.Incident{ID: "i1", Title: "x", Services: "[]", NodeNames: "[]", Metadata: "{}"})
-	d.logDecision(d.db, "d1", "i1", "incident_opened_confirmed", decisionHeld, "", now.Add(-1*time.Hour))
+	if err := d.logDecision(d.db, "d1", "i1", "incident_opened_confirmed", decisionHeld, "", now.Add(-1*time.Hour)); err != nil {
+		t.Fatalf("logDecision i1: %v", err)
+	}
 
 	f := NewFlusher(d.db)
 	f.now = func() time.Time { return now }

@@ -342,6 +342,52 @@ func TestCreateNotificationDest_InvalidPolicy(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
+func TestUpdateNotificationDest_WithPolicy(t *testing.T) {
+	database := newNotificationTestDB(t)
+	require.NoError(t, database.Create(&models.NotificationDest{
+		ID:      "dest-pol",
+		Name:    "Phone",
+		Type:    "ntfy",
+		URL:     "https://ntfy.sh/mytopic",
+		Events:  `["incident_opened_confirmed"]`,
+		Enabled: true,
+	}).Error)
+
+	body, err := json.Marshal(map[string]interface{}{
+		"name":                "Phone",
+		"type":                "ntfy",
+		"url":                 "https://ntfy.sh/mytopic",
+		"events":              []string{notify.EventIncidentOpenedConfirmed},
+		"enabled":             true,
+		"quiet_hours_enabled": true,
+		"quiet_hours_start":   "23:30",
+		"quiet_hours_end":     "06:15",
+		"quiet_hours_mode":    "defer",
+		"rate_limit_enabled":  true,
+		"rate_limit_count":    3,
+		"rate_limit_unit":     "day",
+	})
+	require.NoError(t, err)
+
+	req := adminNotificationRequest(http.MethodPut, "/api/admin/notifications/dest-pol", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req = withNotificationRouteParam(req, "id", "dest-pol")
+	w := httptest.NewRecorder()
+
+	UpdateNotificationDest(database)(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var dest models.NotificationDest
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&dest))
+	assert.True(t, dest.QuietHoursEnabled)
+	assert.Equal(t, "23:30", dest.QuietHoursStart)
+	assert.Equal(t, "06:15", dest.QuietHoursEnd)
+	assert.Equal(t, "defer", dest.QuietHoursMode)
+	assert.True(t, dest.RateLimitEnabled)
+	assert.Equal(t, 3, dest.RateLimitCount)
+	assert.Equal(t, "day", dest.RateLimitUnit)
+}
+
 func newNotificationTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 

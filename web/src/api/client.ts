@@ -743,7 +743,7 @@ function normalizeNotificationDest(data: Record<string, unknown>): NotificationD
 
   const quietMode = data.quiet_hours_mode === 'defer' ? 'defer' : 'drop'
   const rateUnit = data.rate_limit_unit === 'day' ? 'day' : 'hour'
-  const rateCount = typeof data.rate_limit_count === 'number' ? data.rate_limit_count : 0
+  const rateCount = typeof data.rate_limit_count === 'number' && data.rate_limit_count >= 1 ? data.rate_limit_count : 1
 
   return {
     id: String(data.id ?? ''),
