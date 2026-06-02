@@ -107,6 +107,8 @@ func main() {
 	db.StartOIDCStateSweeper(rootCtx, database)
 	eventHub := hub.New()
 	notifier := notify.NewDispatcher(database)
+	digestFlusher := notify.NewFlusher(database)
+	go digestFlusher.Run(rootCtx)
 	handlers.StartNodeStatusMonitor(rootCtx, database, eventHub, 0)
 	incidentCh := incidents.NewChannel()
 	incidentMgr := incidents.NewManager(database, eventHub, notifier)
