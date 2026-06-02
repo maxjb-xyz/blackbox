@@ -3,6 +3,7 @@ package notify
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -50,6 +51,54 @@ func TestSendRecordsDecisions(t *testing.T) {
 	defer mu.Unlock()
 	if sent != 0 {
 		t.Fatalf("expected no HTTP send during quiet drop, got %d", sent)
+	}
+}
+
+func TestRateLimitHardCapUnderConcurrency(t *testing.T) {
+	base := time.Date(2026, 6, 2, 12, 0, 0, 0, time.UTC)
+	d := newTestDispatcher(t, base)
+
+	var sent int32
+	orig := ntfySender
+	ntfySender = func(ctx context.Context, url string, inc models.Incident, event, incURL, note string, test bool) error {
+		atomic.AddInt32(&sent, 1)
+		time.Sleep(5 * time.Millisecond) // widen the race window
+		return nil
+	}
+	defer func() { ntfySender = orig }()
+
+	dest := models.NotificationDest{
+		ID: "d1", Type: "ntfy", URL: "https://x/y", Enabled: true,
+		Events:           `["incident_opened_confirmed"]`,
+		RateLimitEnabled: true, RateLimitCount: 1, RateLimitUnit: "hour",
+	}
+	if err := d.db.Create(&dest).Error; err != nil {
+		t.Fatalf("seed dest: %v", err)
+	}
+
+	const n = 6
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			d.evaluateAndSend(dest, models.Incident{ID: "inc", Metadata: "{}"}, EventIncidentOpenedConfirmed, "")
+		}()
+	}
+	wg.Wait()
+
+	var sentRows, droppedRows int64
+	d.db.Model(&models.NotificationLog{}).Where("dest_id = ? AND decision = ?", "d1", decisionSent).Count(&sentRows)
+	d.db.Model(&models.NotificationLog{}).Where("dest_id = ? AND decision = ?", "d1", decisionDroppedRate).Count(&droppedRows)
+
+	if sentRows != 1 {
+		t.Fatalf("hard cap breached: %d sent rows, want 1", sentRows)
+	}
+	if droppedRows != int64(n-1) {
+		t.Fatalf("expected %d dropped_rate rows, got %d", n-1, droppedRows)
+	}
+	if got := atomic.LoadInt32(&sent); got != 1 {
+		t.Fatalf("expected 1 actual delivery, got %d", got)
 	}
 }
 

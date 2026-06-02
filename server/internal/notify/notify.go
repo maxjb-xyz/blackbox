@@ -7,9 +7,11 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"blackbox/server/internal/models"
+	"github.com/oklog/ulid/v2"
 	"gorm.io/gorm"
 )
 
@@ -42,11 +44,20 @@ var (
 type Dispatcher struct {
 	db  *gorm.DB
 	now func() time.Time
+	// destLocks serializes the gate decision + rate-slot reservation per
+	// destination so concurrent sends cannot both pass the rate cap.
+	destLocks sync.Map // dest.ID -> *sync.Mutex
 }
 
 // NewDispatcher creates a Dispatcher backed by the given database.
 func NewDispatcher(db *gorm.DB) *Dispatcher {
 	return &Dispatcher{db: db, now: time.Now}
+}
+
+// destLock returns the per-destination mutex, creating it on first use.
+func (d *Dispatcher) destLock(id string) *sync.Mutex {
+	mu, _ := d.destLocks.LoadOrStore(id, &sync.Mutex{})
+	return mu.(*sync.Mutex)
 }
 
 // Send loads enabled destinations, filters them by event subscription, and
@@ -83,9 +94,21 @@ func (d *Dispatcher) Send(ctx context.Context, event string, inc models.Incident
 // evaluateAndSend gates a single destination, records the decision, and sends
 // when allowed. Errors are logged, never returned (fire-and-forget).
 func (d *Dispatcher) evaluateAndSend(dest models.NotificationDest, inc models.Incident, event, incURL string) {
+	// Gate the destination and, for an allowed send, reserve the rate slot under
+	// the per-destination lock. Holding the lock across decide + the sent-row
+	// insert closes the read-then-write race where two concurrent evaluations
+	// could both pass the cap. HTTP delivery happens outside the lock so a slow
+	// destination cannot stall others.
+	mu := d.destLock(dest.ID)
+	mu.Lock()
+
 	decision, note, err := d.decide(d.db, dest)
 	if err != nil {
-		log.Printf("notify: decide for %q: %v", dest.Name, err)
+		mu.Unlock()
+		// Fail open: a transient counting-query error must not silently swallow
+		// a notification. Deliver best-effort and record the outcome.
+		log.Printf("notify: decide for %q: %v (sending anyway)", dest.Name, err)
+		d.deliver(dest, inc, event, incURL, "")
 		return
 	}
 
@@ -93,21 +116,55 @@ func (d *Dispatcher) evaluateAndSend(dest models.NotificationDest, inc models.In
 		if err := d.logDecision(d.db, dest.ID, inc.ID, event, decision, "", d.now()); err != nil {
 			log.Printf("notify: log %s for %q: %v", decision, dest.Name, err)
 		}
+		mu.Unlock()
 		return
 	}
+
+	// Reserve the slot by writing the sent row now; it counts toward the cap
+	// immediately. If delivery fails we downgrade it to "failed" below so it no
+	// longer counts.
+	row := &models.NotificationLog{
+		ID:         ulid.Make().String(),
+		DestID:     dest.ID,
+		IncidentID: inc.ID,
+		Event:      event,
+		Decision:   decisionSent,
+		Note:       note,
+		CreatedAt:  d.now(),
+	}
+	if err := d.db.Create(row).Error; err != nil {
+		mu.Unlock()
+		log.Printf("notify: reserve sent for %q: %v", dest.Name, err)
+		return
+	}
+	mu.Unlock()
 
 	sendCtx, cancel := context.WithTimeout(context.Background(), notifyTimeout)
 	defer cancel()
 
 	if err := sendTo(sendCtx, dest, inc, event, incURL, note, false); err != nil {
 		log.Printf("notify: send to %q (%s): %v", dest.Name, dest.Type, err)
-		if logErr := d.logDecision(d.db, dest.ID, inc.ID, event, decisionFailed, err.Error(), d.now()); logErr != nil {
-			log.Printf("notify: log failed for %q: %v", dest.Name, logErr)
+		if uerr := d.db.Model(&models.NotificationLog{}).Where("id = ?", row.ID).
+			Updates(map[string]interface{}{"decision": decisionFailed, "note": err.Error()}).Error; uerr != nil {
+			log.Printf("notify: mark failed for %q: %v", dest.Name, uerr)
 		}
-		return
 	}
-	if err := d.logDecision(d.db, dest.ID, inc.ID, event, decisionSent, note, d.now()); err != nil {
-		log.Printf("notify: log sent for %q: %v", dest.Name, err)
+}
+
+// deliver sends without rate reservation and records the outcome. Used for the
+// fail-open path when the gate decision could not be computed.
+func (d *Dispatcher) deliver(dest models.NotificationDest, inc models.Incident, event, incURL, note string) {
+	sendCtx, cancel := context.WithTimeout(context.Background(), notifyTimeout)
+	defer cancel()
+
+	decision := decisionSent
+	logNote := note
+	if err := sendTo(sendCtx, dest, inc, event, incURL, note, false); err != nil {
+		log.Printf("notify: send to %q (%s): %v", dest.Name, dest.Type, err)
+		decision, logNote = decisionFailed, err.Error()
+	}
+	if err := d.logDecision(d.db, dest.ID, inc.ID, event, decision, logNote, d.now()); err != nil {
+		log.Printf("notify: log %s for %q: %v", decision, dest.Name, err)
 	}
 }
 
