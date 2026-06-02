@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"blackbox/server/internal/auth"
@@ -27,6 +28,40 @@ var validNotifyEvents = map[string]struct{}{
 	notify.EventIncidentConfirmed:       {},
 	notify.EventIncidentResolved:        {},
 	notify.EventAIReviewGenerated:       {},
+}
+
+var hhmmRe = regexp.MustCompile(`^([01]\d|2[0-3]):[0-5]\d$`)
+
+// policyInput holds the per-destination quiet-hours and rate-limit settings
+// shared by the create and update request bodies.
+type policyInput struct {
+	QuietHoursEnabled bool   `json:"quiet_hours_enabled"`
+	QuietHoursStart   string `json:"quiet_hours_start"`
+	QuietHoursEnd     string `json:"quiet_hours_end"`
+	QuietHoursMode    string `json:"quiet_hours_mode"`
+	RateLimitEnabled  bool   `json:"rate_limit_enabled"`
+	RateLimitCount    int    `json:"rate_limit_count"`
+	RateLimitUnit     string `json:"rate_limit_unit"`
+}
+
+func validatePolicy(p policyInput) error {
+	if p.QuietHoursEnabled {
+		if !hhmmRe.MatchString(p.QuietHoursStart) || !hhmmRe.MatchString(p.QuietHoursEnd) {
+			return errors.New("quiet hours start/end must be HH:MM (24h)")
+		}
+		if p.QuietHoursMode != "drop" && p.QuietHoursMode != "defer" {
+			return errors.New("quiet hours mode must be drop or defer")
+		}
+	}
+	if p.RateLimitEnabled {
+		if p.RateLimitCount < 1 {
+			return errors.New("rate limit count must be at least 1")
+		}
+		if p.RateLimitUnit != "hour" && p.RateLimitUnit != "day" {
+			return errors.New("rate limit unit must be hour or day")
+		}
+	}
+	return nil
 }
 
 func ListNotificationDests(db *gorm.DB) http.HandlerFunc {
@@ -58,6 +93,7 @@ func CreateNotificationDest(db *gorm.DB) http.HandlerFunc {
 			URL     string   `json:"url"`
 			Events  []string `json:"events"`
 			Enabled bool     `json:"enabled"`
+			policyInput
 		}
 		if !decodeJSONBody(w, r, 16<<10, &req) {
 			return
@@ -65,6 +101,10 @@ func CreateNotificationDest(db *gorm.DB) http.HandlerFunc {
 
 		name, destType, destURL, events, err := validateNotificationDest(req.Name, req.Type, req.URL, req.Events)
 		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if err := validatePolicy(req.policyInput); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -76,12 +116,19 @@ func CreateNotificationDest(db *gorm.DB) http.HandlerFunc {
 		}
 
 		dest := models.NotificationDest{
-			ID:      ulid.Make().String(),
-			Name:    name,
-			Type:    destType,
-			URL:     destURL,
-			Events:  string(eventsJSON),
-			Enabled: req.Enabled,
+			ID:                ulid.Make().String(),
+			Name:              name,
+			Type:              destType,
+			URL:               destURL,
+			Events:            string(eventsJSON),
+			Enabled:           req.Enabled,
+			QuietHoursEnabled: req.QuietHoursEnabled,
+			QuietHoursStart:   req.QuietHoursStart,
+			QuietHoursEnd:     req.QuietHoursEnd,
+			QuietHoursMode:    req.QuietHoursMode,
+			RateLimitEnabled:  req.RateLimitEnabled,
+			RateLimitCount:    req.RateLimitCount,
+			RateLimitUnit:     req.RateLimitUnit,
 		}
 		if err := db.Create(&dest).Error; err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to create notification destination")
@@ -113,6 +160,7 @@ func UpdateNotificationDest(db *gorm.DB) http.HandlerFunc {
 			URL     string   `json:"url"`
 			Events  []string `json:"events"`
 			Enabled bool     `json:"enabled"`
+			policyInput
 		}
 		if !decodeJSONBody(w, r, 16<<10, &req) {
 			return
@@ -120,6 +168,10 @@ func UpdateNotificationDest(db *gorm.DB) http.HandlerFunc {
 
 		name, destType, destURL, events, err := validateNotificationDest(req.Name, req.Type, req.URL, req.Events)
 		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if err := validatePolicy(req.policyInput); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -133,11 +185,18 @@ func UpdateNotificationDest(db *gorm.DB) http.HandlerFunc {
 		result := db.Model(&models.NotificationDest{}).
 			Where("id = ?", id).
 			Updates(map[string]interface{}{
-				"name":    name,
-				"type":    destType,
-				"url":     destURL,
-				"events":  string(eventsJSON),
-				"enabled": req.Enabled,
+				"name":                name,
+				"type":                destType,
+				"url":                 destURL,
+				"events":              string(eventsJSON),
+				"enabled":             req.Enabled,
+				"quiet_hours_enabled": req.QuietHoursEnabled,
+				"quiet_hours_start":   req.QuietHoursStart,
+				"quiet_hours_end":     req.QuietHoursEnd,
+				"quiet_hours_mode":    req.QuietHoursMode,
+				"rate_limit_enabled":  req.RateLimitEnabled,
+				"rate_limit_count":    req.RateLimitCount,
+				"rate_limit_unit":     req.RateLimitUnit,
 			})
 		if result.Error != nil {
 			writeError(w, http.StatusInternalServerError, "failed to update notification destination")
