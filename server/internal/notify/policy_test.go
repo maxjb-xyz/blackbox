@@ -5,20 +5,14 @@ import (
 	"time"
 
 	"blackbox/server/internal/models"
-	"github.com/glebarez/sqlite"
-	"gorm.io/gorm"
 )
 
+// newTestDispatcher builds a Dispatcher over a fully-migrated in-memory DB
+// (via newTestDB, which uses a shared-cache DSN with a single connection so
+// goroutine sends see the same schema) and pins its clock to `now`.
 func newTestDispatcher(t *testing.T, now time.Time) *Dispatcher {
 	t.Helper()
-	gdb, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	if err := gdb.AutoMigrate(&models.NotificationDest{}, &models.NotificationLog{}, &models.Incident{}); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	d := NewDispatcher(gdb)
+	d := NewDispatcher(newTestDB(t))
 	d.now = func() time.Time { return now }
 	return d
 }
