@@ -33,9 +33,9 @@ const (
 )
 
 var (
-	discordSender func(ctx context.Context, webhookURL string, inc models.Incident, event string, incURL string, test bool) error = sendDiscord
-	slackSender   func(ctx context.Context, webhookURL string, inc models.Incident, event string, incURL string, test bool) error = sendSlack
-	ntfySender    func(ctx context.Context, topicURL string, inc models.Incident, event string, incURL string, test bool) error   = sendNtfy
+	discordSender func(ctx context.Context, webhookURL string, inc models.Incident, event, incURL, note string, test bool) error = sendDiscord
+	slackSender   func(ctx context.Context, webhookURL string, inc models.Incident, event, incURL, note string, test bool) error = sendSlack
+	ntfySender    func(ctx context.Context, topicURL string, inc models.Incident, event, incURL, note string, test bool) error   = sendNtfy
 )
 
 // Dispatcher fans out incident events to enabled notification destinations.
@@ -78,7 +78,7 @@ func (d *Dispatcher) Send(ctx context.Context, event string, inc models.Incident
 			sendCtx, cancel := context.WithTimeout(context.Background(), notifyTimeout)
 			defer cancel()
 
-			if err := sendTo(sendCtx, dest, inc, event, incURL, false); err != nil {
+			if err := sendTo(sendCtx, dest, inc, event, incURL, "", false); err != nil {
 				log.Printf("notify: send to %q (%s): %v", dest.Name, dest.Type, err)
 			}
 		}()
@@ -96,7 +96,7 @@ func (d *Dispatcher) SendTest(ctx context.Context, dest models.NotificationDest)
 	sendCtx, cancel := context.WithTimeout(sendCtx, notifyTimeout)
 	defer cancel()
 
-	return sendTo(sendCtx, dest, testIncident(), EventIncidentOpenedConfirmed, "", true)
+	return sendTo(sendCtx, dest, testIncident(), EventIncidentOpenedConfirmed, "", "", true)
 }
 
 func (d *Dispatcher) incidentURL(ctx context.Context, incidentID string) string {
@@ -131,14 +131,14 @@ func destWantsEvent(dest models.NotificationDest, event string) bool {
 	return false
 }
 
-func sendTo(ctx context.Context, dest models.NotificationDest, inc models.Incident, event string, incURL string, test bool) error {
+func sendTo(ctx context.Context, dest models.NotificationDest, inc models.Incident, event, incURL, note string, test bool) error {
 	switch dest.Type {
 	case "discord":
-		return discordSender(ctx, dest.URL, inc, event, incURL, test)
+		return discordSender(ctx, dest.URL, inc, event, incURL, note, test)
 	case "slack":
-		return slackSender(ctx, dest.URL, inc, event, incURL, test)
+		return slackSender(ctx, dest.URL, inc, event, incURL, note, test)
 	case "ntfy":
-		return ntfySender(ctx, dest.URL, inc, event, incURL, test)
+		return ntfySender(ctx, dest.URL, inc, event, incURL, note, test)
 	default:
 		return fmt.Errorf("unknown destination type: %s", dest.Type)
 	}

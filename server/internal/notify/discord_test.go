@@ -115,7 +115,7 @@ func TestSendDiscord_PostsPayload(t *testing.T) {
 		Metadata:   "{}",
 	}
 
-	err := ExportedSendDiscord(context.Background(), srv.URL, inc, EventIncidentOpenedConfirmed, "", false)
+	err := ExportedSendDiscord(context.Background(), srv.URL, inc, EventIncidentOpenedConfirmed, "", "", false)
 	require.NoError(t, err)
 
 	var payload map[string]any
@@ -135,7 +135,7 @@ func TestSendDiscord_ReturnsErrorOnNon2xx(t *testing.T) {
 		Services:  `[]`,
 		NodeNames: `[]`,
 		Metadata:  "{}",
-	}, EventIncidentOpenedConfirmed, "", false)
+	}, EventIncidentOpenedConfirmed, "", "", false)
 
 	assert.Error(t, err)
 }

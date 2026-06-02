@@ -112,8 +112,12 @@ func BuildDiscordEmbed(inc models.Incident, event string, incURL string, test bo
 	return embed
 }
 
-func sendDiscord(ctx context.Context, webhookURL string, inc models.Incident, event string, incURL string, test bool) error {
-	payload := discordPayload{Embeds: []DiscordEmbed{BuildDiscordEmbed(inc, event, incURL, test)}}
+func sendDiscord(ctx context.Context, webhookURL string, inc models.Incident, event, incURL, note string, test bool) error {
+	embed := BuildDiscordEmbed(inc, event, incURL, test)
+	if note != "" {
+		embed.Fields = append(embed.Fields, discordField{Name: "Suppressed", Value: note, Inline: false})
+	}
+	payload := discordPayload{Embeds: []DiscordEmbed{embed}}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("marshal discord payload: %w", err)
