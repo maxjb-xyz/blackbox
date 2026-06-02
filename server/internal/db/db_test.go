@@ -305,6 +305,46 @@ func TestStartOIDCStateSweeper_DeletesExpiredStatesImmediately(t *testing.T) {
 	assert.Equal(t, int64(1), freshCount)
 }
 
+func TestStartNotificationLogSweeper_PrunesOldButKeepsPendingHeld(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+	closeDBOnCleanup(t, database)
+
+	old := time.Now().Add(-72 * time.Hour)
+	flushedAt := old.Add(time.Hour)
+	rows := []models.NotificationLog{
+		{ID: "log-old-sent", DestID: "d1", Decision: "sent", CreatedAt: old},
+		{ID: "log-old-held-flushed", DestID: "d1", Decision: "held", FlushedAt: &flushedAt, CreatedAt: old},
+		{ID: "log-old-held-pending", DestID: "d1", Decision: "held", CreatedAt: old},
+		{ID: "log-fresh-sent", DestID: "d1", Decision: "sent", CreatedAt: time.Now()},
+	}
+	for i := range rows {
+		require.NoError(t, database.Create(&rows[i]).Error)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	db.StartNotificationLogSweeper(ctx, database)
+
+	require.Eventually(t, func() bool {
+		var oldSent int64
+		if err := database.Model(&models.NotificationLog{}).Where("id = ?", "log-old-sent").Count(&oldSent).Error; err != nil {
+			return false
+		}
+		return oldSent == 0
+	}, time.Second, 10*time.Millisecond)
+
+	exists := func(id string) int64 {
+		var n int64
+		require.NoError(t, database.Model(&models.NotificationLog{}).Where("id = ?", id).Count(&n).Error)
+		return n
+	}
+	assert.Equal(t, int64(0), exists("log-old-sent"), "old sent row should be pruned")
+	assert.Equal(t, int64(0), exists("log-old-held-flushed"), "old flushed held row should be pruned")
+	assert.Equal(t, int64(1), exists("log-old-held-pending"), "pending held row must be preserved")
+	assert.Equal(t, int64(1), exists("log-fresh-sent"), "fresh row must be preserved")
+}
+
 func TestInit_FileDB_WALModeEnabled(t *testing.T) {
 	tmp, err := os.CreateTemp("", "blackbox-wal-test-*.db")
 	require.NoError(t, err)

@@ -105,6 +105,7 @@ func main() {
 	restoreMCPState(database, mcpMgr)
 
 	db.StartOIDCStateSweeper(rootCtx, database)
+	db.StartNotificationLogSweeper(rootCtx, database)
 	eventHub := hub.New()
 	notifier := notify.NewDispatcher(database)
 	digestFlusher := notify.NewFlusher(database)
