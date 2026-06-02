@@ -67,6 +67,7 @@ func Init(path string) (*gorm.DB, error) {
 		&models.IncidentEntry{},
 		&models.SystemdUnitConfig{},
 		&models.NotificationDest{},
+		&models.NotificationLog{},
 		&models.ExcludedTarget{},
 		&models.AuditLog{},
 		&models.WebhookDelivery{},
