@@ -395,7 +395,17 @@ func TestCorrelateAsync_WritesAICauseLinks(t *testing.T) {
 		if err := database.Where("incident_id = ? AND entry_id = ?", incidentID, candidateID).First(&link).Error; err != nil {
 			return false
 		}
-		return link.Role == "ai_cause" && link.Score == 85 && link.Reason == "Container exited before the outage"
+		if link.Role != "ai_cause" || link.Score != 85 || link.Reason != "Container exited before the outage" {
+			return false
+		}
+		// ai_analysis is written by updateIncidentMetadata *after* the ai_cause
+		// link transaction commits, so also wait for it; otherwise the metadata
+		// assertions below can read the incident before the metadata write lands.
+		var inc models.Incident
+		if err := database.First(&inc, "id = ?", incidentID).Error; err != nil {
+			return false
+		}
+		return parseIncidentTestMetadata(t, inc.Metadata)["ai_analysis"] == "nginx crashed due to resource exhaustion"
 	}, time.Second, 10*time.Millisecond)
 
 	var inc models.Incident
