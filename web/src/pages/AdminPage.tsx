@@ -32,6 +32,7 @@ import {
 } from '../api/client'
 import type { AISettingsInput, AdminUser, AuditLogPage, MCPSettingsInput, Node, NotificationDest, NotificationDestInput, OIDCProviderConfig, WebhookDeliveryPage } from '../api/client'
 import { readErrorMessage } from '../api/errorUtils'
+import { validatePolicyForm } from './notificationPolicy'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useSession } from '../session'
 import PageHeader from '../components/PageHeader'
@@ -139,8 +140,16 @@ function emptyNotificationDestForm(): NotificationDestInput {
     url: '',
     events: [],
     enabled: true,
+    quiet_hours_enabled: false,
+    quiet_hours_start: '22:00',
+    quiet_hours_end: '07:00',
+    quiet_hours_mode: 'drop',
+    rate_limit_enabled: false,
+    rate_limit_count: 5,
+    rate_limit_unit: 'hour',
   }
 }
+
 
 function oidcCallbackURL(providerID: string): string {
   const trimmed = providerID.trim()
@@ -447,6 +456,11 @@ export default function AdminPage() {
                 <form
                   onSubmit={async e => {
                     e.preventDefault()
+                    const policyError = validatePolicyForm(notificationForm)
+                    if (policyError) {
+                      setNotificationSaveError(policyError)
+                      return
+                    }
                     setNotificationSaving(true)
                     setNotificationSaveError(null)
                     try {
@@ -560,6 +574,81 @@ export default function AdminPage() {
                       />
                       <span style={{ color: 'var(--muted)', fontSize: '11px', letterSpacing: '0.05em' }}>ENABLED</span>
                     </label>
+
+                    <div style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--border)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      <label style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <input
+                          type="checkbox"
+                          checked={notificationForm.quiet_hours_enabled}
+                          onChange={e => setNotificationForm(prev => ({ ...prev, quiet_hours_enabled: e.target.checked }))}
+                        />
+                        <span style={{ color: 'var(--muted)', fontSize: '11px', letterSpacing: '0.05em' }}>QUIET HOURS</span>
+                      </label>
+                      {notificationForm.quiet_hours_enabled && (
+                        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                          <label style={fieldWrapperStyle}>
+                            <span style={fieldLabelStyle}>START</span>
+                            <input
+                              type="time"
+                              value={notificationForm.quiet_hours_start}
+                              onChange={e => setNotificationForm(prev => ({ ...prev, quiet_hours_start: e.target.value }))}
+                            />
+                          </label>
+                          <label style={fieldWrapperStyle}>
+                            <span style={fieldLabelStyle}>END</span>
+                            <input
+                              type="time"
+                              value={notificationForm.quiet_hours_end}
+                              onChange={e => setNotificationForm(prev => ({ ...prev, quiet_hours_end: e.target.value }))}
+                            />
+                          </label>
+                          <label style={fieldWrapperStyle}>
+                            <span style={fieldLabelStyle}>WHEN SILENCED</span>
+                            <select
+                              value={notificationForm.quiet_hours_mode}
+                              onChange={e => setNotificationForm(prev => ({ ...prev, quiet_hours_mode: e.target.value === 'defer' ? 'defer' : 'drop' }))}
+                            >
+                              <option value="drop">Drop</option>
+                              <option value="defer">Defer &amp; digest</option>
+                            </select>
+                          </label>
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--border)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      <label style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <input
+                          type="checkbox"
+                          checked={notificationForm.rate_limit_enabled}
+                          onChange={e => setNotificationForm(prev => ({ ...prev, rate_limit_enabled: e.target.checked }))}
+                        />
+                        <span style={{ color: 'var(--muted)', fontSize: '11px', letterSpacing: '0.05em' }}>RATE LIMIT</span>
+                      </label>
+                      {notificationForm.rate_limit_enabled && (
+                        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                          <label style={fieldWrapperStyle}>
+                            <span style={fieldLabelStyle}>MAX</span>
+                            <input
+                              type="number"
+                              min={1}
+                              value={notificationForm.rate_limit_count}
+                              onChange={e => setNotificationForm(prev => ({ ...prev, rate_limit_count: Number(e.target.value) }))}
+                            />
+                          </label>
+                          <label style={fieldWrapperStyle}>
+                            <span style={fieldLabelStyle}>PER</span>
+                            <select
+                              value={notificationForm.rate_limit_unit}
+                              onChange={e => setNotificationForm(prev => ({ ...prev, rate_limit_unit: e.target.value === 'day' ? 'day' : 'hour' }))}
+                            >
+                              <option value="hour">Hour</option>
+                              <option value="day">Day</option>
+                            </select>
+                          </label>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
@@ -699,6 +788,13 @@ export default function AdminPage() {
                                 url: dest.url,
                                 events: [...dest.events],
                                 enabled: dest.enabled,
+                                quiet_hours_enabled: dest.quiet_hours_enabled,
+                                quiet_hours_start: dest.quiet_hours_start || '22:00',
+                                quiet_hours_end: dest.quiet_hours_end || '07:00',
+                                quiet_hours_mode: dest.quiet_hours_mode,
+                                rate_limit_enabled: dest.rate_limit_enabled,
+                                rate_limit_count: dest.rate_limit_count || 5,
+                                rate_limit_unit: dest.rate_limit_unit,
                               })
                               setNotificationFormOpen(true)
                               setNotificationEditingId(dest.id)

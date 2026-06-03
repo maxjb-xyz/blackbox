@@ -29,7 +29,7 @@ func TestDispatcher_Send_RoutesToEnabledDest(t *testing.T) {
 	}).Error)
 
 	var hits atomic.Int32
-	restoreDiscordSender(t, func(ctx context.Context, webhookURL string, inc models.Incident, event string, incURL string, test bool) error {
+	restoreDiscordSender(t, func(ctx context.Context, webhookURL string, inc models.Incident, event, incURL, note string, test bool) error {
 		hits.Add(1)
 		return nil
 	})
@@ -56,7 +56,7 @@ func TestDispatcher_Send_SkipsDisabledDest(t *testing.T) {
 	}).Error)
 
 	var hits atomic.Int32
-	restoreDiscordSender(t, func(ctx context.Context, webhookURL string, inc models.Incident, event string, incURL string, test bool) error {
+	restoreDiscordSender(t, func(ctx context.Context, webhookURL string, inc models.Incident, event, incURL, note string, test bool) error {
 		hits.Add(1)
 		return nil
 	})
@@ -82,7 +82,7 @@ func TestDispatcher_Send_SkipsNonMatchingEvent(t *testing.T) {
 	}).Error)
 
 	var hits atomic.Int32
-	restoreDiscordSender(t, func(ctx context.Context, webhookURL string, inc models.Incident, event string, incURL string, test bool) error {
+	restoreDiscordSender(t, func(ctx context.Context, webhookURL string, inc models.Incident, event, incURL, note string, test bool) error {
 		hits.Add(1)
 		return nil
 	})
@@ -97,7 +97,7 @@ func TestDispatcher_Send_SkipsNonMatchingEvent(t *testing.T) {
 func TestDispatcher_SendTest_ReturnsSenderError(t *testing.T) {
 	database := newTestDB(t)
 	expectedErr := errors.New("provider failed")
-	restoreDiscordSender(t, func(ctx context.Context, webhookURL string, inc models.Incident, event string, incURL string, test bool) error {
+	restoreDiscordSender(t, func(ctx context.Context, webhookURL string, inc models.Incident, event, incURL, note string, test bool) error {
 		return expectedErr
 	})
 
@@ -154,7 +154,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 	return database
 }
 
-func restoreDiscordSender(t *testing.T, fn func(context.Context, string, models.Incident, string, string, bool) error) {
+func restoreDiscordSender(t *testing.T, fn func(context.Context, string, models.Incident, string, string, string, bool) error) {
 	t.Helper()
 
 	previous := discordSender

@@ -119,7 +119,7 @@ func TestSendNtfy_SetsHeaders(t *testing.T) {
 		Metadata:   "{}",
 	}
 
-	err := ExportedSendNtfy(context.Background(), srv.URL, inc, EventIncidentOpenedConfirmed, "", false)
+	err := ExportedSendNtfy(context.Background(), srv.URL, inc, EventIncidentOpenedConfirmed, "", "", false)
 	require.NoError(t, err)
 
 	assert.Equal(t, "nginx down", capturedTitle)
@@ -138,7 +138,7 @@ func TestSendNtfy_ReturnsErrorOnNon2xx(t *testing.T) {
 		Services:  `[]`,
 		NodeNames: `[]`,
 		Metadata:  "{}",
-	}, EventIncidentOpenedConfirmed, "", false)
+	}, EventIncidentOpenedConfirmed, "", "", false)
 
 	assert.Error(t, err)
 }

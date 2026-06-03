@@ -67,6 +67,7 @@ func Init(path string) (*gorm.DB, error) {
 		&models.IncidentEntry{},
 		&models.SystemdUnitConfig{},
 		&models.NotificationDest{},
+		&models.NotificationLog{},
 		&models.ExcludedTarget{},
 		&models.AuditLog{},
 		&models.WebhookDelivery{},
@@ -238,4 +239,41 @@ func sweepExpiredOIDCStates(ctx context.Context, database *gorm.DB) {
 
 func StartOIDCStateSweeper(ctx context.Context, database *gorm.DB) {
 	go sweepExpiredOIDCStates(ctx, database)
+}
+
+// notificationLogRetention is longer than the largest rate-limit window (24h)
+// so sliding-window counts always have their backing rows.
+const notificationLogRetention = 48 * time.Hour
+
+// deleteOldNotificationLogs prunes notification log rows older than the
+// retention horizon, while preserving pending held rows (decision = "held" with
+// no flushed_at) that a deferred-digest flush still needs.
+func deleteOldNotificationLogs(database *gorm.DB) {
+	cutoff := time.Now().Add(-notificationLogRetention)
+	result := database.Where(
+		"created_at < ? AND (decision != ? OR flushed_at IS NOT NULL)", cutoff, "held",
+	).Delete(&models.NotificationLog{})
+	if result.Error != nil {
+		log.Printf("notification log sweep error: %v", result.Error)
+	}
+}
+
+func sweepOldNotificationLogs(ctx context.Context, database *gorm.DB) {
+	deleteOldNotificationLogs(database)
+
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			deleteOldNotificationLogs(database)
+		}
+	}
+}
+
+func StartNotificationLogSweeper(ctx context.Context, database *gorm.DB) {
+	go sweepOldNotificationLogs(ctx, database)
 }

@@ -91,8 +91,15 @@ func BuildSlackPayload(inc models.Incident, event string, incURL string, test bo
 	return SlackPayload{Attachments: []SlackAttachment{attachment}}
 }
 
-func sendSlack(ctx context.Context, webhookURL string, inc models.Incident, event string, incURL string, test bool) error {
+func sendSlack(ctx context.Context, webhookURL string, inc models.Incident, event, incURL, note string, test bool) error {
 	payload := BuildSlackPayload(inc, event, incURL, test)
+	if note != "" && len(payload.Attachments) > 0 {
+		payload.Attachments[0].Fields = append(payload.Attachments[0].Fields, slackField{
+			Title: "Suppressed",
+			Value: note,
+			Short: false,
+		})
+	}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("marshal slack payload: %w", err)

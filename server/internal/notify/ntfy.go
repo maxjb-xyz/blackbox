@@ -47,8 +47,9 @@ func BuildNtfyMessage(inc models.Incident, event string, incURL string, test boo
 	return title, body, priority, tags
 }
 
-func sendNtfy(ctx context.Context, topicURL string, inc models.Incident, event string, incURL string, test bool) error {
+func sendNtfy(ctx context.Context, topicURL string, inc models.Incident, event, incURL, note string, test bool) error {
 	title, body, priority, tags := BuildNtfyMessage(inc, event, incURL, test)
+	body = appendNote(body, note)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, topicURL, bytes.NewBufferString(body))
 	if err != nil {

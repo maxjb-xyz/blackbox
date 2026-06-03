@@ -620,7 +620,17 @@ function normalizeIncidentEntryLink(value: unknown): IncidentEntryLink | null {
   }
 }
 
-export interface NotificationDest {
+export interface NotificationPolicy {
+  quiet_hours_enabled: boolean
+  quiet_hours_start: string
+  quiet_hours_end: string
+  quiet_hours_mode: 'drop' | 'defer'
+  rate_limit_enabled: boolean
+  rate_limit_count: number
+  rate_limit_unit: 'hour' | 'day'
+}
+
+export interface NotificationDest extends NotificationPolicy {
   id: string
   name: string
   type: 'discord' | 'slack' | 'ntfy'
@@ -631,7 +641,7 @@ export interface NotificationDest {
   updated_at: string
 }
 
-export interface NotificationDestInput {
+export interface NotificationDestInput extends NotificationPolicy {
   name: string
   type: 'discord' | 'slack' | 'ntfy'
   url: string
@@ -732,6 +742,10 @@ function normalizeNotificationDest(data: Record<string, unknown>): NotificationD
     destType = 'discord'
   }
 
+  const quietMode = data.quiet_hours_mode === 'defer' ? 'defer' : 'drop'
+  const rateUnit = data.rate_limit_unit === 'day' ? 'day' : 'hour'
+  const rateCount = typeof data.rate_limit_count === 'number' && data.rate_limit_count >= 1 ? data.rate_limit_count : 1
+
   return {
     id: String(data.id ?? ''),
     name: String(data.name ?? ''),
@@ -739,6 +753,13 @@ function normalizeNotificationDest(data: Record<string, unknown>): NotificationD
     url: String(data.url ?? ''),
     events,
     enabled: data.enabled === true,
+    quiet_hours_enabled: data.quiet_hours_enabled === true,
+    quiet_hours_start: String(data.quiet_hours_start ?? ''),
+    quiet_hours_end: String(data.quiet_hours_end ?? ''),
+    quiet_hours_mode: quietMode,
+    rate_limit_enabled: data.rate_limit_enabled === true,
+    rate_limit_count: rateCount,
+    rate_limit_unit: rateUnit,
     created_at: String(data.created_at ?? ''),
     updated_at: String(data.updated_at ?? ''),
   }

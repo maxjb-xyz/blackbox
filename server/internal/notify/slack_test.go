@@ -96,7 +96,7 @@ func TestSendSlack_PostsPayload(t *testing.T) {
 		NodeNames:  `["node"]`,
 		OpenedAt:   time.Now(),
 		Metadata:   "{}",
-	}, EventIncidentOpenedConfirmed, "", false)
+	}, EventIncidentOpenedConfirmed, "", "", false)
 	require.NoError(t, err)
 
 	var payload map[string]any
@@ -115,7 +115,7 @@ func TestSendSlack_ReturnsErrorOnNon2xx(t *testing.T) {
 		Services:  `[]`,
 		NodeNames: `[]`,
 		Metadata:  "{}",
-	}, EventIncidentOpenedConfirmed, "", false)
+	}, EventIncidentOpenedConfirmed, "", "", false)
 
 	assert.Error(t, err)
 }
