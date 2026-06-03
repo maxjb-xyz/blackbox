@@ -134,7 +134,10 @@ func (d *Dispatcher) evaluateAndSend(dest models.NotificationDest, inc models.In
 	}
 	if err := d.db.Create(row).Error; err != nil {
 		mu.Unlock()
-		log.Printf("notify: reserve sent for %q: %v", dest.Name, err)
+		// Fail open: if the reservation write fails, rate enforcement degrades
+		// but the notification must still be delivered.
+		log.Printf("notify: reserve sent for %q: %v (sending anyway)", dest.Name, err)
+		d.deliver(dest, inc, event, incURL, note)
 		return
 	}
 	mu.Unlock()
