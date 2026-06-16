@@ -130,7 +130,7 @@ func TestConfirmedIncident_OpenOnDown_UsesCorrelatedCauseNodeNames(t *testing.T)
 	go mgr.Run(t.Context(), ch)
 
 	downEntry := makeEntryAt("radarr", "webhook", "down", `{"monitor":"radarr"}`, now)
-	downEntry.NodeName = "media-node"
+	downEntry.NodeName = "webhook"
 	require.NoError(t, database.Create(&downEntry).Error)
 	ch <- downEntry
 
@@ -160,7 +160,7 @@ func TestConfirmedIncident_OpenOnDown_BindsFollowUpNodeEventsToScopedIncident(t 
 	go mgr.Run(t.Context(), ch)
 
 	downEntry := makeEntryAt("radarr", "webhook", "down", `{"monitor":"radarr"}`, now)
-	downEntry.NodeName = "media-node"
+	downEntry.NodeName = "webhook"
 	require.NoError(t, database.Create(&downEntry).Error)
 	ch <- downEntry
 
@@ -227,7 +227,7 @@ func TestConfirmedIncident_DockerStartAddsEvidenceButDoesNotResolve(t *testing.T
 	go mgr.Run(t.Context(), ch)
 
 	downEntry := makeEntryAt("radarr", "webhook", "down", `{"monitor":"radarr"}`, now)
-	downEntry.NodeName = "media-node"
+	downEntry.NodeName = "webhook"
 	require.NoError(t, database.Create(&downEntry).Error)
 	ch <- downEntry
 
@@ -542,7 +542,7 @@ func TestConfirmedSystemdStartedAddsEvidenceButDoesNotResolve(t *testing.T) {
 	go mgr.Run(t.Context(), ch)
 
 	downEntry := makeEntryAt("nginx.service", "webhook", "down", `{"monitor":"nginx.service"}`, now)
-	downEntry.NodeName = "node-01"
+	downEntry.NodeName = "webhook"
 	require.NoError(t, database.Create(&downEntry).Error)
 	ch <- downEntry
 
