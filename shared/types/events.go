@@ -10,7 +10,7 @@ type Entry struct {
 	Timestamp      time.Time `json:"timestamp" gorm:"index:idx_entries_timestamp_id,priority:1"`
 	NodeName       string    `json:"node_name" gorm:"index"`
 	Source         string    `json:"source"`
-	Service        string    `json:"service" gorm:"index;index:idx_entries_service_image,priority:1"`
+	Service        string    `json:"service" gorm:"index:idx_entries_service_image,priority:1"`
 	ComposeService string    `json:"compose_service,omitempty" gorm:"index"`
 	Image          string    `json:"image,omitempty" gorm:"index:idx_entries_service_image,priority:2"`
 	Event          string    `json:"event"`
