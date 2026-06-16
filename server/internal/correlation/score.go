@@ -121,6 +121,8 @@ func ScoreCauses(db *gorm.DB, services []string, node string, at time.Time, trig
 // imagesForServices returns the distinct normalized images that the given
 // services run, derived from their container (non pull/delete) docker entries.
 // Scoped to node (plus node-less entries) when node is non-empty.
+// Intentionally NOT time-windowed: a stack's image set should be known even if
+// its most recent container event predates the correlation lookback window.
 func imagesForServices(db *gorm.DB, services []string, node string) ([]string, error) {
 	q := db.Model(&types.Entry{}).
 		Where("service IN ? AND image <> ? AND NOT (source = ? AND event IN ?)",

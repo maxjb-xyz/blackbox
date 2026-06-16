@@ -101,7 +101,7 @@ func (m *Manager) handleMonitorDown(entry types.Entry) {
 		return
 	}
 
-	candidates, err := correlation.ScoreCauses(m.db, []string{svc}, entry.Timestamp, entry.ComposeService)
+	candidates, err := correlation.ScoreCauses(m.db, []string{svc}, entry.NodeName, entry.Timestamp, entry.ComposeService)
 	if err != nil {
 		log.Printf("incidents: ScoreCauses error for %s: %v", svc, err)
 	}
@@ -325,7 +325,7 @@ func (m *Manager) handleSystemdStarted(entry types.Entry) {
 func (m *Manager) openSuspectedIncident(trigger types.Entry, reason string) {
 	svc := trigger.Service
 
-	candidates, err := correlation.ScoreCauses(m.db, []string{svc}, trigger.Timestamp, trigger.ComposeService)
+	candidates, err := correlation.ScoreCauses(m.db, []string{svc}, trigger.NodeName, trigger.Timestamp, trigger.ComposeService)
 	if err != nil {
 		log.Printf("incidents: ScoreCauses error for %s: %v", svc, err)
 	}
@@ -399,7 +399,7 @@ func (m *Manager) upgradeToConfirmed(incidentID string, downEntry types.Entry) {
 	}
 
 	svc := downEntry.Service
-	candidates, err := correlation.ScoreCauses(m.db, []string{svc}, downEntry.Timestamp, downEntry.ComposeService)
+	candidates, err := correlation.ScoreCauses(m.db, []string{svc}, downEntry.NodeName, downEntry.Timestamp, downEntry.ComposeService)
 	if err != nil {
 		log.Printf("incidents: ScoreCauses while upgrading %s via %s: %v", incidentID, downEntry.ID, err)
 	}
