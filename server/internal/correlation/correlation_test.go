@@ -157,7 +157,7 @@ func TestScoreCauses_SystemdFailedScores90(t *testing.T) {
 		Metadata:  `{}`,
 	}).Error)
 
-	candidates, err := correlation.ScoreCauses(database, []string{"nginx.service"}, now, "")
+	candidates, err := correlation.ScoreCauses(database, []string{"nginx.service"}, "", now, "")
 	require.NoError(t, err)
 	require.Len(t, candidates, 1)
 	require.Equal(t, failedID, candidates[0].Entry.ID)
@@ -180,7 +180,7 @@ func TestScoreCauses_OOMKillScores100(t *testing.T) {
 		Metadata:  `{}`,
 	}).Error)
 
-	candidates, err := correlation.ScoreCauses(database, []string{"kernel"}, now, "")
+	candidates, err := correlation.ScoreCauses(database, []string{"kernel"}, "", now, "")
 	require.NoError(t, err)
 	require.Len(t, candidates, 1)
 	require.Equal(t, oomID, candidates[0].Entry.ID)

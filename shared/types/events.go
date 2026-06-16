@@ -10,8 +10,9 @@ type Entry struct {
 	Timestamp      time.Time `json:"timestamp" gorm:"index:idx_entries_timestamp_id,priority:1"`
 	NodeName       string    `json:"node_name" gorm:"index"`
 	Source         string    `json:"source"`
-	Service        string    `json:"service" gorm:"index"`
+	Service        string    `json:"service" gorm:"index:idx_entries_service_image,priority:1"`
 	ComposeService string    `json:"compose_service,omitempty" gorm:"index"`
+	Image          string    `json:"image,omitempty" gorm:"index:idx_entries_service_image,priority:2"`
 	Event          string    `json:"event"`
 	Content        string    `json:"content"`
 	Metadata       string    `json:"-" gorm:"column:metadata"`
@@ -27,6 +28,7 @@ type entryJSON struct {
 	Source         string          `json:"source"`
 	Service        string          `json:"service"`
 	ComposeService string          `json:"compose_service,omitempty"`
+	Image          string          `json:"image,omitempty"`
 	Event          string          `json:"event"`
 	Content        string          `json:"content"`
 	Metadata       json.RawMessage `json:"metadata"`
@@ -47,6 +49,7 @@ func (e Entry) MarshalJSON() ([]byte, error) {
 		Source:         e.Source,
 		Service:        e.Service,
 		ComposeService: e.ComposeService,
+		Image:          e.Image,
 		Event:          e.Event,
 		Content:        e.Content,
 		Metadata:       meta,
@@ -67,6 +70,7 @@ func (e *Entry) UnmarshalJSON(data []byte) error {
 	e.Source = v.Source
 	e.Service = v.Service
 	e.ComposeService = v.ComposeService
+	e.Image = v.Image
 	e.Event = v.Event
 	e.Content = v.Content
 	e.CorrelatedID = v.CorrelatedID

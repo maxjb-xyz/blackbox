@@ -157,6 +157,11 @@ func buildEntry(nodeName string, msg dockerevents.Message, resolver *serviceReso
 		displayName = firstNonEmpty(identity.displayName, resolvedService, sanitizeContainerName(name), name, msg.Actor.ID)
 	}
 
+	imageRef := image
+	if action == "pull" || action == "delete" || msg.Type == "image" {
+		imageRef = firstNonEmpty(attrs["name"], image, msg.Actor.ID)
+	}
+
 	var content string
 	switch action {
 	case "start":
@@ -191,6 +196,7 @@ func buildEntry(nodeName string, msg dockerevents.Message, resolver *serviceReso
 		Source:         "docker",
 		Service:        resolvedService,
 		ComposeService: strings.TrimSpace(attrs["com.docker.compose.service"]),
+		Image:          normalizeImageRef(imageRef),
 		Event:          action,
 		Content:        content,
 		Metadata:       string(metaBytes),
@@ -359,6 +365,7 @@ func buildCollapsedContainerEntry(nodeName, event string, rawEvents []dockereven
 		Source:         "docker",
 		Service:        service,
 		ComposeService: strings.TrimSpace(attrs["com.docker.compose.service"]),
+		Image:          normalizeImageRef(attrs["image"]),
 		Event:          event,
 		Content:        content,
 		Metadata:       string(metaBytes),

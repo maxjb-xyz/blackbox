@@ -722,3 +722,61 @@ type assertiveResolverError string
 func (e assertiveResolverError) Error() string {
 	return string(e)
 }
+
+func TestBuildEntry_ImagePullSetsNormalizedImage(t *testing.T) {
+	resolver := newServiceResolver(context.Background(), fakeDockerResolverClient{
+		containers: []dockercontainer.Summary{
+			{
+				Image:   "postgres:16",
+				ImageID: "sha256:pg123",
+				Names:   []string{"/outline-db-1"},
+				Labels: map[string]string{
+					"com.docker.compose.project": "outline",
+					"com.docker.compose.service": "db",
+				},
+			},
+			{
+				Image:   "postgres:16",
+				ImageID: "sha256:pg123",
+				Names:   []string{"/fairtrail-db-1"},
+				Labels: map[string]string{
+					"com.docker.compose.project": "fairtrail",
+					"com.docker.compose.service": "db",
+				},
+			},
+		},
+	})
+
+	entry := buildEntry(
+		"node-1",
+		testDockerMessage(time.Now().UTC(), "image", "pull", "sha256:pg123", "postgres:16", ""),
+		resolver,
+	)
+
+	// Service still falls back (shared across stacks), but Image is now set.
+	if entry.Service != "postgres" {
+		t.Fatalf("expected service postgres, got %q", entry.Service)
+	}
+	if entry.Image != "postgres" {
+		t.Fatalf("expected normalized image postgres, got %q", entry.Image)
+	}
+}
+
+func TestBuildEntry_ContainerEventSetsNormalizedImage(t *testing.T) {
+	resolver := newServiceResolver(context.Background(), fakeDockerResolverClient{})
+
+	msg := testDockerMessageWithAttrs(
+		time.Now().UTC(), "container", "create", "c1", "/outline-db-1", "",
+		map[string]string{
+			"image":                      "docker.io/library/postgres:16",
+			"com.docker.compose.project": "outline",
+			"com.docker.compose.service": "db",
+		},
+	)
+
+	entry := buildEntry("node-1", msg, resolver)
+
+	if entry.Image != "postgres" {
+		t.Fatalf("expected normalized image postgres, got %q", entry.Image)
+	}
+}
