@@ -27,7 +27,7 @@ func TestScoreCauses_DieNonZeroExit(t *testing.T) {
 	}
 	require.NoError(t, database.Create(&cause).Error)
 
-	candidates, err := correlation.ScoreCauses(database, []string{"nginx"}, now, "")
+	candidates, err := correlation.ScoreCauses(database, []string{"nginx"}, "", now, "")
 	require.NoError(t, err)
 	require.Len(t, candidates, 1)
 	assert.Equal(t, cause.ID, candidates[0].Entry.ID)
@@ -49,7 +49,7 @@ func TestScoreCauses_DieNonZeroNumericExit(t *testing.T) {
 	}
 	require.NoError(t, database.Create(&cause).Error)
 
-	candidates, err := correlation.ScoreCauses(database, []string{"nginx"}, now, "")
+	candidates, err := correlation.ScoreCauses(database, []string{"nginx"}, "", now, "")
 	require.NoError(t, err)
 	require.Len(t, candidates, 1)
 	assert.Equal(t, 93, candidates[0].Score)
@@ -70,7 +70,7 @@ func TestScoreCauses_ExcludesWebhooks(t *testing.T) {
 	}
 	require.NoError(t, database.Create(&webhook).Error)
 
-	candidates, err := correlation.ScoreCauses(database, []string{"nginx"}, now, "")
+	candidates, err := correlation.ScoreCauses(database, []string{"nginx"}, "", now, "")
 	require.NoError(t, err)
 	assert.Empty(t, candidates)
 }
@@ -90,7 +90,7 @@ func TestScoreCauses_ExcludesOutsideWindow(t *testing.T) {
 	}
 	require.NoError(t, database.Create(&old).Error)
 
-	candidates, err := correlation.ScoreCauses(database, []string{"nginx"}, now, "")
+	candidates, err := correlation.ScoreCauses(database, []string{"nginx"}, "", now, "")
 	require.NoError(t, err)
 	assert.Empty(t, candidates)
 }
@@ -119,7 +119,7 @@ func TestScoreCauses_RankedByScore(t *testing.T) {
 	require.NoError(t, database.Create(&restart).Error)
 	require.NoError(t, database.Create(&fileWrite).Error)
 
-	candidates, err := correlation.ScoreCauses(database, []string{"nginx"}, now, "")
+	candidates, err := correlation.ScoreCauses(database, []string{"nginx"}, "", now, "")
 	require.NoError(t, err)
 	require.Len(t, candidates, 2)
 	assert.Equal(t, restart.ID, candidates[0].Entry.ID) // decay still leaves restart ahead of file write
@@ -150,7 +150,7 @@ func TestScoreCauses_TimeDecayReducesScoreAtWindowEdge(t *testing.T) {
 	require.NoError(t, database.Create(&near).Error)
 	require.NoError(t, database.Create(&far).Error)
 
-	candidates, err := correlation.ScoreCauses(database, []string{"nginx"}, now, "")
+	candidates, err := correlation.ScoreCauses(database, []string{"nginx"}, "", now, "")
 	require.NoError(t, err)
 	require.Len(t, candidates, 2)
 	assert.Equal(t, near.ID, candidates[0].Entry.ID)
@@ -192,7 +192,7 @@ func TestScoreCauses_ComposeServiceFiltersDockerCandidates(t *testing.T) {
 	require.NoError(t, database.Create(&web).Error)
 	require.NoError(t, database.Create(&systemd).Error)
 
-	candidates, err := correlation.ScoreCauses(database, []string{"myapp"}, now, "web")
+	candidates, err := correlation.ScoreCauses(database, []string{"myapp"}, "", now, "web")
 	require.NoError(t, err)
 	require.Len(t, candidates, 2)
 	returnedIDs := []string{candidates[0].Entry.ID, candidates[1].Entry.ID}
@@ -227,7 +227,7 @@ func TestScoreCauses_EmptyTriggerComposeServiceAllowsAllDockerCandidates(t *test
 	require.NoError(t, database.Create(&redis).Error)
 	require.NoError(t, database.Create(&web).Error)
 
-	candidates, err := correlation.ScoreCauses(database, []string{"myapp"}, now, "")
+	candidates, err := correlation.ScoreCauses(database, []string{"myapp"}, "", now, "")
 	require.NoError(t, err)
 	require.Len(t, candidates, 2)
 	assert.Equal(t, redis.ID, candidates[0].Entry.ID)
@@ -269,7 +269,7 @@ func TestScoreCauses_TieBreaksByTimestampThenID(t *testing.T) {
 	require.NoError(t, database.Create(&older).Error)
 	require.NoError(t, database.Create(&newer).Error)
 
-	candidates, err := correlation.ScoreCauses(database, []string{"nginx"}, now, "")
+	candidates, err := correlation.ScoreCauses(database, []string{"nginx"}, "", now, "")
 	require.NoError(t, err)
 	require.Len(t, candidates, 2)
 	assert.Equal(t, newer.ID, candidates[0].Entry.ID)
@@ -283,4 +283,94 @@ func TestScoreCauses_TieBreaksByTimestampThenID(t *testing.T) {
 	correlation.ApplyNodeBonus(candidates, "")
 	assert.Equal(t, "02A", candidates[0].Entry.ID)
 	assert.Equal(t, "02B", candidates[1].Entry.ID)
+}
+
+func TestScoreCauses_PullCorrelatesToStackThatRunsImage(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	now := time.Now().UTC()
+
+	outlineCreate := types.Entry{
+		ID:        "01OUTLINECREATE",
+		Timestamp: now.Add(-200 * time.Second),
+		NodeName:  "node-1",
+		Service:   "outline",
+		Source:    "docker",
+		Event:     "create",
+		Image:     "postgres",
+		Metadata:  `{}`,
+	}
+	pull := types.Entry{
+		ID:        "01SHAREDPULL",
+		Timestamp: now.Add(-30 * time.Second),
+		NodeName:  "node-1",
+		Service:   "postgres",
+		Source:    "docker",
+		Event:     "pull",
+		Image:     "postgres",
+		Metadata:  `{}`,
+	}
+	require.NoError(t, database.Create(&outlineCreate).Error)
+	require.NoError(t, database.Create(&pull).Error)
+
+	candidates, err := correlation.ScoreCauses(database, []string{"outline"}, "node-1", now, "")
+	require.NoError(t, err)
+	require.Len(t, candidates, 1)
+	assert.Equal(t, pull.ID, candidates[0].Entry.ID)
+}
+
+func TestScoreCauses_PullDoesNotCorrelateToStackThatDoesNotRunImage(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	now := time.Now().UTC()
+
+	pgStackCreate := types.Entry{
+		ID:        "01PGSTACKCREATE",
+		Timestamp: now.Add(-200 * time.Second),
+		NodeName:  "node-1",
+		Service:   "postgres",
+		Source:    "docker",
+		Event:     "create",
+		Image:     "redis",
+		Metadata:  `{}`,
+	}
+	pull := types.Entry{
+		ID:        "01SHAREDPULL2",
+		Timestamp: now.Add(-30 * time.Second),
+		NodeName:  "node-1",
+		Service:   "postgres",
+		Source:    "docker",
+		Event:     "pull",
+		Image:     "postgres",
+		Metadata:  `{}`,
+	}
+	require.NoError(t, database.Create(&pgStackCreate).Error)
+	require.NoError(t, database.Create(&pull).Error)
+
+	candidates, err := correlation.ScoreCauses(database, []string{"postgres"}, "node-1", now, "")
+	require.NoError(t, err)
+	assert.Empty(t, candidates, "postgres pull must not attach to a stack that does not run postgres")
+}
+
+func TestScoreCauses_ScopesToTriggerNode(t *testing.T) {
+	database, err := db.Init(":memory:")
+	require.NoError(t, err)
+
+	now := time.Now().UTC()
+	otherNode := types.Entry{
+		ID:        "01OTHERNODE",
+		Timestamp: now.Add(-10 * time.Second),
+		NodeName:  "node-2",
+		Service:   "nginx",
+		Source:    "docker",
+		Event:     "die",
+		Metadata:  `{"exitCode":"1"}`,
+	}
+	require.NoError(t, database.Create(&otherNode).Error)
+
+	candidates, err := correlation.ScoreCauses(database, []string{"nginx"}, "node-1", now, "")
+	require.NoError(t, err)
+	assert.Empty(t, candidates, "candidate on a different node must be excluded")
 }

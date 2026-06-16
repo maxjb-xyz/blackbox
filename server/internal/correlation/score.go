@@ -38,25 +38,46 @@ const maxLookbackWindow = 300 * time.Second
 // ScoreCauses returns all candidate cause entries above MinCauseScore,
 // ordered by score descending. The caller should apply ApplyNodeBonus
 // once the trigger node is known.
-func ScoreCauses(db *gorm.DB, services []string, at time.Time, triggerComposeService string) ([]CauseCandidate, error) {
+func ScoreCauses(db *gorm.DB, services []string, node string, at time.Time, triggerComposeService string) ([]CauseCandidate, error) {
 	if len(services) == 0 {
 		return []CauseCandidate{}, nil
 	}
 	windowStart := at.Add(-maxLookbackWindow)
 
-	var candidates []types.Entry
-	query := db.Where(
-		"service IN ? AND timestamp BETWEEN ? AND ? AND NOT (source = ? AND event IN ?)",
-		services, windowStart, at, "webhook", []string{"down", "up"},
-	)
+	// Images the trigger services actually run, learned from their container
+	// (non pull/delete) entries. Pull/delete events correlate by image, not by
+	// the synthetic service token the agent assigns to shared-image pulls.
+	imagesUsed, err := imagesForServices(db, services, node)
+	if err != nil {
+		return nil, err
+	}
+
+	query := db.Where("timestamp BETWEEN ? AND ?", windowStart, at).
+		Where("NOT (source = ? AND event IN ?)", "webhook", []string{"down", "up"})
+
+	pullSources := []string{"pull", "delete"}
+	if len(imagesUsed) > 0 {
+		query = query.Where(
+			db.Where("service IN ? AND NOT (source = ? AND event IN ?)", services, "docker", pullSources).
+				Or("source = ? AND event IN ? AND image IN ?", "docker", pullSources, imagesUsed),
+		)
+	} else {
+		query = query.Where("service IN ? AND NOT (source = ? AND event IN ?)", services, "docker", pullSources)
+	}
+
+	if node != "" {
+		query = query.Where("node_name = ? OR node_name = ?", node, "")
+	}
+
 	if triggerComposeService != "" {
 		query = query.Where(
 			"NOT (source = ? AND compose_service != ? AND compose_service != ?)",
 			"docker", "", triggerComposeService,
 		)
 	}
-	err := query.Order("timestamp DESC").Find(&candidates).Error
-	if err != nil {
+
+	var candidates []types.Entry
+	if err := query.Order("timestamp DESC").Find(&candidates).Error; err != nil {
 		return nil, err
 	}
 
@@ -95,6 +116,23 @@ func ScoreCauses(db *gorm.DB, services []string, at time.Time, triggerComposeSer
 
 	sort.Slice(results, func(i, j int) bool { return causeCandidateLess(results[i], results[j]) })
 	return results, nil
+}
+
+// imagesForServices returns the distinct normalized images that the given
+// services run, derived from their container (non pull/delete) docker entries.
+// Scoped to node (plus node-less entries) when node is non-empty.
+func imagesForServices(db *gorm.DB, services []string, node string) ([]string, error) {
+	q := db.Model(&types.Entry{}).
+		Where("service IN ? AND image <> ? AND NOT (source = ? AND event IN ?)",
+			services, "", "docker", []string{"pull", "delete"})
+	if node != "" {
+		q = q.Where("node_name = ? OR node_name = ?", node, "")
+	}
+	var images []string
+	if err := q.Distinct().Pluck("image", &images).Error; err != nil {
+		return nil, err
+	}
+	return images, nil
 }
 
 // ApplyNodeBonus adds +20 to candidates from the same node as triggerNode
