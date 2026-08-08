@@ -21,6 +21,7 @@ Current built-ins include:
 - `docker` — virtual agent source (no DB row, always present)
 - `systemd` — agent-scoped, requires `WATCH_SYSTEMD=true` on the agent
 - `filewatcher` — agent-scoped, requires `WATCH_PATHS` configured on the agent
+- `pm2` — agent-scoped, requires `WATCH_PM2=true` and a usable `pm2` executable
 - `webhook_uptime_kuma` — server-scoped webhook source (singleton)
 - `webhook_watchtower` — server-scoped webhook source (singleton)
 - `webhook_komodo` — server-scoped webhook source (non-singleton; one instance per Komodo deployment)

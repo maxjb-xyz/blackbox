@@ -12,7 +12,7 @@ const (
 
 // docker is a virtual built-in source with no DataSourceInstance rows; keep it in
 // agentScopedSingletonSourceTypes for compatibility even though knownTypes filters creation.
-var agentScopedSingletonSourceTypes = []string{"docker", "systemd", "filewatcher"}
+var agentScopedSingletonSourceTypes = []string{"docker", "systemd", "filewatcher", "pm2"}
 var serverScopedSingletonSourceTypes = []string{"webhook_uptime_kuma", "webhook_watchtower"}
 
 func GetAgentScopedSingletonSourceTypes() []string {

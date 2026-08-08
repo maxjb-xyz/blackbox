@@ -20,6 +20,7 @@ Blackbox currently has two scopes:
 | `docker` | Agent | Virtual built-in source. Shows Docker lifecycle events from a node. |
 | `systemd` | Agent | Watches selected Linux systemd units through journald. |
 | `filewatcher` | Agent | Watches config paths and emits file change events. |
+| `pm2` | Agent | Polls `pm2 jlist` for selected Node.js process lifecycle changes. |
 | `webhook_uptime_kuma` | Server | Accepts Uptime Kuma monitor events. |
 | `webhook_watchtower` | Server | Accepts Watchtower update events. |
 | `webhook_komodo` | Server | Accepts Komodo deployment and automation events. Non-singleton — one entry per Komodo instance. |
@@ -30,6 +31,7 @@ Most built-in source types are singletons for their target:
 
 - One `systemd` source per node.
 - One `filewatcher` source per node.
+- One `pm2` source per node.
 - One `webhook_uptime_kuma` source per server.
 - One `webhook_watchtower` source per server.
 

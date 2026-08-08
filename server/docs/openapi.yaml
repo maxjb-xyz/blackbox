@@ -132,7 +132,7 @@ components:
         source:
           type: string
           description: Event source
-          enum: [docker, file, systemd, agent, webhook, api]
+          enum: [docker, file, systemd, pm2, agent, webhook, api]
           example: "docker"
         service:
           type: string
@@ -1282,11 +1282,17 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [file_watcher_redact_secrets, systemd_units]
+                required: [file_watcher_redact_secrets, systemd_units, pm2_enabled, pm2_processes]
                 properties:
                   file_watcher_redact_secrets:
                     type: boolean
                   systemd_units:
+                    type: array
+                    items:
+                      type: string
+                  pm2_enabled:
+                    type: boolean
+                  pm2_processes:
                     type: array
                     items:
                       type: string

@@ -29,6 +29,7 @@ var knownSourceTypes = []SourceTypeDef{
 	{Type: "docker", Scope: "agent", Singleton: true, Name: "Docker", Description: "Container lifecycle events from the local Docker socket", Mechanism: "agent · socket"},
 	{Type: "systemd", Scope: "agent", Singleton: true, Name: "Systemd", Description: "Service state changes for watched units via journald", Mechanism: "agent · journal"},
 	{Type: "filewatcher", Scope: "agent", Singleton: true, Name: "File Watcher", Description: "inotify events on watched config paths", Mechanism: "agent · inotify"},
+	{Type: "pm2", Scope: "agent", Singleton: true, Name: "PM2", Description: "Node.js process lifecycle events from PM2", Mechanism: "agent · pm2 jlist"},
 	{Type: "webhook_uptime_kuma", Scope: "server", Singleton: true, Name: "Uptime Kuma", Description: "Inbound webhook for Uptime Kuma monitor events", Mechanism: "server · http"},
 	{Type: "webhook_watchtower", Scope: "server", Singleton: true, Name: "Watchtower", Description: "Inbound webhook for Watchtower container update events", Mechanism: "server · http"},
 	{Type: "webhook_komodo", Scope: "server", Singleton: false, Name: "Komodo", Description: "Inbound webhook for Komodo deployment and automation events", Mechanism: "server · http"},
@@ -505,6 +506,43 @@ func validateSourceConfig(sourceType string, config map[string]any) error {
 		if _, ok := rawValue.(bool); !ok {
 			return errors.New("redact_secrets must be a boolean")
 		}
+	}
+	if sourceType == "pm2" {
+		rawValue, ok := config["processes"]
+		if !ok {
+			return errors.New("processes is required")
+		}
+		processes, ok := rawValue.([]any)
+		if !ok {
+			return errors.New("processes must be an array of strings")
+		}
+		if len(processes) > 128 {
+			return errors.New("processes must contain at most 128 names")
+		}
+		normalized := make([]any, 0, len(processes))
+		seen := make(map[string]struct{}, len(processes))
+		for _, value := range processes {
+			name, ok := value.(string)
+			if !ok {
+				return errors.New("processes must contain non-empty strings")
+			}
+			name = strings.TrimSpace(name)
+			if name == "" {
+				return errors.New("processes must contain non-empty strings")
+			}
+			if strings.IndexFunc(name, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0 {
+				return errors.New("processes must not contain control characters")
+			}
+			if len(name) > 128 {
+				return errors.New("process names must be at most 128 characters")
+			}
+			if _, exists := seen[name]; exists {
+				continue
+			}
+			seen[name] = struct{}{}
+			normalized = append(normalized, name)
+		}
+		config["processes"] = normalized
 	}
 	if sourceType == "webhook_komodo" {
 		rawAllowed, ok := config["allowed_types"]

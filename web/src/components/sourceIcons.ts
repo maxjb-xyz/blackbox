@@ -9,6 +9,7 @@ export type SourceVisualType =
   | 'docker'
   | 'systemd'
   | 'filewatcher'
+  | 'pm2'
   | 'webhook_uptime_kuma'
   | 'webhook_watchtower'
   | 'webhook_komodo'
@@ -21,17 +22,19 @@ export type SourceIconName =
   | 'komodo'
   | 'systemd'
   | 'filewatcher'
+  | 'pm2'
   | 'fallback'
 
 export type SourceIconSpec =
   | { kind: 'brand'; name: Extract<SourceIconName, 'docker' | 'uptime-kuma' | 'watchtower' | 'komodo'> }
-  | { kind: 'generic'; name: Extract<SourceIconName, 'systemd' | 'filewatcher' | 'fallback'> }
+  | { kind: 'generic'; name: Extract<SourceIconName, 'systemd' | 'filewatcher' | 'pm2' | 'fallback'> }
 
 export const COLORS = {
   fallback: { border: '#222', bg: '#111', text: '#666', accent: '#666' },
   docker: { border: '#1a3a5a', bg: '#0d1e2e', text: '#3a7abd', accent: '#1a4a7a' },
   systemd: { border: '#3a2a5a', bg: '#1a1228', text: '#7a5abd', accent: '#4a3a7a' },
   filewatcher: { border: '#5a3a1a', bg: '#281a0d', text: '#bd7a3a', accent: '#7a4a1a' },
+  pm2: { border: '#5a1a3a', bg: '#280d1a', text: '#bd3a7a', accent: '#7a1a4a' },
   uptimeKuma: { border: '#1a5a3a', bg: '#0d2818', text: '#3abd7a', accent: '#1a7a4a' },
   watchtower: { border: '#24516a', bg: '#0d1f2b', text: '#57b8d9', accent: '#2f7398' },
   komodo: { border: '#1a4a2e', bg: '#0a1f14', text: '#2dbd72', accent: '#1a7a45' },
@@ -63,6 +66,12 @@ const SOURCE_CARD_COLORS: Record<SourceVisualType, SourceCardColors> = {
     text: COLORS.filewatcher.text,
     topBar: `linear-gradient(90deg,${COLORS.filewatcher.accent},transparent 60%)`,
   },
+  pm2: {
+    border: COLORS.pm2.border,
+    bg: COLORS.pm2.bg,
+    text: COLORS.pm2.text,
+    topBar: `linear-gradient(90deg,${COLORS.pm2.accent},transparent 60%)`,
+  },
   webhook_uptime_kuma: {
     border: COLORS.uptimeKuma.border,
     bg: COLORS.uptimeKuma.bg,
@@ -88,6 +97,7 @@ const SOURCE_ICON_SPECS: Record<SourceVisualType, SourceIconSpec> = {
   docker: { kind: 'brand', name: 'docker' },
   systemd: { kind: 'generic', name: 'systemd' },
   filewatcher: { kind: 'generic', name: 'filewatcher' },
+  pm2: { kind: 'generic', name: 'pm2' },
   webhook_uptime_kuma: { kind: 'brand', name: 'uptime-kuma' },
   webhook_watchtower: { kind: 'brand', name: 'watchtower' },
   webhook_komodo: { kind: 'brand', name: 'komodo' },

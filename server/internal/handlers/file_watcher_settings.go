@@ -160,6 +160,34 @@ func getSystemdUnitsForNode(db *gorm.DB, nodeName string) ([]string, error) {
 	return units, nil
 }
 
+// getPM2SettingsForNode reads the enabled PM2 source and its optional exact
+// process-name allowlist. A missing or disabled source is an intentional
+// disabled configuration; PM2 has no legacy table to fall back to.
+func getPM2SettingsForNode(db *gorm.DB, nodeName string) (bool, []string, error) {
+	var inst models.DataSourceInstance
+	err := db.Where("type = ? AND node_id = ?", "pm2", nodeName).Order("created_at ASC").First(&inst).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, []string{}, nil
+	}
+	if err != nil {
+		return false, nil, err
+	}
+	if !inst.Enabled {
+		return false, []string{}, nil
+	}
+	var cfg struct {
+		Processes []string `json:"processes"`
+	}
+	if err := json.Unmarshal([]byte(inst.Config), &cfg); err != nil {
+		log.Printf("getPM2SettingsForNode: failed to parse config for source %s: %v", inst.ID, err)
+		return true, []string{}, nil
+	}
+	if cfg.Processes == nil {
+		cfg.Processes = []string{}
+	}
+	return true, cfg.Processes, nil
+}
+
 func AgentConfig(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// AgentAuth must set the node name in context; unauthenticated requests are rejected.
@@ -221,11 +249,19 @@ func AgentConfig(db *gorm.DB) http.HandlerFunc {
 			return
 		}
 
+		pm2Enabled, pm2Processes, err := getPM2SettingsForNode(db, nodeName)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to load agent config")
+			return
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"file_watcher_enabled":        fileWatcherEnabled,
 			"file_watcher_redact_secrets": redactSecrets,
 			"systemd_units":               systemdUnits,
+			"pm2_enabled":                 pm2Enabled,
+			"pm2_processes":               pm2Processes,
 		})
 	}
 }

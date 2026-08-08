@@ -25,6 +25,8 @@ type AgentConfig struct {
 	FileWatcherEnabled       *bool    `json:"file_watcher_enabled"`
 	FileWatcherRedactSecrets bool     `json:"file_watcher_redact_secrets"`
 	SystemdUnits             []string `json:"systemd_units"`
+	PM2Enabled               bool     `json:"pm2_enabled"`
+	PM2Processes             []string `json:"pm2_processes"`
 }
 
 // PermanentError signals that retrying the request will not help.

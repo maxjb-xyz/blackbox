@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -203,6 +205,20 @@ func TestBuildCapabilities_OnlyAdvertisesSystemdWhenSupportedAndEnabled(t *testi
 	}
 	if !systemd.Supported() && hasSystemd {
 		t.Fatalf("buildCapabilities() = %v, unexpectedly includes systemd when unsupported", caps)
+	}
+}
+
+func TestBuildCapabilities_AdvertisesPM2WhenConfiguredBinaryExists(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "pm2")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("WATCH_PM2", "true")
+	t.Setenv("PM2_BIN", bin)
+
+	caps := buildCapabilities(nil)
+	if !slices.Contains(caps, "pm2") {
+		t.Fatalf("buildCapabilities() = %v, missing pm2", caps)
 	}
 }
 

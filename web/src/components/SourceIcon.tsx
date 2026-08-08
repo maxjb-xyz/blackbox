@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react'
-import { CircleHelp, Cog, FileSearch } from 'lucide-react'
+import { Activity, CircleHelp, Cog, FileSearch } from 'lucide-react'
 
 import { getSourceIconSpec } from './sourceIcons'
 
@@ -23,6 +23,7 @@ export default function SourceIcon({ type, size = 16, strokeWidth = 1.8, style }
 
   if (spec.name === 'systemd') return <Cog size={size} strokeWidth={strokeWidth} style={style} />
   if (spec.name === 'filewatcher') return <FileSearch size={size} strokeWidth={strokeWidth} style={style} />
+  if (spec.name === 'pm2') return <Activity size={size} strokeWidth={strokeWidth} style={style} />
   return <CircleHelp size={size} strokeWidth={strokeWidth} style={style} />
 }
 
