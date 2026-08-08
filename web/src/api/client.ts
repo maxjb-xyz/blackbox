@@ -13,9 +13,39 @@ export interface SessionUser {
 }
 
 export interface HealthStatus {
+  version: string
+  commit: string
   database: 'ok' | 'error'
   oidc: 'ok' | 'unavailable' | 'disabled'
   oidc_enabled: boolean
+  mcp: {
+    enabled: boolean
+    token_configured: boolean
+    running: boolean
+  }
+  ai: {
+    provider: string
+    configured: boolean
+    testable: boolean
+    api_key_configured: boolean
+    mode: string
+  }
+  nodes: {
+    total: number
+    online: number
+    offline: number
+    stale: number
+  }
+  notifications: {
+    configured: boolean
+    total: number
+    enabled: number
+  }
+  webhooks: {
+    configured: boolean
+    total: number
+    enabled: number
+  }
 }
 
 export interface Entry {
