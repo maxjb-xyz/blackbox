@@ -80,6 +80,10 @@ export interface Node {
   ip_address: string
   os_info: string
   status: 'online' | 'offline'
+  queue_reported?: boolean
+  queue_depth?: number
+  queue_oldest_at?: string | null
+  queue_retry_count?: number
 }
 
 export interface EntryNote {

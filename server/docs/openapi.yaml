@@ -251,7 +251,7 @@ components:
 
     Node:
       type: object
-      required: [id, name, last_seen, status, agent_version, ip_address, os_info]
+      required: [id, name, last_seen, status, agent_version, ip_address, os_info, queue_reported, queue_depth, queue_retry_count]
       properties:
         id:
           type: string
@@ -269,6 +269,22 @@ components:
           type: string
         os_info:
           type: string
+        queue_reported:
+          type: boolean
+          description: Whether the agent supports and reported persistent queue statistics.
+        queue_depth:
+          type: integer
+          minimum: 0
+          description: Number of events currently buffered on the agent.
+        queue_oldest_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp of the oldest buffered event, when the queue is non-empty.
+        queue_retry_count:
+          type: integer
+          minimum: 0
+          description: Delivery attempts made for events that remain buffered.
 
     InviteCode:
       type: object

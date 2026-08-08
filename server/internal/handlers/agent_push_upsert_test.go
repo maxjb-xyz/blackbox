@@ -37,6 +37,7 @@ func TestAgentPush_CreatesNode(t *testing.T) {
 	assert.Equal(t, "v0.2.1", node.AgentVersion)
 	assert.Equal(t, "10.0.0.5", node.IPAddress)
 	assert.Equal(t, "Ubuntu 24.04 LTS", node.OsInfo)
+	assert.False(t, node.QueueReported)
 	assert.WithinDuration(t, startedAt, node.LastSeen, 2*time.Second)
 }
 
@@ -63,6 +64,33 @@ func TestAgentPush_HeartbeatUpdatesNodeMetadata(t *testing.T) {
 	assert.Equal(t, "v0.2.1", node.AgentVersion)
 	assert.Equal(t, "10.0.0.5", node.IPAddress)
 	assert.Equal(t, "Ubuntu 24.04 LTS", node.OsInfo)
+}
+
+func TestAgentPush_HeartbeatUpdatesQueueMetadata(t *testing.T) {
+	database := newTestDB(t)
+
+	oldest := time.Now().UTC().Add(-3 * time.Minute).Truncate(time.Millisecond)
+	meta := `{"agent_version":"v0.4.0","queue":{"depth":4,"oldest_at":"` + oldest.Format(time.RFC3339Nano) + `","retry_count":7}}`
+	entry := types.Entry{
+		ID:        ulid.Make().String(),
+		Timestamp: time.Now().UTC(),
+		NodeName:  "homelab-01",
+		Source:    "agent",
+		Event:     "heartbeat",
+		Content:   "Blackbox Agent heartbeat",
+		Metadata:  meta,
+	}
+	req, rr, authMiddleware := authenticatedAgentRequest(t, entry, "homelab-01")
+	authMiddleware(handlers.AgentPush(database, nil, testIncidentChannel(t), nil)).ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
+	var node models.Node
+	require.NoError(t, database.Where("name = ?", "homelab-01").First(&node).Error)
+	assert.True(t, node.QueueReported)
+	assert.Equal(t, 4, node.QueueDepth)
+	assert.Equal(t, 7, node.QueueRetries)
+	require.NotNil(t, node.QueueOldestAt)
+	assert.WithinDuration(t, oldest, *node.QueueOldestAt, time.Millisecond)
 }
 
 func TestAgentPush_ThrottlesLastSeenUpdates(t *testing.T) {

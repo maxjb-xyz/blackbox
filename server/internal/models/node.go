@@ -12,4 +12,8 @@ type Node struct {
 	IPAddress    string    `json:"ip_address"`
 	OsInfo       string    `json:"os_info"`
 	Capabilities string    `gorm:"not null;default:'[]'" json:"capabilities"` // JSON []string
+	QueueReported bool      `json:"queue_reported"`
+	QueueDepth    int       `json:"queue_depth"`
+	QueueOldestAt *time.Time `json:"queue_oldest_at,omitempty"`
+	QueueRetries  int       `json:"queue_retry_count"`
 }
