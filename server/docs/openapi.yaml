@@ -441,7 +441,12 @@ paths:
     get:
       tags: [Setup]
       summary: Health check
-      description: Returns the health status of the database and OIDC subsystem. Used by the container health check.
+      description: |
+        Returns a bounded local operator health summary. It reads the database,
+        persisted configuration, node freshness, and in-process MCP state; it
+        does not make network calls to OIDC, AI, webhook, notification, or MCP
+        endpoints. The response does not contain secrets. Used by the
+        container health check.
       responses:
         "200":
           description: OK
@@ -449,8 +454,14 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [database, oidc, oidc_enabled]
+                required: [version, commit, database, oidc, oidc_enabled, mcp, ai, nodes, notifications, webhooks]
                 properties:
+                  version:
+                    type: string
+                    description: Server version set at build time.
+                  commit:
+                    type: string
+                    description: Server commit identifier set at build time.
                   database:
                     type: string
                     enum: [ok, error]
@@ -459,6 +470,66 @@ paths:
                     enum: [ok, disabled, unavailable, error]
                   oidc_enabled:
                     type: boolean
+                  mcp:
+                    type: object
+                    required: [enabled, token_configured, running]
+                    properties:
+                      enabled:
+                        type: boolean
+                      token_configured:
+                        type: boolean
+                        description: Whether an MCP token exists; the token is never returned.
+                      running:
+                        type: boolean
+                  ai:
+                    type: object
+                    required: [provider, configured, testable, api_key_configured, mode]
+                    properties:
+                      provider:
+                        type: string
+                      configured:
+                        type: boolean
+                        description: Whether provider, URL, and model are present in local settings.
+                      testable:
+                        type: boolean
+                        description: Whether the stored provider settings can be sent to the separate AI test endpoint; no probe is made here.
+                      api_key_configured:
+                        type: boolean
+                      mode:
+                        type: string
+                  nodes:
+                    type: object
+                    required: [total, online, offline, stale]
+                    properties:
+                      total:
+                        type: integer
+                      online:
+                        type: integer
+                      offline:
+                        type: integer
+                      stale:
+                        type: integer
+                        description: Nodes whose last heartbeat is older than the server offline threshold.
+                  notifications:
+                    type: object
+                    required: [configured, total, enabled]
+                    properties:
+                      configured:
+                        type: boolean
+                      total:
+                        type: integer
+                      enabled:
+                        type: integer
+                  webhooks:
+                    type: object
+                    required: [configured, total, enabled]
+                    properties:
+                      configured:
+                        type: boolean
+                      total:
+                        type: integer
+                      enabled:
+                        type: integer
 
   # ── Auth ──────────────────────────────────────────────────────────────────
 

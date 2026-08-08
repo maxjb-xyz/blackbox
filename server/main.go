@@ -192,7 +192,7 @@ func main() {
 	r.Use(middleware.SecurityHeaders())
 
 	r.Get("/api/setup/status", handlers.SetupStatus(database))
-	r.Get("/api/setup/health", handlers.HealthCheck(database, registry))
+	r.Get("/api/setup/health", handlers.HealthCheckWithBuildInfo(database, registry, mcpMgr, Version, Commit))
 	r.Get("/api/openapi.yaml", handlers.OpenAPISpec(openapiSpec))
 	r.Get("/api/docs", handlers.APIDocs())
 	r.Group(func(r chi.Router) {
