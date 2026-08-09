@@ -357,6 +357,50 @@ components:
           type: string
           format: date-time
 
+    NotificationHistoryItem:
+      type: object
+      required: [id, destination_id, destination_name, destination_type, incident_id, event, decision, note, created_at]
+      properties:
+        id:
+          type: string
+        destination_id:
+          type: string
+        destination_name:
+          type: string
+        destination_type:
+          type: string
+        incident_id:
+          type: string
+        event:
+          type: string
+        decision:
+          type: string
+          enum: [sent, held, dropped_rate, dropped_quiet, failed, digest]
+        note:
+          type: string
+          description: Safe decision context; notification payloads are never returned.
+        created_at:
+          type: string
+          format: date-time
+        flushed_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    NotificationHistoryPage:
+      type: object
+      required: [items, has_more]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotificationHistoryItem"
+        has_more:
+          type: boolean
+        next_before:
+          type: string
+          format: date-time
+
     AdminUser:
       type: object
       required: [id, username, is_admin, token_version, created_at]
@@ -1953,6 +1997,46 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/NotificationDest"
+
+  /api/admin/notifications/history:
+    get:
+      tags: [Admin — Notifications]
+      summary: List notification delivery history
+      description: Returns a bounded, secret-free history of per-destination notification decisions.
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: query
+          name: dest_id
+          schema:
+            type: string
+          description: Filter by notification destination ID.
+        - in: query
+          name: decision
+          schema:
+            type: string
+            enum: [sent, held, dropped, failed, digest]
+          description: Filter by decision category; dropped includes rate-limit and quiet-hours drops.
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - in: query
+          name: before
+          schema:
+            type: string
+            format: date-time
+          description: Return rows older than this timestamp for bounded pagination.
+      responses:
+        "200":
+          description: Recent notification decisions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationHistoryPage"
 
   /api/admin/notifications/{id}:
     put:

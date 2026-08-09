@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 
 	"blackbox/server/internal/auth"
 	"blackbox/server/internal/models"
@@ -78,6 +80,97 @@ func ListNotificationDests(db *gorm.DB) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(dests)
+	}
+}
+
+const maxNotificationHistoryLimit = 200
+
+var notificationHistoryDecisionFilters = map[string][]string{
+	"sent":    {"sent"},
+	"held":    {"held"},
+	"dropped": {"dropped_rate", "dropped_quiet"},
+	"failed":  {"failed"},
+	"digest":  {"digest"},
+}
+
+type notificationHistoryItem struct {
+	ID              string     `json:"id"`
+	DestinationID   string     `json:"destination_id"`
+	DestinationName string     `json:"destination_name"`
+	DestinationType string     `json:"destination_type"`
+	IncidentID      string     `json:"incident_id"`
+	Event           string     `json:"event"`
+	Decision        string     `json:"decision"`
+	Note            string     `json:"note"`
+	CreatedAt       time.Time  `json:"created_at"`
+	FlushedAt       *time.Time `json:"flushed_at,omitempty"`
+}
+
+type notificationHistoryResponse struct {
+	Items      []notificationHistoryItem `json:"items"`
+	HasMore    bool                      `json:"has_more"`
+	NextBefore string                    `json:"next_before,omitempty"`
+}
+
+// ListNotificationHistory returns a bounded, admin-only view of delivery
+// decisions. It deliberately selects only decision metadata; destination URLs
+// and notification payloads are never included.
+func ListNotificationHistory(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !requireAdminRequest(w, r) {
+			return
+		}
+
+		limit := 50
+		if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+			parsed, err := strconv.Atoi(raw)
+			if err != nil || parsed < 1 || parsed > maxNotificationHistoryLimit {
+				writeError(w, http.StatusBadRequest, "limit must be between 1 and 200")
+				return
+			}
+			limit = parsed
+		}
+
+		query := db.Table("notification_logs AS l").
+			Select("l.id, l.dest_id AS destination_id, COALESCE(d.name, '') AS destination_name, COALESCE(d.type, '') AS destination_type, l.incident_id, l.event, l.decision, l.note, l.created_at, l.flushed_at").
+			Joins("LEFT JOIN notification_dests AS d ON d.id = l.dest_id").
+			Order("l.created_at DESC, l.id DESC").
+			Limit(limit + 1)
+
+		if destID := strings.TrimSpace(r.URL.Query().Get("dest_id")); destID != "" {
+			query = query.Where("l.dest_id = ?", destID)
+		}
+		if decision := strings.TrimSpace(r.URL.Query().Get("decision")); decision != "" {
+			values, ok := notificationHistoryDecisionFilters[decision]
+			if !ok {
+				writeError(w, http.StatusBadRequest, "decision must be one of: sent, held, dropped, failed, digest")
+				return
+			}
+			query = query.Where("l.decision IN ?", values)
+		}
+		if before := strings.TrimSpace(r.URL.Query().Get("before")); before != "" {
+			beforeTime, err := time.Parse(time.RFC3339Nano, before)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "before must be an RFC3339 timestamp")
+				return
+			}
+			query = query.Where("l.created_at < ?", beforeTime)
+		}
+
+		var rows []notificationHistoryItem
+		if err := query.Scan(&rows).Error; err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to list notification history")
+			return
+		}
+
+		response := notificationHistoryResponse{Items: rows}
+		if len(response.Items) > limit {
+			response.HasMore = true
+			response.Items = response.Items[:limit]
+			response.NextBefore = response.Items[len(response.Items)-1].CreatedAt.UTC().Format(time.RFC3339Nano)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(response)
 	}
 }
 
