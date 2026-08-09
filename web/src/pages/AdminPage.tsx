@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 30183)
-Total output lines: 2881
-
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { Bug, ChevronDown, ChevronUp, Coffee, ExternalLink, Lightbulb } from 'lucide-react'
@@ -1404,7 +1401,31 @@ function OIDCTab() {
           enabled: providerForm.enabled,
           ...(clientSecret ? { client_secret: clientSecret } : {}),
         }
-        await updateAdm…183 tokens truncated…     setProviderMessage('OIDC provider deleted')
+        await updateAdminOIDCProvider(editingProviderId, updatePayload)
+        setProviderMessage('OIDC provider updated')
+      }
+
+      closeProviderForm()
+      await loadProviders()
+    } catch (err) {
+      setProviderError(err instanceof Error ? err.message : 'Failed to save OIDC provider')
+    } finally {
+      setProviderSaving(false)
+    }
+  }
+
+  async function handleDeleteProvider(provider: OIDCProviderConfig) {
+    if (!window.confirm(`Delete OIDC provider "${provider.name}"?`)) return
+
+    setProviderDeletingId(provider.id)
+    setProviderError(null)
+    setProviderMessage(null)
+
+    try {
+      await deleteAdminOIDCProvider(provider.id)
+      if (editingProviderId === provider.id) closeProviderForm()
+      await loadProviders()
+      setProviderMessage('OIDC provider deleted')
     } catch (err) {
       setProviderError(err instanceof Error ? err.message : 'Failed to delete OIDC provider')
     } finally {
