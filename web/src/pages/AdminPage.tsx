@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 30183)
+Total output lines: 2881
+
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { Bug, ChevronDown, ChevronUp, Coffee, ExternalLink, Lightbulb } from 'lucide-react'
@@ -15,6 +18,7 @@ import {
   listAdminUsers,
   listAuditLogs,
   listNotificationDests,
+  listNotificationHistory,
   regenerateMCPToken,
   listWebhookDeliveries,
   revokeInvite,
@@ -30,7 +34,7 @@ import {
   updateNotificationDest,
   fetchNodes,
 } from '../api/client'
-import type { AISettingsInput, AdminUser, AuditLogPage, MCPSettingsInput, Node, NotificationDest, NotificationDestInput, OIDCProviderConfig, WebhookDeliveryPage } from '../api/client'
+import type { AISettingsInput, AdminUser, AuditLogPage, MCPSettingsInput, Node, NotificationDest, NotificationDestInput, NotificationHistoryFilter, NotificationHistoryPage, OIDCProviderConfig, WebhookDeliveryPage } from '../api/client'
 import { readErrorMessage } from '../api/errorUtils'
 import { validatePolicyForm } from './notificationPolicy'
 import { useMediaQuery } from '../hooks/useMediaQuery'
@@ -833,6 +837,7 @@ export default function AdminPage() {
                 </div>
               )}
             </section>
+            <NotificationHistory destinations={notificationDests} />
           </div>
         )}
         {tab === 'webhooks' && (
@@ -871,6 +876,101 @@ export default function AdminPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+function NotificationHistory({ destinations }: { destinations: NotificationDest[] }) {
+  const [filterDestination, setFilterDestination] = useState('')
+  const [filterDecision, setFilterDecision] = useState<NotificationHistoryFilter>('')
+  const [history, setHistory] = useState<NotificationHistoryPage | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const load = useCallback(async (before?: string, append = false) => {
+    setLoading(true)
+    setError(null)
+    try {
+      const page = await listNotificationHistory({
+        destinationId: filterDestination || undefined,
+        decision: filterDecision || undefined,
+        limit: 50,
+        before,
+      })
+      setHistory(current => append && current
+        ? { ...page, items: [...current.items, ...page.items] }
+        : page)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load notification history')
+    } finally {
+      setLoading(false)
+    }
+  }, [filterDecision, filterDestination])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const decisionLabel = (decision: string) => decision.replace('dropped_', 'dropped / ').replaceAll('_', ' ').toUpperCase()
+  const decisionColor = (decision: string) => {
+    if (decision === 'sent' || decision === 'digest') return 'var(--success)'
+    if (decision === 'failed') return 'var(--danger)'
+    return '#F59E0B'
+  }
+  const formatHistoryTime = (value: string) => {
+    const date = new Date(value)
+    return Number.isNaN(date.getTime()) ? '-' : formatLocalTimestamp(date, { includeSeconds: true })
+  }
+
+  return (
+    <section style={panelStyle}>
+      <div style={panelHeaderStyle}>
+        <span style={panelLabelStyle}>DELIVERY HISTORY</span>
+        <span style={{ color: 'var(--muted)', fontSize: 10 }}>recent decisions only</span>
+      </div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+        <select value={filterDestination} onChange={e => setFilterDestination(e.target.value)} style={inputStyle}>
+          <option value="">ALL DESTINATIONS</option>
+          {destinations.map(destination => <option key={destination.id} value={destination.id}>{destination.name}</option>)}
+        </select>
+        <select value={filterDecision} onChange={e => setFilterDecision(e.target.value as NotificationHistoryFilter)} style={inputStyle}>
+          <option value="">ALL DECISIONS</option>
+          <option value="sent">SENT</option>
+          <option value="held">HELD</option>
+          <option value="dropped">DROPPED</option>
+          <option value="failed">FAILED</option>
+          <option value="digest">DIGEST</option>
+        </select>
+        <button type="button" onClick={() => void load()} disabled={loading} style={actionBtnStyle}>
+          {loading ? 'LOADING...' : 'REFRESH'}
+        </button>
+      </div>
+      {error && <div style={{ color: 'var(--danger)', fontSize: 11, marginBottom: 10 }}>{error}</div>}
+      {!loading && !history?.items.length ? (
+        <div style={{ color: 'var(--muted)', fontSize: 11 }}>no delivery decisions recorded</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {history?.items.map(item => (
+            <div key={item.id} style={{ border: '1px solid var(--border)', padding: '9px 10px', display: 'grid', gap: 5 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <span style={{ color: decisionColor(item.decision), fontSize: 10, letterSpacing: '0.08em' }}>{decisionLabel(item.decision)}</span>
+                <span style={{ color: 'var(--text)', fontSize: 11 }}>{item.destination_name || item.destination_id}</span>
+                {item.destination_type && <span style={{ color: 'var(--muted)', fontSize: 10 }}>{item.destination_type.toUpperCase()}</span>}
+                <span style={{ color: 'var(--muted)', fontSize: 10, marginLeft: 'auto' }}>{formatHistoryTime(item.created_at)}</span>
+              </div>
+              <div style={{ color: 'var(--muted)', fontSize: 10 }}>
+                {item.event || 'notification'}{item.incident_id ? ` · incident ${item.incident_id}` : ''}
+              </div>
+              {item.note && <div style={{ color: 'var(--text)', fontSize: 11, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{item.note}</div>}
+            </div>
+          ))}
+          {history?.has_more && history.next_before && (
+            <button type="button" onClick={() => void load(history.next_before, true)} disabled={loading} style={{ ...actionBtnStyle, alignSelf: 'flex-start' }}>
+              {loading ? 'LOADING...' : 'LOAD OLDER'}
+            </button>
+          )}
+        </div>
+      )}
+    </section>
   )
 }
 
@@ -1304,31 +1404,7 @@ function OIDCTab() {
           enabled: providerForm.enabled,
           ...(clientSecret ? { client_secret: clientSecret } : {}),
         }
-        await updateAdminOIDCProvider(editingProviderId, updatePayload)
-        setProviderMessage('OIDC provider updated')
-      }
-
-      closeProviderForm()
-      await loadProviders()
-    } catch (err) {
-      setProviderError(err instanceof Error ? err.message : 'Failed to save OIDC provider')
-    } finally {
-      setProviderSaving(false)
-    }
-  }
-
-  async function handleDeleteProvider(provider: OIDCProviderConfig) {
-    if (!window.confirm(`Delete OIDC provider "${provider.name}"?`)) return
-
-    setProviderDeletingId(provider.id)
-    setProviderError(null)
-    setProviderMessage(null)
-
-    try {
-      await deleteAdminOIDCProvider(provider.id)
-      if (editingProviderId === provider.id) closeProviderForm()
-      await loadProviders()
-      setProviderMessage('OIDC provider deleted')
+        await updateAdm…183 tokens truncated…     setProviderMessage('OIDC provider deleted')
     } catch (err) {
       setProviderError(err instanceof Error ? err.message : 'Failed to delete OIDC provider')
     } finally {
