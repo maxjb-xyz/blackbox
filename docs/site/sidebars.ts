@@ -43,6 +43,7 @@ const sidebars: SidebarsConfig = {
         'data-sources/docker',
         'data-sources/file-watcher',
         'data-sources/komodo',
+        'data-sources/pm2',
         'data-sources/systemd',
         'data-sources/uptime-kuma',
         'data-sources/watchtower',

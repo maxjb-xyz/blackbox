@@ -21,6 +21,7 @@ The current built-in model is centered on:
 - `docker`
 - `systemd`
 - `filewatcher`
+- `pm2`
 
 ## How They Are Reported
 

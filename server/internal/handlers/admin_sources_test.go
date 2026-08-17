@@ -58,6 +58,36 @@ func TestCreateSource_Valid(t *testing.T) {
 	require.Equal(t, "watcher", inst.Name)
 }
 
+func TestCreateSource_PM2NormalizesProcessNames(t *testing.T) {
+	db := newSourcesTestDB(t)
+	body, _ := json.Marshal(map[string]any{
+		"type": "pm2", "scope": "agent", "node_id": "homelab-01",
+		"name": "PM2", "config": map[string]any{"processes": []string{" api ", "api", "worker"}},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/sources", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	handlers.CreateSource(db)(w, req)
+	require.Equal(t, http.StatusCreated, w.Code)
+
+	var inst models.DataSourceInstance
+	require.NoError(t, db.Where("type = ?", "pm2").First(&inst).Error)
+	var config map[string][]string
+	require.NoError(t, json.Unmarshal([]byte(inst.Config), &config))
+	require.Equal(t, []string{"api", "worker"}, config["processes"])
+}
+
+func TestCreateSource_PM2RequiresProcessesConfig(t *testing.T) {
+	db := newSourcesTestDB(t)
+	raw := []byte(`{"type":"pm2","scope":"agent","node_id":"homelab-01","name":"PM2","config":{},"enabled":true}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/sources", bytes.NewReader(raw))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	handlers.CreateSource(db)(w, req)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Contains(t, w.Body.String(), "processes is required")
+}
+
 func TestCreateSource_UnknownType(t *testing.T) {
 	db := newSourcesTestDB(t)
 	body, _ := json.Marshal(map[string]any{"type": "banana", "scope": "agent", "name": "x", "config": map[string]any{}})
@@ -690,7 +720,7 @@ func TestListSourceTypes(t *testing.T) {
 		require.True(t, ok, "type field must be a string")
 		found[sourceType] = true
 	}
-	for _, expected := range []string{"systemd", "filewatcher", "webhook_uptime_kuma", "webhook_watchtower"} {
+	for _, expected := range []string{"systemd", "filewatcher", "pm2", "webhook_uptime_kuma", "webhook_watchtower"} {
 		require.True(t, found[expected], "missing type: "+expected)
 	}
 	require.True(t, found["docker"], "missing type: docker")

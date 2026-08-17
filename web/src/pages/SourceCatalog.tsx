@@ -224,6 +224,7 @@ function buildDefaultConfig(type: string): Record<string, unknown> {
   switch (type) {
     case 'systemd': return { units: [] }
     case 'filewatcher': return { redact_secrets: true }
+    case 'pm2': return { processes: [] }
     case 'webhook_uptime_kuma':
     case 'webhook_watchtower': return { secret: '' }
     case 'webhook_komodo': return { secret: '', allowed_types: [], node_map: {} }

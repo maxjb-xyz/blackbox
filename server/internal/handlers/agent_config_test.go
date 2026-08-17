@@ -43,6 +43,13 @@ func TestAgentConfig_ReadsFromDataSourceInstances(t *testing.T) {
 		Name: "Systemd", Config: string(unitsCfg), Enabled: true,
 	})
 	require.NoError(t, result.Error)
+	pm2Cfg, err := json.Marshal(map[string]any{"processes": []string{"api", "worker"}})
+	require.NoError(t, err)
+	result = db.Create(&models.DataSourceInstance{
+		ID: "pm2-1", Type: "pm2", Scope: "agent", NodeID: &nodeName,
+		Name: "PM2", Config: string(pm2Cfg), Enabled: true,
+	})
+	require.NoError(t, result.Error)
 	result = db.Create(&models.Node{ID: "n1", Name: nodeName, LastSeen: time.Now(), Capabilities: "[]"})
 	require.NoError(t, result.Error)
 
@@ -56,7 +63,7 @@ func TestAgentConfig_ReadsFromDataSourceInstances(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/agent/config", nil)
 	req.Header.Set("X-Blackbox-Node-Name", nodeName)
 	req.Header.Set("X-Blackbox-Agent-Key", agentToken)
-	req.Header.Set("X-Blackbox-Agent-Capabilities", "docker,systemd,filewatcher")
+	req.Header.Set("X-Blackbox-Agent-Capabilities", "docker,systemd,filewatcher,pm2")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
@@ -71,13 +78,15 @@ func TestAgentConfig_ReadsFromDataSourceInstances(t *testing.T) {
 	require.True(t, ok)
 	require.NotEmpty(t, units)
 	require.Equal(t, "nginx.service", units[0])
+	require.Equal(t, true, resp["pm2_enabled"])
+	require.Equal(t, []any{"api", "worker"}, resp["pm2_processes"])
 
 	// Capabilities stored on node
 	var node models.Node
 	require.NoError(t, db.Where("name = ?", nodeName).First(&node).Error)
 	var caps []string
 	require.NoError(t, json.Unmarshal([]byte(node.Capabilities), &caps))
-	require.ElementsMatch(t, []string{"docker", "systemd", "filewatcher"}, caps)
+	require.ElementsMatch(t, []string{"docker", "systemd", "filewatcher", "pm2"}, caps)
 }
 
 func TestAgentConfig_DegenerateCapabilitiesHeaderDoesNotOverwriteStoredCapabilities(t *testing.T) {

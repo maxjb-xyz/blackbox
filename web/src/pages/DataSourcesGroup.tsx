@@ -40,6 +40,7 @@ const DOCS_URLS: Record<string, string> = {
   docker: 'https://docs.blackboxd.dev/docs/data-sources/docker',
   systemd: 'https://docs.blackboxd.dev/docs/data-sources/systemd',
   filewatcher: 'https://docs.blackboxd.dev/docs/data-sources/file-watcher',
+  pm2: 'https://docs.blackboxd.dev/docs/data-sources/pm2',
   webhook_uptime_kuma: 'https://docs.blackboxd.dev/docs/data-sources/uptime-kuma',
   webhook_watchtower: 'https://docs.blackboxd.dev/docs/data-sources/watchtower',
   webhook_komodo: 'https://docs.blackboxd.dev/docs/data-sources/komodo',
@@ -458,6 +459,7 @@ function SourceConfigPanel({ creating = false, instance, typeDef, saving, saveEr
   const typeColor = getSourceCardColors(instance.type).text
   const isSingleton = typeDef?.singleton ?? true
   const unitsArray = Array.isArray(localCfg.units) ? localCfg.units.map(String) : []
+  const processesArray = Array.isArray(localCfg.processes) ? localCfg.processes.map(String) : []
 
   return (
     <div>
@@ -553,6 +555,17 @@ function SourceConfigPanel({ creating = false, instance, typeDef, saving, saveEr
           </ConfigRow>
         )}
 
+        {instance.type === 'pm2' && (
+          <ConfigRow label="Watched Processes">
+            <SystemdUnitEditor
+              units={processesArray}
+              onChange={processes => setLocalCfg(c => ({ ...c, processes }))}
+              placeholder="api"
+              emptyLabel="All PM2 processes will be watched."
+            />
+          </ConfigRow>
+        )}
+
         {instance.type === 'webhook_komodo' && (
           <>
             <ConfigRow label="Allowed Types">
@@ -598,6 +611,11 @@ function SourceConfigPanel({ creating = false, instance, typeDef, saving, saveEr
               )
               if (Array.isArray(configPayload.units)) {
                 configPayload.units = (configPayload.units as unknown[])
+                  .map(v => String(v).trim())
+                  .filter(v => v !== '')
+              }
+              if (Array.isArray(configPayload.processes)) {
+                configPayload.processes = (configPayload.processes as unknown[])
                   .map(v => String(v).trim())
                   .filter(v => v !== '')
               }

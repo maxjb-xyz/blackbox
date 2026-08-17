@@ -19,6 +19,7 @@ import (
 	"blackbox/agent/internal/client"
 	"blackbox/agent/internal/docker"
 	"blackbox/agent/internal/files"
+	"blackbox/agent/internal/pm2"
 	"blackbox/agent/internal/queue"
 	"blackbox/agent/internal/sender"
 	"blackbox/agent/internal/systemd"
@@ -123,6 +124,21 @@ func main() {
 		log.Println("systemd watcher: WATCH_SYSTEMD not set, systemd watching disabled")
 	}
 
+	if isPM2WatchEnabled() {
+		pm2Enabled, processes, err := loadPM2Config(ctx, c, caps)
+		if err != nil {
+			log.Printf("pm2 watcher: failed to load initial server config, starting disabled: %v", err)
+		}
+		pm2Settings := pm2.NewSettings(pm2Enabled, processes)
+		go refreshPM2Settings(ctx, c, caps, pm2Settings)
+		go pm2.Watch(ctx, nodeName, pm2Settings, out)
+		log.Printf("pm2 watcher: started, watching %d configured process names (empty means all)", len(processes))
+	} else if os.Getenv("WATCH_PM2") == "true" {
+		log.Printf("pm2 watcher: disabled because %q is not available", pm2BinaryName())
+	} else {
+		log.Println("pm2 watcher: WATCH_PM2 not set, PM2 watching disabled")
+	}
+
 	out <- types.Entry{
 		ID:        ulid.Make().String(),
 		Timestamp: time.Now().UTC(),
@@ -182,11 +198,25 @@ func buildCapabilities(watchPaths []string) []string {
 	if isSystemdWatchEnabled() {
 		caps = append(caps, "systemd")
 	}
+	if isPM2WatchEnabled() {
+		caps = append(caps, "pm2")
+	}
 	return caps
 }
 
 func isSystemdWatchEnabled() bool {
 	return os.Getenv("WATCH_SYSTEMD") == "true" && systemd.Supported()
+}
+
+func isPM2WatchEnabled() bool {
+	return os.Getenv("WATCH_PM2") == "true" && pm2.Supported()
+}
+
+func pm2BinaryName() string {
+	if configured := strings.TrimSpace(os.Getenv("PM2_BIN")); configured != "" {
+		return configured
+	}
+	return "pm2"
 }
 
 func loadFileWatcherConfig(ctx context.Context, c *client.Client, caps []string) (bool, bool, error) {
@@ -283,6 +313,35 @@ func refreshSystemdSettingsWithTicker(ctx context.Context, c *client.Client, cap
 			}
 			settings.SetUnits(newUnits)
 			prevUnits = newUnits
+		}
+	}
+}
+
+func loadPM2Config(ctx context.Context, c *client.Client, caps []string) (bool, []string, error) {
+	configCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	config, err := c.GetAgentConfig(configCtx, caps)
+	if err != nil {
+		return false, nil, err
+	}
+	return config.PM2Enabled, config.PM2Processes, nil
+}
+
+func refreshPM2Settings(ctx context.Context, c *client.Client, caps []string, settings *pm2.Settings) {
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			enabled, processes, err := loadPM2Config(ctx, c, caps)
+			if err != nil {
+				log.Printf("pm2 watcher: failed to refresh config from server, keeping current settings: %v", err)
+				continue
+			}
+			settings.Set(enabled, processes)
 		}
 	}
 }
