@@ -192,7 +192,7 @@ func main() {
 	r.Use(middleware.SecurityHeaders())
 
 	r.Get("/api/setup/status", handlers.SetupStatus(database))
-	r.Get("/api/setup/health", handlers.HealthCheck(database, registry))
+	r.Get("/api/setup/health", handlers.PublicHealthCheck(database, registry))
 	r.Get("/api/openapi.yaml", handlers.OpenAPISpec(openapiSpec))
 	r.Get("/api/docs", handlers.APIDocs())
 	r.Group(func(r chi.Router) {
@@ -251,6 +251,7 @@ func main() {
 		r.Put("/api/admin/settings/ollama", handlers.UpdateOllamaSettingsLegacy(database)) // deprecated alias
 		r.Put("/api/admin/settings/mcp", handlers.UpdateMCPSettings(database, mcpMgr))
 		r.Post("/api/admin/settings/mcp/regenerate-token", handlers.RegenerateMCPToken(database, mcpMgr))
+		r.Get("/api/admin/health", handlers.HealthCheckWithBuildInfo(database, registry, mcpMgr, Version, Commit))
 		r.Get("/api/admin/oidc/providers", handlers.ListOIDCProviders(database))
 		r.Post("/api/admin/oidc/providers", handlers.CreateOIDCProvider(database, registry))
 		r.Patch("/api/admin/oidc/providers/{id}", handlers.UpdateOIDCProvider(database, registry))

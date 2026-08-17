@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { CheckCircle, XCircle } from 'lucide-react'
-import { checkHealth } from '../api/client'
+import { checkDetailedHealth } from '../api/client'
 import type { HealthStatus } from '../api/client'
 import PageHeader from '../components/PageHeader'
 
@@ -12,7 +12,7 @@ export default function DiagnosticsPage() {
   function reload() {
     setLoading(true)
     setHealthError(null)
-    checkHealth()
+    checkDetailedHealth()
       .then(status => {
         setHealth(status)
         setHealthError(null)
@@ -24,7 +24,7 @@ export default function DiagnosticsPage() {
   }
 
   useEffect(() => {
-    checkHealth()
+    checkDetailedHealth()
       .then(status => {
         setHealth(status)
         setHealthError(null)
@@ -36,9 +36,49 @@ export default function DiagnosticsPage() {
   }, [])
 
   function statusColor(status: string) {
-    if (status === 'ok' || status === 'online') return 'var(--success)'
-    if (status === 'disabled') return 'var(--muted)'
+    if (status === 'ok' || status === 'online' || status === 'ready') return 'var(--success)'
+    if (status === 'disabled' || status === 'unconfigured') return 'var(--muted)'
+    if (status === 'warning') return '#F59E0B'
     return '#FF4444'
+  }
+
+  function healthRows(current: HealthStatus) {
+    const mcpStatus = !current.mcp.enabled
+      ? 'disabled'
+      : !current.mcp.token_configured
+        ? 'error'
+        : current.mcp.running
+          ? 'ok'
+          : 'warning'
+    const mcpValue = !current.mcp.enabled
+      ? 'disabled'
+      : !current.mcp.token_configured
+        ? 'token missing'
+        : current.mcp.running
+          ? 'enabled / running'
+          : 'enabled / not running'
+    const aiStatus = !current.ai.configured ? 'unconfigured' : current.ai.testable ? 'ok' : 'error'
+    const aiValue = !current.ai.configured
+      ? 'unconfigured'
+      : current.ai.testable
+        ? `${current.ai.provider} / configured (no probe)`
+        : `${current.ai.provider} / not testable`
+    const nodeStatus = current.nodes.offline > 0 ? 'warning' : 'ok'
+    const nodeValue = `${current.nodes.online} online / ${current.nodes.total} total · ${current.nodes.stale} stale`
+    const configValue = (summary: HealthStatus['notifications'] | HealthStatus['webhooks']) => (
+      summary.configured ? `${summary.enabled} enabled / ${summary.total} configured` : 'unconfigured'
+    )
+
+    return [
+      { label: 'SERVER', value: `${current.version} / ${current.commit}`, status: 'ok' },
+      { label: 'DATABASE', value: current.database, status: current.database },
+      { label: 'OIDC', value: current.oidc_enabled ? current.oidc : 'disabled', status: current.oidc_enabled ? current.oidc : 'disabled' },
+      { label: 'MCP', value: mcpValue, status: mcpStatus },
+      { label: 'AI PROVIDER', value: aiValue, status: aiStatus },
+      { label: 'NODES', value: nodeValue, status: nodeStatus },
+      { label: 'NOTIFICATIONS', value: configValue(current.notifications), status: current.notifications.configured ? 'ok' : 'unconfigured' },
+      { label: 'WEBHOOKS', value: configValue(current.webhooks), status: current.webhooks.configured ? 'ok' : 'unconfigured' },
+    ]
   }
 
   return (
@@ -73,16 +113,13 @@ export default function DiagnosticsPage() {
           <div style={{ color: 'var(--muted)', fontSize: '12px' }}>checking...</div>
         ) : health ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {[
-              { label: 'DATABASE', value: health.database },
-              ...(health.oidc_enabled ? [{ label: 'OIDC', value: health.oidc }] : []),
-            ].map(row => {
-              const ok = row.value === 'ok'
+            {healthRows(health).map(row => {
+              const ok = row.status === 'ok'
               return (
                 <div key={row.label} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '12px', fontFamily: 'JetBrains Mono, Fira Code, Cascadia Code, ui-monospace, monospace' }}>
-                  {ok ? <CheckCircle size={12} style={{ color: 'var(--success)' }} /> : <XCircle size={12} style={{ color: statusColor(row.value) }} />}
+                  {ok ? <CheckCircle size={12} style={{ color: 'var(--success)' }} /> : <XCircle size={12} style={{ color: statusColor(row.status) }} />}
                   <span style={{ color: 'var(--muted)', width: 100 }}>{row.label}</span>
-                  <span style={{ color: statusColor(row.value) }}>{row.value.toUpperCase()}</span>
+                  <span style={{ color: statusColor(row.status) }}>{row.value.toUpperCase()}</span>
                 </div>
               )
             })}

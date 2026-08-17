@@ -4,6 +4,12 @@ export interface SetupStatus {
   bootstrapped: boolean
 }
 
+export interface PublicHealthStatus {
+  database: 'ok' | 'error'
+  oidc: 'ok' | 'unavailable' | 'disabled' | 'error'
+  oidc_enabled: boolean
+}
+
 export interface SessionUser {
   user_id: string
   username: string
@@ -13,9 +19,39 @@ export interface SessionUser {
 }
 
 export interface HealthStatus {
+  version: string
+  commit: string
   database: 'ok' | 'error'
   oidc: 'ok' | 'unavailable' | 'disabled'
   oidc_enabled: boolean
+  mcp: {
+    enabled: boolean
+    token_configured: boolean
+    running: boolean
+  }
+  ai: {
+    provider: string
+    configured: boolean
+    testable: boolean
+    api_key_configured: boolean
+    mode: string
+  }
+  nodes: {
+    total: number
+    online: number
+    offline: number
+    stale: number
+  }
+  notifications: {
+    configured: boolean
+    total: number
+    enabled: number
+  }
+  webhooks: {
+    configured: boolean
+    total: number
+    enabled: number
+  }
 }
 
 export interface Entry {
@@ -115,8 +151,14 @@ export async function checkSetupStatus(): Promise<SetupStatus> {
   return res.json()
 }
 
-export async function checkHealth(): Promise<HealthStatus> {
+export async function checkHealth(): Promise<PublicHealthStatus> {
   const res = await apiFetch('/api/setup/health')
+  if (!res.ok) throw new Error('Failed to check health')
+  return res.json()
+}
+
+export async function checkDetailedHealth(): Promise<HealthStatus> {
+  const res = await apiFetch('/api/admin/health')
   if (!res.ok) throw new Error('Failed to check health')
   return res.json()
 }

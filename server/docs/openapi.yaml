@@ -441,7 +441,9 @@ paths:
     get:
       tags: [Setup]
       summary: Health check
-      description: Returns the health status of the database and OIDC subsystem. Used by the container health check.
+      description: |
+        Returns public setup-time liveness only. Detailed operator diagnostics
+        are available from the authenticated admin health endpoint.
       responses:
         "200":
           description: OK

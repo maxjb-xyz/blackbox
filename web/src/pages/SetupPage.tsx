@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Terminal, AlertCircle, AlertTriangle, CheckCircle, XCircle, Loader } from 'lucide-react'
-import { bootstrap, checkHealth, type HealthStatus } from '../api/client'
+import { bootstrap, checkHealth, type PublicHealthStatus } from '../api/client'
 import { useSession } from '../session'
 
 interface SetupPageProps {
@@ -16,7 +16,7 @@ export default function SetupPage({ onBootstrapped }: SetupPageProps) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [health, setHealth] = useState<HealthStatus | null>(null)
+  const [health, setHealth] = useState<PublicHealthStatus | null>(null)
   const [healthLoading, setHealthLoading] = useState(true)
 
   useEffect(() => {
