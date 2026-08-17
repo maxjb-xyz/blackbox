@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"blackbox/server/internal/auth"
 	dbpkg "blackbox/server/internal/db"
@@ -29,6 +30,115 @@ func TestListNotificationDests_Empty(t *testing.T) {
 	var result []models.NotificationDest
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&result))
 	assert.Empty(t, result)
+}
+
+func TestListNotificationHistory_BoundedFilteredAndSecretFree(t *testing.T) {
+	database := newNotificationTestDB(t)
+	require.NoError(t, database.Create(&models.NotificationDest{
+		ID: "dest-history", Name: "Ops Slack", Type: "slack", URL: "https://hooks.example/secret-token", Enabled: true,
+	}).Error)
+	now := time.Now().UTC()
+	require.NoError(t, database.Create(&models.NotificationLog{
+		ID: "log-sent", DestID: "dest-history", IncidentID: "incident-1", Event: "incident_resolved", Decision: "sent", Note: "delivered", CreatedAt: now,
+	}).Error)
+	require.NoError(t, database.Create(&models.NotificationLog{
+		ID: "log-dropped", DestID: "dest-history", IncidentID: "incident-2", Event: "incident_resolved", Decision: "dropped_quiet", Note: "quiet hours", CreatedAt: now.Add(-time.Minute),
+	}).Error)
+
+	req := adminNotificationRequest(http.MethodGet, "/api/admin/notifications/history?decision=dropped&limit=1", nil)
+	req.URL.RawQuery = "decision=dropped&limit=1"
+	w := httptest.NewRecorder()
+	ListNotificationHistory(database)(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	body := w.Body.String()
+	assert.NotContains(t, body, "secret-token")
+	var response struct {
+		Items []struct {
+			DestinationID   string `json:"destination_id"`
+			DestinationName string `json:"destination_name"`
+			Decision        string `json:"decision"`
+			Note            string `json:"note"`
+		} `json:"items"`
+		HasMore bool `json:"has_more"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(body), &response))
+	require.Len(t, response.Items, 1)
+	assert.Equal(t, "dest-history", response.Items[0].DestinationID)
+	assert.Equal(t, "Ops Slack", response.Items[0].DestinationName)
+	assert.Equal(t, "dropped_quiet", response.Items[0].Decision)
+	assert.Equal(t, "quiet hours", response.Items[0].Note)
+	assert.False(t, response.HasMore)
+}
+
+func TestListNotificationHistory_HidesFailedNotes(t *testing.T) {
+	database := newNotificationTestDB(t)
+	require.NoError(t, database.Create(&models.NotificationDest{
+		ID: "dest-failed", Name: "Ops Slack", Type: "slack", URL: "https://hooks.example/secret-token", Enabled: true,
+	}).Error)
+	require.NoError(t, database.Create(&models.NotificationLog{
+		ID: "log-failed", DestID: "dest-failed", IncidentID: "incident-1", Event: "incident_opened", Decision: "failed",
+		Note: "Post \"https://hooks.example/services/T000/B000/super-secret-token\": 404 Not Found", CreatedAt: time.Now().UTC(),
+	}).Error)
+
+	req := adminNotificationRequest(http.MethodGet, "/api/admin/notifications/history?decision=failed", nil)
+	req.URL.RawQuery = "decision=failed"
+	w := httptest.NewRecorder()
+	ListNotificationHistory(database)(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	body := w.Body.String()
+	assert.NotContains(t, body, "super-secret-token")
+	assert.NotContains(t, body, "hooks.example/services")
+	var response struct {
+		Items []struct {
+			Note string `json:"note"`
+		} `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(body), &response))
+	require.Len(t, response.Items, 1)
+	assert.Empty(t, response.Items[0].Note)
+}
+
+func TestListNotificationHistory_CompositeCursorKeepsSameTimestampRows(t *testing.T) {
+	database := newNotificationTestDB(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	for _, id := range []string{"log-c", "log-b", "log-a"} {
+		require.NoError(t, database.Create(&models.NotificationLog{
+			ID: id, DestID: "dest", IncidentID: "incident", Event: "incident_opened", Decision: "sent", CreatedAt: now,
+		}).Error)
+	}
+
+	req := adminNotificationRequest(http.MethodGet, "/api/admin/notifications/history?limit=1", nil)
+	req.URL.RawQuery = "limit=1"
+	w := httptest.NewRecorder()
+	ListNotificationHistory(database)(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	var first notificationHistoryResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &first))
+	require.Len(t, first.Items, 1)
+	require.Equal(t, "log-c", first.Items[0].ID)
+	require.NotEmpty(t, first.NextBefore)
+
+	req = adminNotificationRequest(http.MethodGet, "/api/admin/notifications/history", nil)
+	req.URL.RawQuery = "limit=2&before=" + first.NextBefore
+	w = httptest.NewRecorder()
+	ListNotificationHistory(database)(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	var second notificationHistoryResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &second))
+	require.Len(t, second.Items, 2)
+	assert.Equal(t, "log-b", second.Items[0].ID)
+	assert.Equal(t, "log-a", second.Items[1].ID)
+}
+
+func TestListNotificationHistory_RejectsUnboundedLimit(t *testing.T) {
+	database := newNotificationTestDB(t)
+	req := adminNotificationRequest(http.MethodGet, "/api/admin/notifications/history?limit=201", nil)
+	req.URL.RawQuery = "limit=201"
+	w := httptest.NewRecorder()
+	ListNotificationHistory(database)(w, req)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
 func TestCreateNotificationDest_Valid(t *testing.T) {

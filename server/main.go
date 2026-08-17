@@ -258,6 +258,7 @@ func main() {
 		r.Get("/api/admin/oidc/policy", handlers.GetOIDCPolicy(database))
 		r.Put("/api/admin/oidc/policy", handlers.SetOIDCPolicy(database))
 		r.Get("/api/admin/notifications", handlers.ListNotificationDests(database))
+		r.Get("/api/admin/notifications/history", handlers.ListNotificationHistory(database))
 		r.Post("/api/admin/notifications", handlers.CreateNotificationDest(database))
 		r.Put("/api/admin/notifications/{id}", handlers.UpdateNotificationDest(database))
 		r.Delete("/api/admin/notifications/{id}", handlers.DeleteNotificationDest(database))

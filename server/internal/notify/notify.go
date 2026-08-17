@@ -148,7 +148,7 @@ func (d *Dispatcher) evaluateAndSend(dest models.NotificationDest, inc models.In
 	if err := sendTo(sendCtx, dest, inc, event, incURL, note, false); err != nil {
 		log.Printf("notify: send to %q (%s): %v", dest.Name, dest.Type, err)
 		if uerr := d.db.Model(&models.NotificationLog{}).Where("id = ?", row.ID).
-			Updates(map[string]interface{}{"decision": decisionFailed, "note": err.Error()}).Error; uerr != nil {
+			Updates(map[string]interface{}{"decision": decisionFailed, "note": failedDeliveryNote(err)}).Error; uerr != nil {
 			log.Printf("notify: mark failed for %q: %v", dest.Name, uerr)
 		}
 	}
@@ -164,11 +164,18 @@ func (d *Dispatcher) deliver(dest models.NotificationDest, inc models.Incident, 
 	logNote := note
 	if err := sendTo(sendCtx, dest, inc, event, incURL, note, false); err != nil {
 		log.Printf("notify: send to %q (%s): %v", dest.Name, dest.Type, err)
-		decision, logNote = decisionFailed, err.Error()
+		decision, logNote = decisionFailed, failedDeliveryNote(err)
 	}
 	if err := d.logDecision(d.db, dest.ID, inc.ID, event, decision, logNote, d.now()); err != nil {
 		log.Printf("notify: log %s for %q: %v", decision, dest.Name, err)
 	}
+}
+
+func failedDeliveryNote(err error) string {
+	if err == nil {
+		return ""
+	}
+	return "delivery failed"
 }
 
 // SendTest sends a synthetic payload to a single destination and returns any

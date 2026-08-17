@@ -649,6 +649,27 @@ export interface NotificationDestInput extends NotificationPolicy {
   enabled: boolean
 }
 
+export type NotificationHistoryFilter = '' | 'sent' | 'held' | 'dropped' | 'failed' | 'digest'
+
+export interface NotificationHistoryItem {
+  id: string
+  destination_id: string
+  destination_name: string
+  destination_type: string
+  incident_id: string
+  event: string
+  decision: string
+  note: string
+  created_at: string
+  flushed_at?: string | null
+}
+
+export interface NotificationHistoryPage {
+  items: NotificationHistoryItem[]
+  has_more: boolean
+  next_before?: string
+}
+
 export function parseIncidentServices(inc: Incident): string[] {
   try { return JSON.parse(inc.services) as string[] } catch { return [] }
 }
@@ -770,6 +791,42 @@ export async function listNotificationDests(): Promise<NotificationDest[]> {
   if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to list notification destinations'))
   const data = await res.json() as Record<string, unknown>[]
   return data.map(normalizeNotificationDest)
+}
+
+export async function listNotificationHistory(params?: {
+  destinationId?: string
+  decision?: NotificationHistoryFilter
+  limit?: number
+  before?: string
+}): Promise<NotificationHistoryPage> {
+  const query = new URLSearchParams()
+  if (params?.destinationId) query.set('dest_id', params.destinationId)
+  if (params?.decision) query.set('decision', params.decision)
+  if (params?.limit) query.set('limit', String(params.limit))
+  if (params?.before) query.set('before', params.before)
+  const suffix = query.toString() ? `?${query.toString()}` : ''
+  const res = await apiFetch(`/api/admin/notifications/history${suffix}`)
+  if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to list notification history'))
+  const data = await res.json() as { items?: unknown[]; has_more?: unknown; next_before?: unknown }
+  const items = Array.isArray(data.items)
+    ? data.items.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object').map(item => ({
+      id: String(item.id ?? ''),
+      destination_id: String(item.destination_id ?? ''),
+      destination_name: String(item.destination_name ?? ''),
+      destination_type: String(item.destination_type ?? ''),
+      incident_id: String(item.incident_id ?? ''),
+      event: String(item.event ?? ''),
+      decision: String(item.decision ?? ''),
+      note: String(item.note ?? ''),
+      created_at: String(item.created_at ?? ''),
+      flushed_at: typeof item.flushed_at === 'string' ? item.flushed_at : null,
+    }))
+    : []
+  return {
+    items,
+    has_more: data.has_more === true,
+    ...(typeof data.next_before === 'string' && data.next_before ? { next_before: data.next_before } : {}),
+  }
 }
 
 export async function createNotificationDest(data: NotificationDestInput): Promise<NotificationDest> {
