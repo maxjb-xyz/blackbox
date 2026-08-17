@@ -180,7 +180,7 @@ func getPM2SettingsForNode(db *gorm.DB, nodeName string) (bool, []string, error)
 	}
 	if err := json.Unmarshal([]byte(inst.Config), &cfg); err != nil {
 		log.Printf("getPM2SettingsForNode: failed to parse config for source %s: %v", inst.ID, err)
-		return true, []string{}, nil
+		return false, []string{}, nil
 	}
 	if cfg.Processes == nil {
 		cfg.Processes = []string{}

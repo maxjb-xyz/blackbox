@@ -49,7 +49,7 @@ func (s *Settings) Set(enabled bool, processes []string) {
 }
 
 type process struct {
-	PMID   int    `json:"pm_id"`
+	PMID   *int   `json:"pm_id"`
 	Name   string `json:"name"`
 	PID    int    `json:"pid"`
 	PM2Env struct {
@@ -192,11 +192,13 @@ func transitions(nodeName string, now time.Time, previous snapshot, current []pr
 			continue
 		}
 		metadata := map[string]any{
-			"pm_id":             process.PMID,
 			"pid":               process.PID,
 			"status":            process.PM2Env.Status,
 			"restart_time":      process.PM2Env.RestartTime,
 			"unstable_restarts": process.PM2Env.UnstableRestarts,
+		}
+		if process.PMID != nil {
+			metadata["pm_id"] = *process.PMID
 		}
 		if existed {
 			metadata["previous_status"] = previousProcess.PM2Env.Status
@@ -234,8 +236,8 @@ func filterProcesses(processes []process, allowed []string) []process {
 }
 
 func processKey(process process) string {
-	if process.PMID >= 0 {
-		return fmt.Sprintf("id:%d", process.PMID)
+	if process.PMID != nil {
+		return fmt.Sprintf("id:%d", *process.PMID)
 	}
 	return "name:" + process.Name
 }

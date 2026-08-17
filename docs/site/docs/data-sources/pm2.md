@@ -58,12 +58,17 @@ already-running processes. Entries use `source: "pm2"`, the PM2 process name as
 `service`, and include `pm_id`, `pid`, `status`, `restart_time`,
 `unstable_restarts`, and (when applicable) `previous_status` in metadata.
 
+PM2 does not emit a lifecycle event when a process is removed from `pm2 jlist`.
+The agent treats the next poll as the new baseline for that missing process.
+Restart detection is based on PM2's `restart_time`; restart patterns that do
+not increment that counter may appear as ordinary status transitions.
+
 ## Troubleshooting
 
 Run the same command as the agent user and confirm it returns JSON:
 
 ```sh
-pm2 jlist
+"${PM2_BIN:-pm2}" jlist
 ```
 
 If the source is unavailable in the catalog, check that `WATCH_PM2=true` is

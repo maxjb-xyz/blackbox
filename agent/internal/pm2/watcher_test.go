@@ -14,7 +14,8 @@ func TestParseJList(t *testing.T) {
 ]`))
 	require.NoError(t, err)
 	require.Len(t, processes, 2)
-	require.Equal(t, 2, processes[0].PMID)
+	require.NotNil(t, processes[0].PMID)
+	require.Equal(t, 2, *processes[0].PMID)
 	require.Equal(t, "api", processes[0].Name)
 	require.Equal(t, "online", processes[0].PM2Env.Status)
 	require.Equal(t, 3, processes[0].PM2Env.RestartTime)
@@ -23,13 +24,13 @@ func TestParseJList(t *testing.T) {
 func TestTransitionsEmitNormalizedLifecycleEntries(t *testing.T) {
 	now := time.Date(2026, time.August, 8, 12, 0, 0, 0, time.UTC)
 	previous := snapshot{
-		"id:2": {PMID: 2, Name: "api", PID: 100, PM2Env: pm2Env("online", 1)},
-		"id:3": {PMID: 3, Name: "worker", PID: 101, PM2Env: pm2Env("online", 0)},
+		"id:2": {PMID: intPtr(2), Name: "api", PID: 100, PM2Env: pm2Env("online", 1)},
+		"id:3": {PMID: intPtr(3), Name: "worker", PID: 101, PM2Env: pm2Env("online", 0)},
 	}
 	current := []process{
-		{PMID: 2, Name: "api", PID: 102, PM2Env: pm2Env("online", 2)},
-		{PMID: 3, Name: "worker", PID: 0, PM2Env: pm2Env("errored", 0)},
-		{PMID: 4, Name: "cron", PID: 103, PM2Env: pm2Env("online", 0)},
+		{PMID: intPtr(2), Name: "api", PID: 102, PM2Env: pm2Env("online", 2)},
+		{PMID: intPtr(3), Name: "worker", PID: 0, PM2Env: pm2Env("errored", 0)},
+		{PMID: intPtr(4), Name: "cron", PID: 103, PM2Env: pm2Env("online", 0)},
 	}
 
 	entries, next := transitions("node-1", now, previous, current, true, nil)
@@ -51,8 +52,8 @@ func TestTransitionsEmitNormalizedLifecycleEntries(t *testing.T) {
 
 func TestTransitionsInitialPollIsBaselineAndProcessFilterIsExact(t *testing.T) {
 	processes := []process{
-		{PMID: 1, Name: "api", PM2Env: pm2Env("online", 0)},
-		{PMID: 2, Name: "api-worker", PM2Env: pm2Env("online", 0)},
+		{PMID: intPtr(1), Name: "api", PM2Env: pm2Env("online", 0)},
+		{PMID: intPtr(2), Name: "api-worker", PM2Env: pm2Env("online", 0)},
 	}
 
 	entries, next := transitions("node-1", time.Now(), nil, processes, false, []string{"api"})
@@ -60,11 +61,20 @@ func TestTransitionsInitialPollIsBaselineAndProcessFilterIsExact(t *testing.T) {
 	require.Len(t, next, 1)
 
 	entries, _ = transitions("node-1", time.Now(), next, []process{
-		{PMID: 1, Name: "api", PM2Env: pm2Env("stopped", 0)},
-		{PMID: 2, Name: "api-worker", PM2Env: pm2Env("errored", 1)},
+		{PMID: intPtr(1), Name: "api", PM2Env: pm2Env("stopped", 0)},
+		{PMID: intPtr(2), Name: "api-worker", PM2Env: pm2Env("errored", 1)},
 	}, true, []string{"api"})
 	require.Len(t, entries, 1)
 	require.Equal(t, "stopped", entries[0].Event)
+}
+
+func TestProcessKeyFallsBackToNameWhenPMIDMissing(t *testing.T) {
+	require.Equal(t, "name:api", processKey(process{Name: "api"}))
+	require.Equal(t, "id:0", processKey(process{PMID: intPtr(0), Name: "api"}))
+}
+
+func intPtr(v int) *int {
+	return &v
 }
 
 func pm2Env(status string, restartTime int) struct {

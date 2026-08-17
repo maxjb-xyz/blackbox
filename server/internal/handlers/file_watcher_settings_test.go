@@ -205,6 +205,31 @@ func TestAgentConfig_ReturnsEmptySystemdUnitsWhenNoneConfigured(t *testing.T) {
 	require.Empty(t, units)
 }
 
+func TestAgentConfig_MalformedPM2ConfigDisablesPM2(t *testing.T) {
+	database := newTestDB(t)
+	nodeName := "node-1"
+	require.NoError(t, database.Select("*").Create(&models.DataSourceInstance{
+		ID: "pm2-bad", Type: "pm2", Scope: "agent", NodeID: &nodeName,
+		Name: "PM2", Config: `{"processes":`, Enabled: true,
+	}).Error)
+
+	config, err := middleware.NewAgentAuthConfig(nodeName + "=secret")
+	require.NoError(t, err)
+	req := httptest.NewRequest(http.MethodGet, "/api/agent/config", nil)
+	req.Header.Set("X-Blackbox-Agent-Key", "secret")
+	req.Header.Set("X-Blackbox-Node-Name", nodeName)
+	w := httptest.NewRecorder()
+	middleware.AgentAuth(config)(handlers.AgentConfig(database)).ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var resp map[string]any
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	require.Equal(t, false, resp["pm2_enabled"])
+	processes, ok := resp["pm2_processes"].([]any)
+	require.True(t, ok)
+	require.Empty(t, processes)
+}
+
 func TestAgentConfig_RejectsUnauthenticatedRequestsEvenWithNodeHeader(t *testing.T) {
 	database := newTestDB(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/agent/config", nil)
