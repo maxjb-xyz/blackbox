@@ -25,9 +25,9 @@ CREATE INDEX IF NOT EXISTS idx_queued_at ON pending (queued_at);
 // Stats describes the entries currently buffered locally. RetryCount is the
 // number of delivery attempts made for entries that are still pending.
 type Stats struct {
-	Pending          int
-	OldestQueuedAt   *time.Time
-	RetryCount       int
+	Pending        int
+	OldestQueuedAt *time.Time
+	RetryCount     int
 }
 
 // Queue is a persistent, ordered event queue backed by SQLite.
@@ -52,13 +52,46 @@ func New(dbPath string) (*Queue, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("queue: apply schema: %w", err)
 	}
-	// Older agents created pending without attempts. Keep those databases
-	// readable and upgrade them in place without requiring data loss.
-	if _, err := db.Exec(`ALTER TABLE pending ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0`); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+	hasAttempts, err := pendingHasColumn(db, "attempts")
+	if err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("queue: migrate schema: %w", err)
+		return nil, err
+	}
+	if !hasAttempts {
+		// Older agents created pending without attempts. Keep those databases
+		// readable and upgrade them in place without requiring data loss.
+		if _, err := db.Exec(`ALTER TABLE pending ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0`); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("queue: migrate schema: %w", err)
+		}
 	}
 	return &Queue{db: db}, nil
+}
+
+func pendingHasColumn(db *sql.DB, name string) (bool, error) {
+	rows, err := db.Query(`PRAGMA table_info(pending)`)
+	if err != nil {
+		return false, fmt.Errorf("queue: inspect schema: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var columnName, columnType string
+		var notNull int
+		var defaultValue sql.NullString
+		var primaryKey int
+		if err := rows.Scan(&cid, &columnName, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			return false, fmt.Errorf("queue: inspect schema: %w", err)
+		}
+		if columnName == name {
+			return true, nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return false, fmt.Errorf("queue: inspect schema: %w", err)
+	}
+	return false, nil
 }
 
 // Push persists an entry to the queue. The entry must have a non-empty ID.

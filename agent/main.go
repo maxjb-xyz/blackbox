@@ -298,16 +298,16 @@ func summarizeUnitDiff(current, previous []string) string {
 }
 
 type nodeInfo struct {
-	AgentVersion string `json:"agent_version"`
-	IPAddress    string `json:"ip_address"`
-	OsInfo       string `json:"os_info"`
-	Queue        queueInfo `json:"queue"`
+	AgentVersion string     `json:"agent_version"`
+	IPAddress    string     `json:"ip_address"`
+	OsInfo       string     `json:"os_info"`
+	Queue        *queueInfo `json:"queue,omitempty"`
 }
 
 type queueInfo struct {
 	Depth      int        `json:"depth"`
 	OldestAt   *time.Time `json:"oldest_at,omitempty"`
-	RetryCount int       `json:"retry_count"`
+	RetryCount int        `json:"retry_count"`
 }
 
 func nodeMetadata(info nodeInfo, q *queue.Queue) string {
@@ -315,7 +315,7 @@ func nodeMetadata(info nodeInfo, q *queue.Queue) string {
 	if err != nil {
 		log.Printf("queue: failed to read stats: %v", err)
 	} else {
-		info.Queue = queueInfo{
+		info.Queue = &queueInfo{
 			Depth:      stats.Pending,
 			OldestAt:   stats.OldestQueuedAt,
 			RetryCount: stats.RetryCount,
