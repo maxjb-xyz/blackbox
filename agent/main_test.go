@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -12,6 +14,7 @@ import (
 
 	"blackbox/agent/internal/client"
 	"blackbox/agent/internal/files"
+	"blackbox/agent/internal/queue"
 	"blackbox/agent/internal/systemd"
 )
 
@@ -50,6 +53,25 @@ func TestLoadSystemdUnits(t *testing.T) {
 	want := []string{"nginx.service", "postgres.service"}
 	if !reflect.DeepEqual(units, want) {
 		t.Fatalf("loadSystemdUnits() = %v, want %v", units, want)
+	}
+}
+
+func TestNodeMetadata_OmitsQueueWhenStatsFail(t *testing.T) {
+	q, err := queue.New(filepath.Join(t.TempDir(), "queue.db"))
+	if err != nil {
+		t.Fatalf("queue.New: %v", err)
+	}
+	if err := q.Close(); err != nil {
+		t.Fatalf("queue.Close: %v", err)
+	}
+
+	metadata := nodeMetadata(nodeInfo{AgentVersion: "1.0.0"}, q)
+	var got map[string]any
+	if err := json.Unmarshal([]byte(metadata), &got); err != nil {
+		t.Fatalf("metadata JSON: %v", err)
+	}
+	if _, ok := got["queue"]; ok {
+		t.Fatalf("queue metadata present after stats failure: %s", metadata)
 	}
 }
 

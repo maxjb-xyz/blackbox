@@ -155,6 +155,12 @@ func upsertNode(database *gorm.DB, entry types.Entry) bool {
 		if updatedNode.OsInfo != "" {
 			updates["os_info"] = updatedNode.OsInfo
 		}
+		if updatedNode.QueueReported {
+			updates["queue_reported"] = true
+			updates["queue_depth"] = updatedNode.QueueDepth
+			updates["queue_oldest_at"] = updatedNode.QueueOldestAt
+			updates["queue_retry_count"] = updatedNode.QueueRetries
+		}
 	}
 
 	if err := database.Model(&node).Updates(updates).Error; err != nil {
@@ -169,6 +175,11 @@ func applyHeartbeatMeta(node *models.Node, metadata string) {
 		AgentVersion string `json:"agent_version"`
 		IPAddress    string `json:"ip_address"`
 		OsInfo       string `json:"os_info"`
+		Queue        *struct {
+			Depth      int        `json:"depth"`
+			OldestAt   *time.Time `json:"oldest_at"`
+			RetryCount int        `json:"retry_count"`
+		} `json:"queue"`
 	}
 	if err := json.Unmarshal([]byte(metadata), &meta); err != nil {
 		return
@@ -181,6 +192,12 @@ func applyHeartbeatMeta(node *models.Node, metadata string) {
 	}
 	if meta.OsInfo != "" {
 		node.OsInfo = meta.OsInfo
+	}
+	if meta.Queue != nil {
+		node.QueueReported = true
+		node.QueueDepth = max(meta.Queue.Depth, 0)
+		node.QueueOldestAt = meta.Queue.OldestAt
+		node.QueueRetries = max(meta.Queue.RetryCount, 0)
 	}
 }
 

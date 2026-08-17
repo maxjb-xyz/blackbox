@@ -49,13 +49,6 @@ func main() {
 			nodeName = "unknown"
 		}
 	}
-	info := collectNodeInfo(serverURL)
-	infoJSON, err := json.Marshal(info)
-	if err != nil {
-		log.Printf("WARNING: failed to marshal node info: %v", err)
-		infoJSON = []byte("{}")
-	}
-
 	watchPaths := splitEnv("WATCH_PATHS")
 	watchIgnore := splitEnv("WATCH_IGNORE")
 
@@ -78,6 +71,7 @@ func main() {
 	} else if swept > 0 {
 		log.Printf("queue: swept %d stale entries (older than 7 days)", swept)
 	}
+	info := collectNodeInfo(serverURL)
 
 	c := client.New(serverURL, agentToken, nodeName)
 	s := sender.New(c, q)
@@ -130,7 +124,7 @@ func main() {
 		Source:    "agent",
 		Event:     "start",
 		Content:   "Blackbox Agent started",
-		Metadata:  string(infoJSON),
+		Metadata:  nodeMetadata(info, q),
 	}
 
 	go func() {
@@ -148,7 +142,7 @@ func main() {
 					Source:    "agent",
 					Event:     "heartbeat",
 					Content:   "Blackbox Agent heartbeat",
-					Metadata:  string(infoJSON),
+					Metadata:  nodeMetadata(info, q),
 				}
 			}
 		}
@@ -167,7 +161,7 @@ func main() {
 		Source:    "agent",
 		Event:     "shutdown",
 		Content:   "Blackbox Agent shutting down",
-		Metadata:  string(infoJSON),
+		Metadata:  nodeMetadata(info, q),
 	}
 	cancel()
 	<-s.Done()
@@ -304,9 +298,35 @@ func summarizeUnitDiff(current, previous []string) string {
 }
 
 type nodeInfo struct {
-	AgentVersion string `json:"agent_version"`
-	IPAddress    string `json:"ip_address"`
-	OsInfo       string `json:"os_info"`
+	AgentVersion string     `json:"agent_version"`
+	IPAddress    string     `json:"ip_address"`
+	OsInfo       string     `json:"os_info"`
+	Queue        *queueInfo `json:"queue,omitempty"`
+}
+
+type queueInfo struct {
+	Depth      int        `json:"depth"`
+	OldestAt   *time.Time `json:"oldest_at,omitempty"`
+	RetryCount int        `json:"retry_count"`
+}
+
+func nodeMetadata(info nodeInfo, q *queue.Queue) string {
+	stats, err := q.Stats()
+	if err != nil {
+		log.Printf("queue: failed to read stats: %v", err)
+	} else {
+		info.Queue = &queueInfo{
+			Depth:      stats.Pending,
+			OldestAt:   stats.OldestQueuedAt,
+			RetryCount: stats.RetryCount,
+		}
+	}
+	metadata, err := json.Marshal(info)
+	if err != nil {
+		log.Printf("WARNING: failed to marshal node metadata: %v", err)
+		return "{}"
+	}
+	return string(metadata)
 }
 
 func collectNodeInfo(serverURL string) nodeInfo {

@@ -1,6 +1,7 @@
 package queue_test
 
 import (
+	"database/sql"
 	"path/filepath"
 	"testing"
 	"time"
@@ -8,6 +9,7 @@ import (
 	"blackbox/agent/internal/queue"
 	"blackbox/shared/types"
 	"github.com/oklog/ulid/v2"
+	_ "modernc.org/sqlite"
 )
 
 func newTestQueue(t *testing.T) *queue.Queue {
@@ -162,5 +164,84 @@ func TestSweepStale_RemovesOldEntries(t *testing.T) {
 	}
 	if len(rows) != 1 || rows[0].ID != freshEntry.ID {
 		t.Errorf("expected only fresh entry to remain, got %+v", rows)
+	}
+}
+
+func TestStats_ReportsPendingOldestAndRetries(t *testing.T) {
+	q := newTestQueue(t)
+
+	oldest := time.Now().UTC().Add(-2 * time.Minute).Truncate(time.Millisecond)
+	entry := types.Entry{ID: ulid.Make().String(), Source: "docker", Event: "start"}
+	if err := q.PushAt(entry, oldest); err != nil {
+		t.Fatalf("PushAt: %v", err)
+	}
+
+	stats, err := q.Stats()
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	if stats.Pending != 1 || stats.RetryCount != 0 || stats.OldestQueuedAt == nil {
+		t.Fatalf("unexpected initial stats: %+v", stats)
+	}
+	if !stats.OldestQueuedAt.Equal(oldest) {
+		t.Fatalf("oldest queued at = %v, want %v", stats.OldestQueuedAt, oldest)
+	}
+
+	if _, err := q.Flush(1); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+	stats, err = q.Stats()
+	if err != nil {
+		t.Fatalf("Stats after flush: %v", err)
+	}
+	if stats.RetryCount != 1 {
+		t.Fatalf("retry count = %d, want 1", stats.RetryCount)
+	}
+}
+
+func TestNew_MigratesLegacyPendingTableOnce(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "queue.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	_, err = db.Exec(`CREATE TABLE pending (
+		id TEXT PRIMARY KEY,
+		queued_at INTEGER NOT NULL,
+		payload TEXT NOT NULL
+	)`)
+	if err != nil {
+		t.Fatalf("create legacy pending: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close legacy db: %v", err)
+	}
+
+	q, err := queue.New(path)
+	if err != nil {
+		t.Fatalf("queue.New legacy: %v", err)
+	}
+	if err := q.Close(); err != nil {
+		t.Fatalf("close migrated queue: %v", err)
+	}
+	q, err = queue.New(path)
+	if err != nil {
+		t.Fatalf("queue.New migrated: %v", err)
+	}
+	t.Cleanup(func() { _ = q.Close() })
+
+	entry := types.Entry{ID: ulid.Make().String(), Source: "docker", Event: "start"}
+	if err := q.Push(entry); err != nil {
+		t.Fatalf("Push after migration: %v", err)
+	}
+	if _, err := q.Flush(1); err != nil {
+		t.Fatalf("Flush after migration: %v", err)
+	}
+	stats, err := q.Stats()
+	if err != nil {
+		t.Fatalf("Stats after migration: %v", err)
+	}
+	if stats.RetryCount != 1 {
+		t.Fatalf("retry count = %d, want 1", stats.RetryCount)
 	}
 }

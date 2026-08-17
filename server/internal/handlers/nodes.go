@@ -18,6 +18,10 @@ type nodeResponse struct {
 	IPAddress    string    `json:"ip_address"`
 	OsInfo       string    `json:"os_info"`
 	Status       string    `json:"status"`
+	QueueReported bool      `json:"queue_reported"`
+	QueueDepth    int       `json:"queue_depth"`
+	QueueOldestAt *time.Time `json:"queue_oldest_at,omitempty"`
+	QueueRetries  int       `json:"queue_retry_count"`
 }
 
 func ListNodes(database *gorm.DB) http.HandlerFunc {
@@ -39,6 +43,10 @@ func ListNodes(database *gorm.DB) http.HandlerFunc {
 				IPAddress:    node.IPAddress,
 				OsInfo:       node.OsInfo,
 				Status:       effectiveNodeStatus(node, now),
+				QueueReported: node.QueueReported,
+				QueueDepth:    node.QueueDepth,
+				QueueOldestAt: node.QueueOldestAt,
+				QueueRetries:  node.QueueRetries,
 			}
 		}
 

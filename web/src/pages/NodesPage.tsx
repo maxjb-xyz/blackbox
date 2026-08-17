@@ -11,6 +11,10 @@ interface NodeViewModel {
   agentVersion: string
   ipAddress: string
   osInfo: string | null | undefined
+  queueReported: boolean
+  queueDepth: number
+  queueOldestAt: string | null
+  queueRetries: number
 }
 
 function formatTimestamp(ts?: string | null | Date) {
@@ -57,6 +61,23 @@ function OsCell({ osInfo }: { osInfo: string | null | undefined }) {
   )
 }
 
+function QueueCell({ node, mobile = false }: { node: NodeViewModel; mobile?: boolean }) {
+  if (!node.queueReported) return <span style={{ color: 'var(--muted)' }}>-</span>
+
+  const oldest = node.queueOldestAt ? formatTimestamp(node.queueOldestAt) : null
+  return (
+    <span style={{ color: node.queueDepth > 0 ? 'var(--warning, #F59E0B)' : 'var(--muted)', fontSize: 11 }}>
+      <span>{node.queueDepth} pending</span>
+      {node.queueRetries > 0 && <span> · {node.queueRetries} attempts</span>}
+      {oldest && (
+        <span style={{ display: mobile ? 'inline' : 'block', color: 'var(--muted)', fontSize: 10 }}>
+          {mobile ? ` · oldest ${oldest}` : `oldest ${oldest}`}
+        </span>
+      )}
+    </span>
+  )
+}
+
 function getNodeStatusPresentation(status: string) {
   const isOnline = status === 'online'
   return {
@@ -76,6 +97,10 @@ function toNodeViewModel(node: ReturnType<typeof useNodePulse>['nodes'][number])
     agentVersion: node.agent_version || '-',
     ipAddress: node.ip_address || '-',
     osInfo: node.os_info,
+    queueReported: node.queue_reported === true,
+    queueDepth: Math.max(0, node.queue_depth ?? 0),
+    queueOldestAt: node.queue_oldest_at ?? null,
+    queueRetries: Math.max(0, node.queue_retry_count ?? 0),
   }
 }
 
@@ -120,6 +145,10 @@ function NodeItem({ node, variant }: { node: NodeViewModel; variant: 'desktop' |
             <span className="nodes-mobile-label">IP</span>
             <span className="nodes-mobile-value">{node.ipAddress}</span>
           </div>
+          <div className="nodes-mobile-field">
+            <span className="nodes-mobile-label">QUEUE</span>
+            <span className="nodes-mobile-value"><QueueCell node={node} mobile /></span>
+          </div>
         </div>
       </div>
     )
@@ -151,6 +180,9 @@ function NodeItem({ node, variant }: { node: NodeViewModel; variant: 'desktop' |
       </td>
       <td style={{ color: 'var(--muted)', fontSize: 12 }}>
         {node.ipAddress}
+      </td>
+      <td>
+        <QueueCell node={node} />
       </td>
     </tr>
   )
@@ -217,6 +249,7 @@ export default function NodesPage() {
                     <th scope="col">OS</th>
                     <th scope="col">VERSION</th>
                     <th scope="col">IP</th>
+                    <th scope="col">QUEUE</th>
                   </tr>
                 </thead>
                 <tbody>
