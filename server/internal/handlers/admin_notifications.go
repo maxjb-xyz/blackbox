@@ -112,6 +112,11 @@ type notificationHistoryResponse struct {
 	NextBefore string                    `json:"next_before,omitempty"`
 }
 
+type notificationHistoryCursor struct {
+	CreatedAt time.Time
+	ID        string
+}
+
 // ListNotificationHistory returns a bounded, admin-only view of delivery
 // decisions. It deliberately selects only decision metadata; destination URLs
 // and notification payloads are never included.
@@ -132,7 +137,7 @@ func ListNotificationHistory(db *gorm.DB) http.HandlerFunc {
 		}
 
 		query := db.Table("notification_logs AS l").
-			Select("l.id, l.dest_id AS destination_id, COALESCE(d.name, '') AS destination_name, COALESCE(d.type, '') AS destination_type, l.incident_id, l.event, l.decision, l.note, l.created_at, l.flushed_at").
+			Select("l.id, l.dest_id AS destination_id, COALESCE(d.name, '') AS destination_name, COALESCE(d.type, '') AS destination_type, l.incident_id, l.event, l.decision, CASE WHEN l.decision = ? THEN '' ELSE l.note END AS note, l.created_at, l.flushed_at", "failed").
 			Joins("LEFT JOIN notification_dests AS d ON d.id = l.dest_id").
 			Order("l.created_at DESC, l.id DESC").
 			Limit(limit + 1)
@@ -149,12 +154,16 @@ func ListNotificationHistory(db *gorm.DB) http.HandlerFunc {
 			query = query.Where("l.decision IN ?", values)
 		}
 		if before := strings.TrimSpace(r.URL.Query().Get("before")); before != "" {
-			beforeTime, err := time.Parse(time.RFC3339Nano, before)
+			cursor, err := parseNotificationHistoryCursor(before)
 			if err != nil {
-				writeError(w, http.StatusBadRequest, "before must be an RFC3339 timestamp")
+				writeError(w, http.StatusBadRequest, "before must be an RFC3339 timestamp or timestamp|id cursor")
 				return
 			}
-			query = query.Where("l.created_at < ?", beforeTime)
+			if cursor.ID == "" {
+				query = query.Where("l.created_at < ?", cursor.CreatedAt)
+			} else {
+				query = query.Where("(l.created_at < ? OR (l.created_at = ? AND l.id < ?))", cursor.CreatedAt, cursor.CreatedAt, cursor.ID)
+			}
 		}
 
 		var rows []notificationHistoryItem
@@ -167,11 +176,28 @@ func ListNotificationHistory(db *gorm.DB) http.HandlerFunc {
 		if len(response.Items) > limit {
 			response.HasMore = true
 			response.Items = response.Items[:limit]
-			response.NextBefore = response.Items[len(response.Items)-1].CreatedAt.UTC().Format(time.RFC3339Nano)
+			last := response.Items[len(response.Items)-1]
+			response.NextBefore = last.CreatedAt.UTC().Format(time.RFC3339Nano) + "|" + last.ID
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(response)
 	}
+}
+
+func parseNotificationHistoryCursor(raw string) (notificationHistoryCursor, error) {
+	ts, id, hasID := strings.Cut(raw, "|")
+	createdAt, err := time.Parse(time.RFC3339Nano, ts)
+	if err != nil {
+		return notificationHistoryCursor{}, err
+	}
+	if !hasID {
+		return notificationHistoryCursor{CreatedAt: createdAt}, nil
+	}
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return notificationHistoryCursor{}, errors.New("missing cursor id")
+	}
+	return notificationHistoryCursor{CreatedAt: createdAt, ID: id}, nil
 }
 
 func CreateNotificationDest(db *gorm.DB) http.HandlerFunc {
