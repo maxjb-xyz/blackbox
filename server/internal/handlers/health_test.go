@@ -101,6 +101,30 @@ func TestHealthCheck_DBError_Returns503(t *testing.T) {
 	assert.Equal(t, "error", resp["database"])
 }
 
+func TestPublicHealthCheck_ExposesOnlyLiveness(t *testing.T) {
+	database := newTestDB(t)
+	registry := auth.NewOIDCRegistry(database)
+	require.NoError(t, database.Create(&models.AppSetting{Key: "mcp_auth_token", Value: "mcp-health-secret"}).Error)
+	require.NoError(t, database.Create(&models.Node{ID: "node-online", Name: "online", LastSeen: time.Now().UTC(), Status: "online"}).Error)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/setup/health", nil)
+	w := httptest.NewRecorder()
+	handlers.PublicHealthCheck(database, registry)(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	body := w.Body.String()
+	assert.NotContains(t, body, "mcp-health-secret")
+	assert.NotContains(t, body, "version")
+	assert.NotContains(t, body, "commit")
+	assert.NotContains(t, body, "nodes")
+	assert.NotContains(t, body, "mcp")
+	var resp map[string]any
+	require.NoError(t, json.NewDecoder(strings.NewReader(body)).Decode(&resp))
+	assert.Equal(t, "ok", resp["database"])
+	assert.Equal(t, "disabled", resp["oidc"])
+	assert.Equal(t, false, resp["oidc_enabled"])
+}
+
 func TestHealthCheck_RichLocalSummaryDoesNotExposeSecretsOrProbeProviders(t *testing.T) {
 	database := newTestDB(t)
 	registry := auth.NewOIDCRegistry(database)
@@ -182,7 +206,7 @@ func TestHealthCheck_RichLocalSummaryDoesNotExposeSecretsOrProbeProviders(t *tes
 	assert.True(t, resp.AI.APIKeyConfigured)
 	assert.Equal(t, int64(3), resp.Nodes.Total)
 	assert.Equal(t, int64(1), resp.Nodes.Online)
-	assert.Equal(t, int64(2), resp.Nodes.Offline)
+	assert.Equal(t, int64(1), resp.Nodes.Offline)
 	assert.Equal(t, int64(1), resp.Nodes.Stale)
 	assert.True(t, resp.Notifications.Configured)
 	assert.Equal(t, int64(1), resp.Notifications.Total)

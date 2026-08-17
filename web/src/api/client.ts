@@ -4,6 +4,12 @@ export interface SetupStatus {
   bootstrapped: boolean
 }
 
+export interface PublicHealthStatus {
+  database: 'ok' | 'error'
+  oidc: 'ok' | 'unavailable' | 'disabled' | 'error'
+  oidc_enabled: boolean
+}
+
 export interface SessionUser {
   user_id: string
   username: string
@@ -145,8 +151,14 @@ export async function checkSetupStatus(): Promise<SetupStatus> {
   return res.json()
 }
 
-export async function checkHealth(): Promise<HealthStatus> {
+export async function checkHealth(): Promise<PublicHealthStatus> {
   const res = await apiFetch('/api/setup/health')
+  if (!res.ok) throw new Error('Failed to check health')
+  return res.json()
+}
+
+export async function checkDetailedHealth(): Promise<HealthStatus> {
+  const res = await apiFetch('/api/admin/health')
   if (!res.ok) throw new Error('Failed to check health')
   return res.json()
 }

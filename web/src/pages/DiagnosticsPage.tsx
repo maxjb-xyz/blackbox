@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { CheckCircle, XCircle } from 'lucide-react'
-import { checkHealth } from '../api/client'
+import { checkDetailedHealth } from '../api/client'
 import type { HealthStatus } from '../api/client'
 import PageHeader from '../components/PageHeader'
 
@@ -12,7 +12,7 @@ export default function DiagnosticsPage() {
   function reload() {
     setLoading(true)
     setHealthError(null)
-    checkHealth()
+    checkDetailedHealth()
       .then(status => {
         setHealth(status)
         setHealthError(null)
@@ -24,7 +24,7 @@ export default function DiagnosticsPage() {
   }
 
   useEffect(() => {
-    checkHealth()
+    checkDetailedHealth()
       .then(status => {
         setHealth(status)
         setHealthError(null)
@@ -117,9 +117,9 @@ export default function DiagnosticsPage() {
               const ok = row.status === 'ok'
               return (
                 <div key={row.label} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '12px', fontFamily: 'JetBrains Mono, Fira Code, Cascadia Code, ui-monospace, monospace' }}>
-                  {ok ? <CheckCircle size={12} style={{ color: 'var(--success)' }} /> : <XCircle size={12} style={{ color: statusColor(row.value) }} />}
+                  {ok ? <CheckCircle size={12} style={{ color: 'var(--success)' }} /> : <XCircle size={12} style={{ color: statusColor(row.status) }} />}
                   <span style={{ color: 'var(--muted)', width: 100 }}>{row.label}</span>
-                  <span style={{ color: statusColor(row.value) }}>{row.value.toUpperCase()}</span>
+                  <span style={{ color: statusColor(row.status) }}>{row.value.toUpperCase()}</span>
                 </div>
               )
             })}
